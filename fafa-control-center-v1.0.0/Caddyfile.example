@@ -1,0 +1,6 @@
+# Review and merge this ONE site block into an existing configuration. Never overwrite it.
+codex.fafa888.uk {
+    encode zstd gzip
+    reverse_proxy 127.0.0.1:8080
+    header Strict-Transport-Security "max-age=31536000"
+}
