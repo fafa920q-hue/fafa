@@ -1,0 +1,31 @@
+{
+  "scope": "single local Chromium lab run on production bundle; no network throttle; not field p75; INP unmeasured; not Safari",
+  "viewport": [
+    390,
+    844
+  ],
+  "lcp": 640,
+  "cls": 0,
+  "resources": [
+    {
+      "name": "/assets/index-Mnyeb2_u.js",
+      "bytes": 59090
+    },
+    {
+      "name": "/assets/index-Cieax6dk.css",
+      "bytes": 4672
+    },
+    {
+      "name": "/api/v1/auth/me",
+      "bytes": 336
+    },
+    {
+      "name": "/favicon.svg",
+      "bytes": 474
+    },
+    {
+      "name": "/api/v1/auth/capabilities",
+      "bytes": 383
+    }
+  ]
+}

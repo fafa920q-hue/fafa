@@ -1,0 +1,4 @@
+# FAFA ONE alpha is NOT production approved.
+# No active site block is provided: the production topology, origin certificates,
+# admin MFA, migration and recovery gates are not verified. See DEPLOYMENT.md.
+# Never replace the existing server's global Caddy configuration with this file.

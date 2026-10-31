@@ -1,0 +1,19 @@
+{
+  "scope": "locally built candidate only",
+  "images": [
+    {
+      "tags": [
+        "fafa-one-api:2.0.0-alpha.1"
+      ],
+      "id": "sha256:74f0fd8450773e68458fe6277697ffc38c5d5db8b290e963523ba8af9279504b",
+      "user": "10001:10001"
+    },
+    {
+      "tags": [
+        "fafa-one-web:2.0.0-alpha.1"
+      ],
+      "id": "sha256:aef0933bfc177746b5caa4d977f7bf3055b380e32f749125e39a676e9bf1c5b6",
+      "user": "101"
+    }
+  ]
+}

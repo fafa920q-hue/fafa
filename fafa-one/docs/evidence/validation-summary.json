@@ -1,0 +1,83 @@
+{
+  "version": "2.0.0-alpha.1",
+  "generated_at_utc": "2026-10-31T20:55:37.447020+00:00",
+  "scope": "isolated development; final runs, duplicate DB executions included",
+  "tests": {
+    "sqlite": {
+      "passed": 101,
+      "failed": 0,
+      "skipped": 1,
+      "duration_seconds": 76.574
+    },
+    "postgresql": {
+      "passed": 102,
+      "failed": 0,
+      "skipped": 0,
+      "duration_seconds": 77.879
+    },
+    "chromium": {
+      "passed": 6,
+      "failed": 0,
+      "skipped": 12
+    }
+  },
+  "totals": {
+    "passed": 209,
+    "failed": 0,
+    "skipped": 13
+  },
+  "checks": {
+    "frontend_typecheck": "PASS",
+    "frontend_eslint": "PASS",
+    "new_python_modules_ruff": "PASS",
+    "new_python_format": "PASS",
+    "frontend_prettier": "PASS",
+    "frontend_build": "PASS",
+    "backend_compile": "PASS",
+    "compose_config_and_private_ports": "PASS",
+    "api_image_build": "PASS",
+    "web_image_build": "PASS",
+    "isolated_compose_smoke": "PASS",
+    "production_alpha_startup_denied": "PASS",
+    "archive_zip_integrity": "PASS"
+  },
+  "dependency_audit": {
+    "npm_known_vulnerabilities": 0,
+    "python_runtime_lock_known_vulnerabilities": 0
+  },
+  "performance": {
+    "scope": "single local Chromium lab run on production bundle; no network throttle; not field p75; INP unmeasured; not Safari",
+    "viewport": [
+      390,
+      844
+    ],
+    "lcp": 640,
+    "cls": 0,
+    "resources": [
+      {
+        "name": "/assets/index-Mnyeb2_u.js",
+        "bytes": 59090
+      },
+      {
+        "name": "/assets/index-Cieax6dk.css",
+        "bytes": 4672
+      },
+      {
+        "name": "/api/v1/auth/me",
+        "bytes": 336
+      },
+      {
+        "name": "/favicon.svg",
+        "bytes": 474
+      },
+      {
+        "name": "/api/v1/auth/capabilities",
+        "bytes": 383
+      }
+    ]
+  },
+  "external_acceptance": "NOT PASSED: no real supplier credentials, authorized CLI devices, production DB/SSH or target browsers",
+  "production_mutated": false,
+  "production_deployed": false,
+  "release_decision": "BLOCKED"
+}

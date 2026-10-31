@@ -1,0 +1,35 @@
+name: FAFA ONE candidate checks (no production deployment)
+on:
+  push:
+    paths: ['fafa-one/**', '.github/workflows/fafa-one.yml']
+  pull_request:
+    paths: ['fafa-one/**', '.github/workflows/fafa-one.yml']
+permissions:
+  contents: read
+jobs:
+  candidate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: fafa-one
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: python -m venv .venv && .venv/bin/pip install -r backend/requirements.lock -r backend/requirements-dev.txt
+      - run: npm --prefix frontend ci
+      - run: .venv/bin/python -m pytest backend/tests -q
+      - run: .venv/bin/ruff check --config backend/pyproject.toml backend/app/one backend/tests/test_personal_ai.py backend/tests/test_v2_migration.py backend/tests/test_postgres_restore.py ops
+      - run: npm --prefix frontend run typecheck && npm --prefix frontend run lint && npm --prefix frontend run build
+      - run: scripts/docker_smoke.sh
+      - run: cd frontend && npx playwright install --with-deps chromium
+      - name: Actual local browser API checks (external acceptance stays skipped)
+        run: |
+          CHROMIUM_PATH=$(cd frontend && node --input-type=module -e 'import {chromium} from "@playwright/test"; process.stdout.write(chromium.executablePath())')
+          export CHROMIUM_PATH
+          scripts/browser_test.sh

@@ -1,0 +1,21 @@
+{
+  "scope": "built local frontend budgets; not field performance",
+  "initial_js_budget_bytes": 220000,
+  "css_budget_bytes": 24000,
+  "chunk_budget_bytes": 400000,
+  "assets": [
+    {
+      "file": "RichMessage-DV3UDAUv.js",
+      "bytes": 344545
+    },
+    {
+      "file": "index-Mnyeb2_u.js",
+      "bytes": 181848
+    },
+    {
+      "file": "index-Cieax6dk.css",
+      "bytes": 17110
+    }
+  ],
+  "status": "PASS"
+}

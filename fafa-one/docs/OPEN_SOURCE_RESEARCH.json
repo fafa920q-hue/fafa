@@ -1,0 +1,176 @@
+{
+  "checked_at": "2026-10-31",
+  "source": "GitHub REST API via connected GitHub app",
+  "repositories": [
+    {
+      "repository": "LibreChat-AI/LibreChat",
+      "url": "https://github.com/LibreChat-AI/LibreChat",
+      "default_branch": "main",
+      "archived": false,
+      "license": "MIT",
+      "description": "Enhanced ChatGPT Clone: Features Agents, MCP, Skills, DeepSeek, Anthropic, AWS, OpenAI, Responses API, Azure, Groq, o1, GPT-5, Mistral, OpenRouter, Vertex AI, Gemini, Artifacts, AI model switching, message search, Code Interpreter, langchain, DALL-E-3, OpenAPI Actions, Functions, Secure Multi-User Auth, Presets, open-source for self-hosting. Active",
+      "updated_at": "2026-10-31T20:06:13Z"
+    },
+    {
+      "repository": "open-webui/open-webui",
+      "url": "https://github.com/open-webui/open-webui",
+      "default_branch": "main",
+      "archived": false,
+      "license": "NOASSERTION",
+      "description": "User-friendly AI Interface (Supports Ollama, OpenAI API, ...)",
+      "updated_at": "2026-10-31T20:23:10Z"
+    },
+    {
+      "repository": "BerriAI/litellm",
+      "url": "https://github.com/BerriAI/litellm",
+      "default_branch": "main",
+      "archived": false,
+      "license": "NOASSERTION",
+      "description": "The fastest, litest AI Gateway. Rust core with Python SDK. Call 100+ LLM APIs in OpenAI (or native) format with cost tracking, guardrails, load balancing, and logging [Bedrock, Azure, OpenAI, Anthropic, OpenAI, VertexAI, vLLM, Nvidia NIM]",
+      "updated_at": "2026-10-31T20:15:30Z"
+    },
+    {
+      "repository": "happier-dev/happier",
+      "url": "https://github.com/happier-dev/happier",
+      "default_branch": "dev",
+      "archived": false,
+      "license": "MIT",
+      "description": "Web, Desktop & Mobile client and orchestrator for Codex, Claude Code, OpenCode, Pi, Cursor, Grok, Antigravity, Kimi, Augment Code, Qwen, fully end-to-end encrypted",
+      "updated_at": "2026-10-31T20:19:16Z"
+    },
+    {
+      "repository": "Lucasmantou/mine",
+      "url": "https://github.com/Lucasmantou/mine",
+      "default_branch": "master",
+      "archived": false,
+      "license": "MIT",
+      "description": "Mine — turn your own computer into a phone-controlled AI agent. Open-source, self-hosted alternative to Muse-style personal agents, built on ZCode.",
+      "updated_at": "2026-10-30T01:28:32Z"
+    },
+    {
+      "repository": "farion1231/cc-switch",
+      "url": "https://github.com/farion1231/cc-switch",
+      "default_branch": "main",
+      "archived": false,
+      "license": "MIT",
+      "description": "A cross-platform desktop All-in-One assistant for Claude Code, Codex, OpenCode,DeepSeek Harness and more. Only official website: ccswitch.io",
+      "updated_at": "2026-10-31T20:11:56Z"
+    },
+    {
+      "repository": "better-auth/better-auth",
+      "url": "https://github.com/better-auth/better-auth",
+      "default_branch": "main",
+      "archived": false,
+      "license": "MIT",
+      "description": "The most comprehensive authentication framework",
+      "updated_at": "2026-10-31T19:59:46Z"
+    },
+    {
+      "repository": "goauthentik/authentik",
+      "url": "https://github.com/goauthentik/authentik",
+      "default_branch": "main",
+      "archived": false,
+      "license": "NOASSERTION",
+      "description": "The authentication glue you need.",
+      "updated_at": "2026-10-31T18:51:14Z"
+    },
+    {
+      "repository": "DIYgod/RSSHub",
+      "url": "https://github.com/DIYgod/RSSHub",
+      "default_branch": "master",
+      "archived": false,
+      "license": "AGPL-3.0",
+      "description": "🧡 Everything is RSSible",
+      "updated_at": "2026-10-31T19:04:57Z"
+    },
+    {
+      "repository": "FreshRSS/FreshRSS",
+      "url": "https://github.com/FreshRSS/FreshRSS",
+      "default_branch": "edge",
+      "archived": false,
+      "license": "AGPL-3.0",
+      "description": "A free, self-hostable news aggregator…",
+      "updated_at": "2026-10-31T16:47:34Z"
+    },
+    {
+      "repository": "docmost/docmost",
+      "url": "https://github.com/docmost/docmost",
+      "default_branch": "main",
+      "archived": false,
+      "license": "AGPL-3.0",
+      "description": "Docmost is an open-source collaborative wiki and documentation software. It is an open-source alternative to Confluence and Notion.",
+      "updated_at": "2026-10-31T19:34:56Z"
+    },
+    {
+      "repository": "1Panel-dev/1Panel",
+      "url": "https://github.com/1Panel-dev/1Panel",
+      "default_branch": "dev-v2",
+      "archived": false,
+      "license": "GPL-3.0",
+      "description": "🔥 1Panel is a modern, open-source Linux server management panel and a lightweight AI management platform.",
+      "updated_at": "2026-10-31T19:42:38Z"
+    },
+    {
+      "repository": "coollabsio/coolify",
+      "url": "https://github.com/coollabsio/coolify",
+      "default_branch": "main",
+      "archived": false,
+      "license": "Apache-2.0",
+      "description": "An open-source, self-hostable PaaS alternative to Vercel, Heroku & Netlify that lets you easily deploy static sites, databases, full-stack applications and 360+ one-click services on your own servers.",
+      "updated_at": "2026-10-31T20:18:29Z"
+    },
+    {
+      "repository": "louislam/uptime-kuma",
+      "url": "https://github.com/louislam/uptime-kuma",
+      "default_branch": "master",
+      "archived": false,
+      "license": "MIT",
+      "description": "A fancy self-hosted monitoring tool",
+      "updated_at": "2026-10-31T19:14:50Z"
+    },
+    {
+      "repository": "henrygd/beszel",
+      "url": "https://github.com/henrygd/beszel",
+      "default_branch": "main",
+      "archived": false,
+      "license": "MIT",
+      "description": "Lightweight server monitoring with historical data, docker stats, and alerts.",
+      "updated_at": "2026-10-31T18:32:54Z"
+    },
+    {
+      "repository": "MetaCubeX/mihomo",
+      "url": "https://github.com/MetaCubeX/mihomo",
+      "default_branch": "main",
+      "archived": false,
+      "license": "MIT",
+      "description": "A simple Python Pydantic model for Honkai: Star Rail parsed data from the Mihomo API.",
+      "updated_at": "2026-10-31T20:06:16Z"
+    },
+    {
+      "repository": "SagerNet/sing-box",
+      "url": "https://github.com/SagerNet/sing-box",
+      "default_branch": "testing",
+      "archived": false,
+      "license": "NOASSERTION",
+      "description": "The universal proxy platform",
+      "updated_at": "2026-10-31T20:11:39Z"
+    },
+    {
+      "repository": "openai/codex",
+      "url": "https://github.com/openai/codex",
+      "default_branch": "main",
+      "archived": false,
+      "license": "Apache-2.0",
+      "description": "Lightweight coding agent that runs in your terminal",
+      "updated_at": "2026-10-31T20:19:23Z"
+    },
+    {
+      "repository": "anthropics/claude-code",
+      "url": "https://github.com/anthropics/claude-code",
+      "default_branch": "main",
+      "archived": false,
+      "description": "Claude Code is an agentic coding tool that lives in your terminal, understands your codebase, and helps you code faster by executing routine tasks, explaining complex code, and handling git workflows - all through natural language commands.",
+      "updated_at": "2026-10-31T20:14:43Z"
+    }
+  ]
+}

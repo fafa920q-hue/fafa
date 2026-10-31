@@ -1,0 +1,97 @@
+{
+  "observed_at_utc": "2026-10-31T20:41:11.438008+00:00",
+  "production_mutated": false,
+  "hosts": [
+    {
+      "host": "fafa888.uk",
+      "expected_ipv4": "129.212.229.254",
+      "dns": [
+        {
+          "resolver": "Cloudflare DoH",
+          "http_status": 200,
+          "dns_status": 0,
+          "addresses": [
+            "129.212.229.254"
+          ],
+          "matches_target": true
+        },
+        {
+          "resolver": "Google DoH",
+          "http_status": 200,
+          "dns_status": 0,
+          "addresses": [
+            "129.212.229.254"
+          ],
+          "matches_target": true
+        }
+      ],
+      "https": {
+        "status": 200,
+        "title": "FAFA ONE",
+        "headers": {
+          "strict-transport-security": "max-age=31536000",
+          "content-security-policy": "default-src 'self'; style-src 'self' 'unsafe-inline' https://unpkg.com; script-src 'self' 'unsafe-inline' https://unpkg.com; img-src 'self' data: blob: https://tile.openstreetmap.org https://*.tile.openstreetmap.org; form-action 'self'; frame-ancestors 'none'",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "referrer-policy": "same-origin",
+          "server": "envoy",
+          "via": "1.1 Caddy"
+        },
+        "request_elapsed_ms": 839,
+        "tls_scope": "system trust and session proxy; origin certificate not independently inspected"
+      },
+      "cloudflare_proxy_flag": "control-plane access unavailable; A records only"
+    },
+    {
+      "host": "a.fafa888.uk",
+      "expected_ipv4": "129.212.229.254",
+      "dns": [
+        {
+          "resolver": "Cloudflare DoH",
+          "http_status": 200,
+          "dns_status": 0,
+          "addresses": [
+            "129.212.229.254"
+          ],
+          "matches_target": true
+        },
+        {
+          "resolver": "Google DoH",
+          "http_status": 200,
+          "dns_status": 0,
+          "addresses": [
+            "129.212.229.254"
+          ],
+          "matches_target": true
+        }
+      ],
+      "https": {
+        "status": 200,
+        "title": "Admin Login",
+        "headers": {
+          "strict-transport-security": "max-age=31536000; includeSubDomains",
+          "content-security-policy": "default-src 'self'; style-src 'self' 'unsafe-inline' https://unpkg.com; script-src 'self' 'unsafe-inline' https://unpkg.com; img-src 'self' data: blob: https://tile.openstreetmap.org https://*.tile.openstreetmap.org; form-action 'self'; frame-ancestors 'none'",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "referrer-policy": "strict-origin-when-cross-origin",
+          "server": "envoy",
+          "via": "1.1 Caddy"
+        },
+        "request_elapsed_ms": 1726,
+        "tls_scope": "system trust and session proxy; origin certificate not independently inspected"
+      },
+      "cloudflare_proxy_flag": "control-plane access unavailable; A records only"
+    }
+  ],
+  "production_commit": null,
+  "server_authenticated": false,
+  "server_inventory": null,
+  "production_backup_verified": false,
+  "release_decision": "BLOCKED",
+  "notes": [
+    "No configured SSH identity, TCP grant or deployment credentials",
+    "Archived Python source does not match the publicly observed production frontend/health routes",
+    "DNS-to-IP matching does not prove server account ownership",
+    "No protected routes or user data were accessed; no production restore or deploy attempted"
+  ]
+}
