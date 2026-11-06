@@ -2,7 +2,19 @@
 
 玻璃质感的私有控制台：VPN 多源订阅、OpenAI API 多账户、SSH 授权工作区、位置预设与独立管理员后台。当前是开发交付版，**没有生产部署**。原仓库 Apache-2.0 许可证保留。
 
-## 约 5 分钟本地启动
+## Windows 最简启动（只需 Docker Desktop）
+
+1. 安装并打开 [Docker Desktop](https://www.docker.com/products/docker-desktop/)，等待 **Engine running**；按提示完成 WSL 更新或重启。使用 Linux containers。
+2. 在 GitHub 开发分支页面点击 **Code → Download ZIP**，完整解压到普通本地文件夹。
+3. 双击解压目录里的 **START-FAFA.cmd**。首次启动会下载和构建镜像，请保持窗口打开。成功后自动打开 <http://localhost:5173>；管理员端是 <http://localhost:5174>。
+
+无需安装 Git、Node.js 或 pnpm。脚本只在 `.env` 不存在时生成本地随机加密密钥，保留已有配置和数据库；不会购买资源或修改 DNS。此入口仅允许开发演示模式。之后双击同一文件可再次启动；Docker Desktop 需要保持运行。`cmd` 入口只为本次子进程设置 PowerShell 执行策略，不修改系统执行策略。
+
+如果 Docker 已安装但终端找不到命令，入口会自动查找默认安装路径。报错时保留窗口，查看最先出现的错误。企业代理需按下文提供受信 CA；不会关闭 TLS 验证。
+
+如果 Docker 显示 **Virtual Machine Platform is not enabled**，在管理员 PowerShell 执行 `Enable-WindowsOptionalFeature -Online -FeatureName VirtualMachinePlatform -All -NoRestart`，保存工作并重启 Windows，再打开 Docker Desktop。
+
+## 开发命令启动
 
 需要 Node.js 24、pnpm 11.25.0、Docker Compose。首次下载镜像和依赖的耗时取决于网络。
 

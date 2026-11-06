@@ -5,6 +5,26 @@ concurrency:
   cancel-in-progress: true
 permissions: { contents: read }
 jobs:
+  windows-launcher:
+    runs-on: windows-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate Windows PowerShell launcher syntax
+        shell: powershell
+        run: |
+          $parseTokens = $null
+          $parseErrors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Join-Path $PWD 'infra/scripts/start-windows.ps1'),
+            [ref]$parseTokens,
+            [ref]$parseErrors
+          ) | Out-Null
+          if ($parseErrors.Count -gt 0) {
+            $parseErrors | ForEach-Object { Write-Error $_.Message }
+            exit 1
+          }
+          Write-Host 'Windows PowerShell 5.1 syntax validation passed.'
   checks:
     timeout-minutes: 20
     runs-on: ubuntu-latest

@@ -78,4 +78,4 @@ services:
 volumes: { pg: {} }
 secrets:
   proxy_ca:
-    file: ${FAFA_BUILD_CA:-/etc/ssl/certs/ca-certificates.crt}
+    file: ${FAFA_BUILD_CA:-./extra-ca.pem}
