@@ -12,6 +12,8 @@
 
 如果 Docker 已安装但终端找不到命令，入口会自动查找默认安装路径。报错时保留窗口，查看最先出现的错误。企业代理需按下文提供受信 CA；不会关闭 TLS 验证。
 
+启动入口会将已启用的 Windows HTTP/HTTPS 系统代理传给 Docker CLI 的当前进程，解决镜像认证请求未继承 Desktop 代理的问题；已有进程代理优先，并保留本地地址绕过。不会修改 Windows 代理设置或输出代理凭据。使用 v2rayN 等本地代理时，请先开启系统代理并保持软件运行；Docker Desktop 自身的镜像拉取代理也须使用可用配置。
+
 如果 Docker 显示 **Virtual Machine Platform is not enabled**，在管理员 PowerShell 执行 `Enable-WindowsOptionalFeature -Online -FeatureName VirtualMachinePlatform -All -NoRestart`，保存工作并重启 Windows，再打开 Docker Desktop。
 
 ## 开发命令启动

@@ -8,6 +8,10 @@ Set-Location $projectRoot
 
 try {
     Write-Host 'FAFA ONE - Windows local demo' -ForegroundColor Cyan
+    . (Join-Path $PSScriptRoot 'windows-proxy.ps1')
+    if (Initialize-FafaProxyEnvironment) {
+        Write-Host 'Docker CLI will use the process or Windows system proxy. System settings are unchanged.'
+    }
     $dockerCommand = Get-Command docker.exe -ErrorAction SilentlyContinue
     $dockerExe = if ($dockerCommand) { $dockerCommand.Source } else {
         Join-Path $env:ProgramFiles 'Docker\Docker\resources\bin\docker.exe'
