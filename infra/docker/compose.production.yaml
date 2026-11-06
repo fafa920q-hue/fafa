@@ -25,7 +25,7 @@ services:
       retries: 30
   migrate:
     <<: *runtime
-    command: ['pnpm', 'db:migrate']
+    command: ['node', '--import', 'tsx', 'packages/db/src/migrate.ts']
     restart: 'no'
     healthcheck: { disable: true }
     depends_on: { postgres: { condition: service_healthy } }
@@ -34,9 +34,9 @@ services:
     depends_on: { migrate: { condition: service_completed_successfully } }
   worker:
     <<: *runtime
-    command: ['pnpm', 'dev:worker']
+    command: ['node', '--import', 'tsx', 'apps/worker/src/index.ts']
     healthcheck:
-      test: ['CMD', 'pnpm', 'exec', 'tsx', 'infra/scripts/worker-health.ts']
+      test: ['CMD', 'node', '--import', 'tsx', 'infra/scripts/worker-health.ts']
       interval: 15s
       timeout: 5s
       retries: 3

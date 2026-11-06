@@ -1,5 +1,6 @@
 name: fafa-one-dev
 x-runtime: &runtime
+  image: fafa-one-dev-runtime:local
   build:
     context: ../..
     dockerfile: infra/docker/Dockerfile
@@ -32,12 +33,12 @@ services:
       retries: 30
   migrate:
     <<: *runtime
-    command: ['pnpm', 'db:migrate']
+    command: ['node', '--import', 'tsx', 'packages/db/src/migrate.ts']
     healthcheck: { disable: true }
     depends_on: { postgres: { condition: service_healthy } }
   seed:
     <<: *runtime
-    command: ['pnpm', 'db:seed']
+    command: ['node', '--import', 'tsx', 'packages/db/src/seed.ts']
     healthcheck: { disable: true }
     depends_on: { migrate: { condition: service_completed_successfully } }
   api:
@@ -45,9 +46,9 @@ services:
     depends_on: { seed: { condition: service_completed_successfully } }
   worker:
     <<: *runtime
-    command: ['pnpm', 'dev:worker']
+    command: ['node', '--import', 'tsx', 'apps/worker/src/index.ts']
     healthcheck:
-      test: ['CMD', 'pnpm', 'exec', 'tsx', 'infra/scripts/worker-health.ts']
+      test: ['CMD', 'node', '--import', 'tsx', 'infra/scripts/worker-health.ts']
       interval: 15s
       timeout: 5s
       retries: 3

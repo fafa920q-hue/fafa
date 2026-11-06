@@ -5,7 +5,9 @@ set -euo pipefail
 command -v age >/dev/null
 command -v pg_dump >/dev/null
 umask 077
-mkdir -p backups
-backup_path="backups/fafa-$(date -u +%Y%m%dT%H%M%SZ).dump.age"
-pg_dump --dbname="$DATABASE_URL" --format=custom --no-owner | age -r "$AGE_RECIPIENT" -o "$backup_path"
+backup_directory="${BACKUP_DIRECTORY:-backups}"
+mkdir -p "$backup_directory"
+backup_path="$(mktemp "$backup_directory/fafa-$(date -u +%Y%m%dT%H%M%SZ)-XXXXXX.dump.age")"
+# The wrapper injects libpq variables without exposing a connection URL in process arguments.
+node "$(dirname "$0")/pg-command.mjs" DATABASE_URL pg_dump --format=custom --no-owner | age -r "$AGE_RECIPIENT" -o "$backup_path"
 printf '加密备份完成：%s\n' "$backup_path"

@@ -197,6 +197,12 @@ function UserManagement() {
                         >
                           撤销会话
                         </button>
+                        <button
+                          disabled={u.role === 'Owner'}
+                          onClick={() => setAction({ user: u, type: 'quota' })}
+                        >
+                          节点额度
+                        </button>
                         <select
                           aria-label={`修改 ${u.name} 角色`}
                           value={u.role}

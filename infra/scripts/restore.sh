@@ -9,4 +9,11 @@ if [[ "${CONFIRM_RESTORE:-}" != 'RESTORE_TO_NEW_DATABASE' ]]; then
 fi
 command -v age >/dev/null
 command -v pg_restore >/dev/null
-age -d -i "$AGE_IDENTITY_FILE" "$1" | pg_restore --dbname="$RESTORE_DATABASE_URL" --no-owner --exit-on-error
+command -v psql >/dev/null
+existing_tables="$(node "$(dirname "$0")/pg-command.mjs" RESTORE_DATABASE_URL psql -X -v ON_ERROR_STOP=1 -Atc "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname NOT IN ('pg_catalog','information_schema') AND n.nspname NOT LIKE 'pg_toast%' AND c.relkind IN ('r','p','v','m','S','f')")"
+if [[ "$existing_tables" != '0' ]]; then
+  echo '目标数据库不是空库，已拒绝恢复。' >&2
+  exit 1
+fi
+# Single transaction prevents partially restored state on schema/data errors.
+age -d -i "$AGE_IDENTITY_FILE" "$1" | node "$(dirname "$0")/pg-command.mjs" RESTORE_DATABASE_URL pg_restore --no-owner --exit-on-error --single-transaction

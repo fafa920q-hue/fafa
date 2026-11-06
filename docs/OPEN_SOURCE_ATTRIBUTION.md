@@ -1,6 +1,6 @@
 # 开源引用与许可
 
-核查日期：2026-11-05，以安装包元数据与随包 LICENSE 为依据；直接依赖全部锁定确切版本。保留项目原 Apache-2.0 LICENSE。上游原始声明汇总见 THIRD_PARTY_NOTICES.txt；发布时须随分发物保留。
+核查日期：2026-11-06，以安装包元数据与随包 LICENSE 为依据；直接依赖全部锁定确切版本。保留项目原 Apache-2.0 LICENSE。上游原始声明汇总见 THIRD_PARTY_NOTICES.txt；发布时须随分发物保留。
 
 | 依赖                      | 锁定版本 | 许可证       | 上游                                                             | 修改范围       |
 | ------------------------- | -------- | ------------ | ---------------------------------------------------------------- | -------------- |
@@ -47,4 +47,4 @@
 
 未复制 Sub-Store、sing-box、SubHub、metacubexd 或 Codex 源码，不引入 AGPL/GPL 核心代码；订阅适配层为独立实现，仅支持文档已列格式。xterm.js 提供前端终端，SSH 安全由本项目负责。Google 官方库验证 ID Token；OpenAI 官方 SDK 执行 API 请求，不代表取得 ChatGPT 托管登录或 Codex Cloud 控制 API 授权。
 
-minimatch 因 GHSA-g3hv-75wg-m249 统一覆盖至 11.0.4，已回归 lint、测试与构建。ssh2/cpu-features 可选原生加速构建关闭，使用 JS 回退；esbuild 安装构建脚本明确允许。系统字体，无外部字体追踪。
+minimatch 因 GHSA-g3hv-75wg-m249 统一覆盖至 11.0.4，glob 因 GHSA-3g3m-2fjr-6pw4 覆盖至 14.0.3。修复后执行依赖审计与回归检查。ssh2/cpu-features 可选原生加速构建关闭，使用 JS 回退；esbuild 安装构建脚本明确允许。系统字体，无外部字体追踪。

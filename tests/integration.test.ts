@@ -404,4 +404,108 @@ describe('真实数据库 API 闭环', () => {
     ).toBe(200);
     expect((await send(2, '/api/me')).statusCode).toBe(401);
   });
+  it('20 人席位并发激活与逐用户资源隔离', async () => {
+    const [previous] =
+      await sql`select value from settings where key='seat_limit'`;
+    const [initial] =
+      await sql`select count(*)::int as count from users where deleted_at is null`;
+    expect(initial.count).toBeLessThan(20);
+    await sql`update settings set value='20' where key='seat_limit'`;
+    try {
+      const contenders = Array.from({ length: 21 - initial.count }, () => ({
+        sub: token(),
+        email: token() + '@example.invalid',
+        email_verified: true,
+      }));
+      for (const payload of contenders) {
+        expect(
+          (
+            await send(0, '/api/admin/invitations', 'POST', {
+              email: payload.email,
+              role: 'Member',
+            })
+          ).statusCode,
+        ).toBe(200);
+      }
+      const results = await Promise.allSettled(
+        contenders.map((payload) => activateGoogle(payload)),
+      );
+      const accepted = results.filter(
+        (
+          r,
+        ): r is PromiseFulfilledResult<
+          Awaited<ReturnType<typeof activateGoogle>>
+        > => r.status === 'fulfilled',
+      );
+      accepted.forEach((r) => ids.push(r.value.id as any));
+      expect(accepted).toHaveLength(20 - initial.count);
+      const rejected = results.filter(
+        (r): r is PromiseRejectedResult => r.status === 'rejected',
+      );
+      expect(rejected).toHaveLength(1);
+      expect(rejected[0].reason).toMatchObject({ code: 'SEAT_LIMIT' });
+      const [count] =
+        await sql`select count(*)::int as count from users where deleted_at is null`;
+      expect(count.count).toBe(20);
+      const participants = await Promise.all(
+        accepted.map(async ({ value: user }) => {
+          const session = await createSession(user);
+          const headers = {
+            origin,
+            cookie: `fafa_session=${session.raw}`,
+            'x-csrf-token': session.csrf,
+          };
+          const r = await app.inject({
+            method: 'POST',
+            url: '/api/location_presets',
+            headers,
+            payload: { name: '独立用户位置', latitude: 1, longitude: 2 },
+          });
+          expect(r.statusCode, r.body).toBe(200);
+          return { user, headers, resourceId: r.json().id };
+        }),
+      );
+      for (const participant of participants) {
+        const own = await app.inject({
+          url: '/api/location_presets/' + participant.resourceId,
+          headers: participant.headers,
+        });
+        expect(own.statusCode).toBe(200);
+        const reads = await Promise.all(
+          participants
+            .filter((p) => p.user.id !== participant.user.id)
+            .map((other) =>
+              app.inject({
+                url: '/api/location_presets/' + other.resourceId,
+                headers: participant.headers,
+              }),
+            ),
+        );
+        expect(reads.every((r) => r.statusCode === 404)).toBe(true);
+        expect(
+          (
+            await app.inject({
+              url: '/api/admin/users',
+              headers: participant.headers,
+            })
+          ).statusCode,
+        ).toBe(403);
+      }
+    } finally {
+      await sql`update settings set value=${sql.json(previous.value)} where key='seat_limit'`;
+    }
+  });
+  it('敏感操作再认证、会话撤销与审计脱敏', async () => {
+    await sql`update sessions set reauthenticated_at=now()-interval '11 minutes' where owner_id=${ids[1]}`;
+    expect((await send(1, '/api/subscription/rotate', 'POST')).statusCode).toBe(
+      403,
+    );
+    await sql`update sessions set revoked_at=now() where owner_id=${ids[1]}`;
+    expect((await send(1, '/api/me')).statusCode).toBe(401);
+    const events =
+      await sql`select action,target_id from audit_events where owner_id in ${sql(ids)}`;
+    expect(JSON.stringify(events)).not.toMatch(
+      /fixture-pass|sk-test-fixture|trojan:\/\//,
+    );
+  });
 });
