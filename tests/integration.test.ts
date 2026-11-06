@@ -415,7 +415,9 @@ describe('真实数据库 API 闭环', () => {
       { origin: 'https://evil.invalid' },
     );
     expect(blockedStream.statusCode).toBe(403);
-    expect(blockedStream.headers['access-control-allow-origin']).toBeUndefined();
+    expect(
+      blockedStream.headers['access-control-allow-origin'],
+    ).toBeUndefined();
     const stream = await send(1, `/api/ai/tasks/${task.id}/events`);
     expect(stream.statusCode).toBe(200);
     expect(stream.headers['content-type']).toBe('text/event-stream');
