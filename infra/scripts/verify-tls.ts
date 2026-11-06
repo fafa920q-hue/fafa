@@ -200,7 +200,7 @@ try {
       const rotated = await fetch(base + '/api/subscription/rotate', {
         method: 'POST',
         credentials: 'include',
-        headers,
+        headers: { 'x-csrf-token': session.csrf },
       });
       const subscription = await rotated.json();
       const ws = await new Promise<{ opened: boolean; code: number }>(

@@ -50,7 +50,7 @@ describe('双域名契约', () => {
   it('生产 Compose 仅代理发布端口，数据卷与容器安全选项保留', () => {
     const source = readFileSync('infra/docker/compose.production.yaml', 'utf8');
     expect(source).not.toContain('API_DOMAIN');
-    const compose = parse(source);
+    const compose = parse(source, { merge: true });
     for (const [name, service] of Object.entries<any>(compose.services)) {
       if (name !== 'proxy') {
         expect(service.ports).toBeUndefined();
