@@ -151,7 +151,9 @@ try {
   const browserErrors: string[] = [];
   page.on('pageerror', (error) => browserErrors.push(error.message));
   page.on('console', (message) => {
-    if (/Content Security Policy|Mixed Content|CORS policy/i.test(message.text()))
+    if (
+      /Content Security Policy|Mixed Content|CORS policy/i.test(message.text())
+    )
       browserErrors.push(message.text());
   });
   let browserEvidence: Record<string, unknown>;
@@ -164,7 +166,9 @@ try {
       'https://fafa888.uk/auth/google',
     );
     await page.getByRole('button', { name: '管理员演示', exact: true }).click();
-    await page.getByRole('heading', { name: '管理概览', exact: true }).waitFor();
+    await page
+      .getByRole('heading', { name: '管理概览', exact: true })
+      .waitFor();
     const result = await page.evaluate(async () => {
       const base = 'https://fafa888.uk';
       const me = await fetch(base + '/api/me', { credentials: 'include' });
@@ -211,7 +215,9 @@ try {
           }, 10000);
           socket.onopen = () => {
             opened = true;
-            socket.send(JSON.stringify({ ticket: 'invalid', csrf: session.csrf }));
+            socket.send(
+              JSON.stringify({ ticket: 'invalid', csrf: session.csrf }),
+            );
           };
           socket.onclose = (event) => {
             clearTimeout(timeout);
@@ -253,9 +259,13 @@ try {
     );
     assert.equal(legacy.status, 200);
     await page.goto('https://fafa888.uk/servers');
-    await page.getByRole('heading', { name: '我的服务器', exact: true }).waitFor();
+    await page
+      .getByRole('heading', { name: '我的服务器', exact: true })
+      .waitFor();
     await page.goto('https://fafa888.uk/locations');
-    await page.getByRole('heading', { name: '位置中心', exact: true }).waitFor();
+    await page
+      .getByRole('heading', { name: '位置中心', exact: true })
+      .waitFor();
     assert.deepEqual(browserErrors, []);
     browserEvidence = {
       primarySession: result.me,
@@ -278,9 +288,12 @@ try {
     JSON.stringify(
       {
         verifiedAt: new Date().toISOString(),
-        scope: '隔离 CI 容器，生产双域名路由与临时内部 CA；浏览器域名仅映射 loopback，未修改 DNS 或生产',
-        oauthScope: '验证授权跳转、回调路由与无效 state 拒绝；未登录真实 Google 账户',
-        sshScope: '真实 WSS Upgrade 和无效票据拒绝；正向 SSH fixture 由 integration 测试覆盖，未连接生产 SSH',
+        scope:
+          '隔离 CI 容器，生产双域名路由与临时内部 CA；浏览器域名仅映射 loopback，未修改 DNS 或生产',
+        oauthScope:
+          '验证授权跳转、回调路由与无效 state 拒绝；未登录真实 Google 账户',
+        sshScope:
+          '真实 WSS Upgrade 和无效票据拒绝；正向 SSH fixture 由 integration 测试覆盖，未连接生产 SSH',
         browser: browserEvidence,
         certificateVerified: true,
         untrustedCertificateRejected: true,
@@ -297,7 +310,9 @@ try {
       2,
     ) + '\n',
   );
-  console.log('Caddy HTTPS、证书验证、双域名路径代理、管理端跨源会话、订阅下载与 WSS与 API 错误安全检查通过');
+  console.log(
+    'Caddy HTTPS、证书验证、双域名路径代理、管理端跨源会话、订阅下载与 WSS 与 API 错误安全检查通过',
+  );
 } finally {
   if (created) docker(['rm', '--force', '--volumes', container]);
   await rm(temporary, { recursive: true, force: true });

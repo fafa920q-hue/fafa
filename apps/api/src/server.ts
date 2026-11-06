@@ -522,31 +522,31 @@ export async function buildApp() {
     '/subscription/:token',
   ])
     app.get(
-    path,
-    { config: { rateLimit: { max: 20, timeWindow: '1 minute' } } },
-    async (req, reply) => {
-      const raw = params(req).token;
-      const [t] =
-        await sql`select t.* from subscription_tokens t join users u on u.id=t.owner_id where t.token_hash=${hash(raw)} and t.revoked_at is null and not u.disabled and u.deleted_at is null and u.subscription_enabled and t.data->>'enabled'='true'`;
-      if (!t) throw notFound();
-      const { format } = z
-        .object({
-          format: z
-            .enum(['mihomo', 'sing-box', 'uri', 'base64'])
-            .default('mihomo'),
-        })
-        .parse(req.query);
-      const nodes = await visibleNodes(t.owner_id);
-      reply.type(
-        format === 'sing-box'
-          ? 'application/json'
-          : format === 'mihomo'
-            ? 'text/yaml'
-            : 'text/plain',
-      );
-      return exportSubscription(nodes, format);
-    },
-  );
+      path,
+      { config: { rateLimit: { max: 20, timeWindow: '1 minute' } } },
+      async (req, reply) => {
+        const raw = params(req).token;
+        const [t] =
+          await sql`select t.* from subscription_tokens t join users u on u.id=t.owner_id where t.token_hash=${hash(raw)} and t.revoked_at is null and not u.disabled and u.deleted_at is null and u.subscription_enabled and t.data->>'enabled'='true'`;
+        if (!t) throw notFound();
+        const { format } = z
+          .object({
+            format: z
+              .enum(['mihomo', 'sing-box', 'uri', 'base64'])
+              .default('mihomo'),
+          })
+          .parse(req.query);
+        const nodes = await visibleNodes(t.owner_id);
+        reply.type(
+          format === 'sing-box'
+            ? 'application/json'
+            : format === 'mihomo'
+              ? 'text/yaml'
+              : 'text/plain',
+        );
+        return exportSubscription(nodes, format);
+      },
+    );
   app.get('/api/data-export', async (req) => {
     const result: Record<string, unknown> = {
       user: {

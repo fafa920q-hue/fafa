@@ -4,17 +4,17 @@
 
 ## 域名与路由
 
-| 入口 | 上游 / 行为 |
-| --- | --- |
-| https://fafa888.uk/api/* | Fastify api:4000，保留 /api 前缀 |
-| https://fafa888.uk/auth/* | Fastify，Google 回调固定 /auth/google/callback |
-| https://fafa888.uk/api/servers/:id/terminal | Fastify WebSocket，通过 wss:// 连接 |
-| https://fafa888.uk/api/ai/tasks/:id/events | Fastify SSE |
-| https://fafa888.uk/api/subscription/download/:token | Token 认证下载，无需浏览器会话 |
-| https://fafa888.uk/subscription/:token | 兼容已有订阅 URL，令牌及撤销语义不变 |
-| https://fafa888.uk/health 与 /ready | 保留内部健康路径的兼容入口，推荐 /api/health 与 /api/ready |
-| 主域名其他页面 | 独立 Web 构建 |
-| https://a.fafa888.uk | 独立 Admin React 构建；后端路径返回 404，不回退 SPA |
+| 入口                                                | 上游 / 行为                                                |
+| --------------------------------------------------- | ---------------------------------------------------------- |
+| https://fafa888.uk/api/*                            | Fastify api:4000，保留 /api 前缀                           |
+| https://fafa888.uk/auth/*                           | Fastify，Google 回调固定 /auth/google/callback             |
+| https://fafa888.uk/api/servers/:id/terminal         | Fastify WebSocket，通过 wss:// 连接                        |
+| https://fafa888.uk/api/ai/tasks/:id/events          | Fastify SSE                                                |
+| https://fafa888.uk/api/subscription/download/:token | Token 认证下载，无需浏览器会话                             |
+| https://fafa888.uk/subscription/:token              | 兼容已有订阅 URL，令牌及撤销语义不变                       |
+| https://fafa888.uk/health 与 /ready                 | 保留内部健康路径的兼容入口，推荐 /api/health 与 /api/ready |
+| 主域名其他页面                                      | 独立 Web 构建                                              |
+| https://a.fafa888.uk                                | 独立 Admin React 构建；后端路径返回 404，不回退 SPA        |
 
 Caddy 使用互斥 `handle`，不使用会剥离前缀的 `handle_path`，不添加 /api。WebSocket / SSE 都在 /api 内，由 reverse_proxy 处理，不配置 SPA rewrite。未知后端路径返回后端错误，绝不能返回 index.html。
 

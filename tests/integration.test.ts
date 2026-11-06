@@ -1,6 +1,7 @@
 import { beforeAll, afterAll, describe, it, expect, vi } from 'vitest';
 import { randomUUID, generateKeyPairSync } from 'node:crypto';
 import { Server as SshServer } from 'ssh2';
+import { OAuth2Client } from 'google-auth-library';
 import { buildApp } from '../apps/api/src/server';
 import { sql } from '../packages/db/src';
 import { createSession, activateGoogle } from '../packages/auth/src';
@@ -105,13 +106,92 @@ describe('真实数据库 API 闭环', () => {
     expect(preflight.statusCode).toBe(204);
     expect(preflight.headers['access-control-allow-origin']).toBe(adminOrigin);
     expect(preflight.headers['access-control-allow-credentials']).toBe('true');
-    expect((await send(0, '/api/admin/users', 'GET', undefined, { origin: adminOrigin })).statusCode).toBe(200);
-    const evil = await send(1, '/api/location_presets', 'POST',
+    expect(
+      (
+        await send(0, '/api/admin/users', 'GET', undefined, {
+          origin: adminOrigin,
+        })
+      ).statusCode,
+    ).toBe(200);
+    const evil = await send(
+      1,
+      '/api/location_presets',
+      'POST',
       { name: '拒绝写入', latitude: 1, longitude: 2 },
-      { origin: 'https://evil.invalid' });
+      { origin: 'https://evil.invalid' },
+    );
     expect(evil.statusCode).toBe(403);
     expect(evil.headers['access-control-allow-origin']).toBeUndefined();
     expect(evil.json().code).toBe('CSRF');
+  });
+  it('生产 OAuth 回调与 host-only Secure 会话（Google SDK stub）', async () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    vi.stubEnv('COOKIE_DOMAIN', '');
+    vi.stubEnv('WEB_ORIGIN', 'https://fafa888.uk');
+    vi.stubEnv('ADMIN_ORIGIN', 'https://a.fafa888.uk');
+    vi.stubEnv('API_PUBLIC_URL', 'https://fafa888.uk');
+    vi.stubEnv(
+      'GOOGLE_REDIRECT_URI',
+      'https://fafa888.uk/auth/google/callback',
+    );
+    vi.stubEnv('GOOGLE_CLIENT_ID', 'fixture.apps.googleusercontent.com');
+    vi.stubEnv('GOOGLE_CLIENT_SECRET', 'fixture-not-a-real-secret');
+    const production = await buildApp();
+    const sub = token();
+    await sql`insert into google_identities(user_id,sub) values(${ids[0]},${sub})`;
+    try {
+      const begin = await production.inject('/auth/google');
+      expect(begin.statusCode).toBe(302);
+      const cookie = begin.cookies.find((c) => c.name === 'fafa_oidc')!;
+      expect(cookie.domain).toBeUndefined();
+      expect(cookie.secure).toBe(true);
+      expect(cookie.httpOnly).toBe(true);
+      const flow = JSON.parse(
+        unseal(JSON.parse(Buffer.from(cookie.value, 'base64url').toString())),
+      );
+      const exchange = vi
+        .spyOn(OAuth2Client.prototype, 'getToken')
+        .mockResolvedValue({ tokens: { id_token: 'fixture' } } as any);
+      vi.spyOn(OAuth2Client.prototype, 'verifyIdToken').mockResolvedValue({
+        getPayload: () => ({
+          sub,
+          email: 'fixture@example.invalid',
+          email_verified: true,
+          nonce: flow.nonce,
+        }),
+      } as any);
+      const callback = await production.inject({
+        url: '/auth/google/callback?state=' + flow.state + '&code=fixture',
+        headers: { cookie: 'fafa_oidc=' + cookie.value },
+      });
+      expect(callback.statusCode).toBe(302);
+      expect(callback.headers.location).toBe('https://fafa888.uk');
+      expect(exchange).toHaveBeenCalledWith({
+        code: 'fixture',
+        codeVerifier: flow.verifier,
+      });
+      const session = callback.cookies.find((c) => c.name === 'fafa_session')!;
+      expect(session.domain).toBeUndefined();
+      expect(session.secure).toBe(true);
+      expect(session.httpOnly).toBe(true);
+      expect(session.sameSite).toBe('Lax');
+      const admin = await production.inject({
+        url: '/api/admin/users',
+        headers: {
+          origin: 'https://a.fafa888.uk',
+          cookie: 'fafa_session=' + session.value,
+        },
+      });
+      expect(admin.statusCode).toBe(200);
+      expect(admin.headers['access-control-allow-origin']).toBe(
+        'https://a.fafa888.uk',
+      );
+      expect((await production.inject('/auth/config')).json().mock).toBe(false);
+    } finally {
+      await production.close();
+      vi.restoreAllMocks();
+      vi.unstubAllEnvs();
+    }
   });
   it('自有订阅创建、持久化、密钥不同节点保留', async () => {
     const r = await send(1, '/api/node_sources', 'POST', {
@@ -145,7 +225,9 @@ describe('真实数据库 API 闭环', () => {
     expect(path).not.toContain('/api/api/');
     const legacy = '/subscription/' + path.split('/').pop();
     expect((await app.inject(legacy)).statusCode).toBe(200);
-    expect((await app.inject('/api/subscription/profile')).statusCode).toBe(401);
+    expect((await app.inject('/api/subscription/profile')).statusCode).toBe(
+      401,
+    );
     const output = await app.inject(path + '?format=mihomo');
     expect(output.statusCode).toBe(200);
     expect(output.body).toContain('proxies:');

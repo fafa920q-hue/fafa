@@ -16,8 +16,10 @@ export function publicOrigin() {
   return url.origin;
 }
 export function googleRedirectUri() {
-  return process.env.GOOGLE_REDIRECT_URI ||
-    new URL('/auth/google/callback', publicOrigin()).toString();
+  return (
+    process.env.GOOGLE_REDIRECT_URI ||
+    new URL('/auth/google/callback', publicOrigin()).toString()
+  );
 }
 export function assertPublicUrls() {
   if (process.env.NODE_ENV !== 'production') return;
@@ -31,5 +33,7 @@ export function assertPublicUrls() {
     publicOrigin() !== web.origin ||
     googleRedirectUri() !== web.origin + '/auth/google/callback'
   )
-    throw Error('生产域名必须为 fafa888.uk 与 a.fafa888.uk，OAuth 回调必须使用主域名');
+    throw Error(
+      '生产域名必须为 fafa888.uk 与 a.fafa888.uk，OAuth 回调必须使用主域名',
+    );
 }

@@ -33,9 +33,12 @@ export function Codex() {
   }, [accounts.data, selected]);
   useEffect(() => {
     if (!task?.id || !['QUEUED', 'RUNNING'].includes(task.status)) return;
-    const events = new EventSource(backendUrl(`/api/ai/tasks/${task.id}/events`), {
-      withCredentials: true,
-    });
+    const events = new EventSource(
+      backendUrl(`/api/ai/tasks/${task.id}/events`),
+      {
+        withCredentials: true,
+      },
+    );
     events.onmessage = (e) => {
       const d = JSON.parse(e.data);
       setTask((t) => ({ ...t!, ...d }));

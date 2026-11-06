@@ -28,7 +28,10 @@ describe('双域名契约', () => {
     vi.stubEnv('WEB_ORIGIN', 'https://fafa888.uk');
     vi.stubEnv('ADMIN_ORIGIN', 'https://a.fafa888.uk');
     vi.stubEnv('API_PUBLIC_URL', 'https://fafa888.uk');
-    vi.stubEnv('GOOGLE_REDIRECT_URI', 'https://fafa888.uk/auth/google/callback');
+    vi.stubEnv(
+      'GOOGLE_REDIRECT_URI',
+      'https://fafa888.uk/auth/google/callback',
+    );
     expect(assertPublicUrls).not.toThrow();
     expect(publicOrigin()).toBe('https://fafa888.uk');
     vi.stubEnv('API_PUBLIC_URL', 'https://fafa888.uk/api');
@@ -38,7 +41,10 @@ describe('双域名契约', () => {
     vi.stubEnv('API_PUBLIC_URL', 'https://fafa888.uk');
     vi.stubEnv('GOOGLE_REDIRECT_URI', '');
     expect(googleRedirectUri()).toBe('https://fafa888.uk/auth/google/callback');
-    vi.stubEnv('GOOGLE_REDIRECT_URI', 'https://a.fafa888.uk/auth/google/callback');
+    vi.stubEnv(
+      'GOOGLE_REDIRECT_URI',
+      'https://a.fafa888.uk/auth/google/callback',
+    );
     expect(assertPublicUrls).toThrow();
   });
   it('生产 Compose 仅代理发布端口，数据卷与容器安全选项保留', () => {
@@ -53,8 +59,16 @@ describe('双域名契约', () => {
     }
     expect(compose.services.api.read_only).toBe(true);
     expect(compose.services.api.cap_drop).toEqual(['ALL']);
-    expect(compose.services.api.security_opt).toContain('no-new-privileges:true');
-    expect(compose.services.postgres.volumes).toContain('pg:/var/lib/postgresql/data');
-    expect(Object.keys(compose.volumes)).toEqual(['pg', 'caddy', 'caddy_config']);
+    expect(compose.services.api.security_opt).toContain(
+      'no-new-privileges:true',
+    );
+    expect(compose.services.postgres.volumes).toContain(
+      'pg:/var/lib/postgresql/data',
+    );
+    expect(Object.keys(compose.volumes)).toEqual([
+      'pg',
+      'caddy',
+      'caddy_config',
+    ]);
   });
 });
