@@ -407,6 +407,21 @@ describe('真实数据库 API 闭环', () => {
     const [stored] = await sql`select data from ai_tasks where id=${task.id}`;
     expect(stored.data.status).toBe('COMPLETED');
     expect(stored.data.output).toBe('真实适配器测试输出');
+    const blockedStream = await send(
+      1,
+      `/api/ai/tasks/${task.id}/events`,
+      'GET',
+      undefined,
+      { origin: 'https://evil.invalid' },
+    );
+    expect(blockedStream.statusCode).toBe(403);
+    expect(blockedStream.headers['access-control-allow-origin']).toBeUndefined();
+    const stream = await send(1, `/api/ai/tasks/${task.id}/events`);
+    expect(stream.statusCode).toBe(200);
+    expect(stream.headers['content-type']).toBe('text/event-stream');
+    expect(stream.headers['access-control-allow-origin']).toBe(origin);
+    expect(stream.body).toContain('真实适配器测试输出');
+
     expect(providerMock.create).toHaveBeenCalledWith(
       expect.objectContaining({
         store: false,

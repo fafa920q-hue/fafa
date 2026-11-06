@@ -10,7 +10,10 @@ const files = execFileSync(
 let failures = 0;
 for (const file of files) {
   if (!existsSync(file) || /\.(png|jpg|zip)$/.test(file)) continue;
-  if (/(^|\/)\.env(\.|$)/.test(file) && file !== '.env.example') {
+  if (
+    /(^|\/)\.env(\.|$)/.test(file) &&
+    !['.env.example', '.env.production.example'].includes(file)
+  ) {
     console.error('禁止提交环境秘密文件：' + file);
     failures++;
   }

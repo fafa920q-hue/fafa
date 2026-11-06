@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { sql, own, audit } from '../../../packages/db/src';
 import { AppError, notFound } from '../../../packages/shared/src';
-export async function registerAi(app: FastifyInstance) {
+export async function registerAi(app: FastifyInstance, origins: string[]) {
   app.post('/api/ai/select', async (req) => {
     const { accountId } = z.object({ accountId: z.uuid() }).parse(req.body);
     if (!(await own('ai_accounts', accountId, req.actor.id))) throw notFound();
@@ -66,6 +66,9 @@ export async function registerAi(app: FastifyInstance) {
     return { ok: true };
   });
   app.get('/api/ai/tasks/:id/events', async (req, reply) => {
+    const origin = req.headers.origin;
+    if (origin && !origins.includes(origin))
+      throw new AppError(403, 'ORIGIN', '来源不允许');
     const { id } = z.object({ id: z.uuid() }).parse(req.params);
     const [t] =
       await sql`select id from ai_tasks where id=${id} and owner_id=${req.actor.id}`;
@@ -75,8 +78,8 @@ export async function registerAi(app: FastifyInstance) {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-store',
       Connection: 'keep-alive',
-      'Access-Control-Allow-Origin':
-        req.headers.origin || process.env.WEB_ORIGIN!,
+      'Access-Control-Allow-Origin': origin || origins[0],
+      Vary: 'Origin',
       'Access-Control-Allow-Credentials': 'true',
       'X-Accel-Buffering': 'no',
     });

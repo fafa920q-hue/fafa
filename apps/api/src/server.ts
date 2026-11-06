@@ -567,7 +567,7 @@ export async function buildApp() {
     return { message: '删除请求已登记，请联系管理员核验并处理' };
   });
   await registerAdmin(app);
-  await registerAi(app);
+  await registerAi(app, origins);
   await registerSsh(app, origins);
   return app;
 }
