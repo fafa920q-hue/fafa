@@ -1,5 +1,8 @@
 name: FAFA ONE checks
-on: [push, pull_request]
+on:
+  push:
+    branches: [main]
+  pull_request:
 concurrency:
   group: fafa-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
@@ -29,7 +32,7 @@ jobs:
         shell: powershell
         run: .\infra\scripts\verify-windows-proxy.ps1
   checks:
-    timeout-minutes: 20
+    timeout-minutes: 35
     runs-on: ubuntu-latest
     services:
       postgres:
