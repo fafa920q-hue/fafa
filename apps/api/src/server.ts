@@ -92,6 +92,9 @@ export async function visibleNodes(owner: string) {
       ).slice(0, user.node_limit)
     : [];
 }
+function sharedCookieDomain() {
+  return process.env.COOKIE_DOMAIN ? { domain: process.env.COOKIE_DOMAIN } : {};
+}
 export async function buildApp() {
   const app = Fastify({
     logger: false,
@@ -198,9 +201,7 @@ export async function buildApp() {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
-      ...(process.env.COOKIE_DOMAIN
-        ? { domain: process.env.COOKIE_DOMAIN }
-        : {}),
+      ...sharedCookieDomain(),
       path: '/',
       maxAge: 604800,
     });
@@ -248,6 +249,7 @@ export async function buildApp() {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
         sameSite: 'lax',
+        ...sharedCookieDomain(),
         path: '/auth',
         maxAge: 600,
       },
@@ -281,7 +283,7 @@ export async function buildApp() {
     } catch {
       throw new AppError(403, 'OIDC_STATE', '登录验证已失效');
     }
-    reply.clearCookie('fafa_oidc', { path: '/auth' });
+    reply.clearCookie('fafa_oidc', { path: '/auth', ...sharedCookieDomain() });
     if (state !== flow.state || Date.now() - flow.at > 600000)
       throw new AppError(403, 'OIDC_STATE', '登录验证已失效');
     const client = google();
@@ -313,7 +315,7 @@ export async function buildApp() {
   }));
   app.post('/api/logout', async (req, reply) => {
     await sql`update sessions set revoked_at=now() where id=${req.actor.session_id}`;
-    reply.clearCookie('fafa_session', { path: '/' });
+    reply.clearCookie('fafa_session', { path: '/', ...sharedCookieDomain() });
     return { ok: true };
   });
   app.get(

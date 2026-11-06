@@ -4,7 +4,7 @@
     "passed": 46
   },
   "integrationTests": {
-    "passed": 15,
+    "passed": 16,
     "covers": [
       "20 人满额并发激活",
       "RBAC",
@@ -12,7 +12,8 @@
       "Token 轮换撤销",
       "凭据信封加密",
       "SSH 实际握手与指纹固定",
-      "审计不可修改"
+      "审计不可修改",
+      "跨 panel/admin Cookie 范围、PKCE 与退出清理"
     ]
   },
   "browserFullRound": {

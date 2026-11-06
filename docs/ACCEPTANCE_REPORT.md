@@ -13,7 +13,7 @@
 | lint / format / typecheck | 本地通过                                                                                                                          |
 | Web / Admin 构建          | 两个独立 Vite 产物构建通过；终端与页面按需加载                                                                                    |
 | unit                      | 46 项通过：5 协议 × 4 输出往返、完整身份去重、SSRF 地址/DNS、加密和生产开发登录门控                                               |
-| integration               | 15 项通过，使用独立 `_test` PostgreSQL，非生产数据                                                                                |
+| integration               | 16 项通过，使用独立 `_test` PostgreSQL，非生产数据                                                                                |
 | 20 人权限                 | 用户计数达到 20 后并发额外激活被拒绝；个人对象交叉读取 404、普通用户无管理权限、Viewer 写入拒绝                                   |
 | 其他安全路径              | CSRF、邀请/verified email、Google sub 绑定、Token 轮换撤销、凭据加密、再认证、会话撤销、审计不可修改                              |
 | SSH                       | 本地受控 SSH 服务器实际握手、指纹确认、变更拒绝、授权只读 WS 通道通过；不是公网用户服务器实连                                     |

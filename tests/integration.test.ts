@@ -4,7 +4,7 @@ import { Server as SshServer } from 'ssh2';
 import { buildApp } from '../apps/api/src/server';
 import { sql } from '../packages/db/src';
 import { createSession, activateGoogle } from '../packages/auth/src';
-import { token, seal } from '../packages/shared/src/crypto';
+import { token, seal, unseal, hash } from '../packages/shared/src/crypto';
 import { runAiTask, runSubscriptionJob } from '../apps/worker/src/jobs';
 vi.mock('../packages/subscription/src/network', async (importOriginal) => {
   const actual = await importOriginal<any>();
@@ -507,5 +507,51 @@ describe('真实数据库 API 闭环', () => {
     expect(JSON.stringify(events)).not.toMatch(
       /fixture-pass|sk-test-fixture|trojan:\/\//,
     );
+  });
+  it('跨 panel/admin 的 OIDC Cookie 范围、PKCE 与退出清理', async () => {
+    vi.stubEnv('COOKIE_DOMAIN', '.fafa.test');
+    vi.stubEnv('GOOGLE_CLIENT_ID', 'fixture.apps.googleusercontent.com');
+    vi.stubEnv('GOOGLE_CLIENT_SECRET', 'fixture-not-a-real-secret');
+    try {
+      const begin = await app.inject({
+        url: '/auth/google',
+        headers: { host: 'admin.fafa.test' },
+      });
+      expect(begin.statusCode).toBe(302);
+      const cookie = begin.cookies.find((c) => c.name === 'fafa_oidc')!;
+      expect(cookie.domain).toBe('.fafa.test');
+      expect(cookie.httpOnly).toBe(true);
+      const flow = JSON.parse(
+        unseal(JSON.parse(Buffer.from(cookie.value, 'base64url').toString())),
+      );
+      const authorization = new URL(String(begin.headers.location));
+      expect(authorization.searchParams.get('state')).toBe(flow.state);
+      expect(authorization.searchParams.get('nonce')).toBe(flow.nonce);
+      expect(authorization.searchParams.get('code_challenge_method')).toBe(
+        'S256',
+      );
+      expect(authorization.searchParams.get('code_challenge')).toBe(
+        Buffer.from(hash(flow.verifier), 'hex').toString('base64url'),
+      );
+      const callback = await app.inject({
+        url: '/auth/google/callback?state=wrong&code=fixture',
+        headers: {
+          host: 'panel.fafa.test',
+          cookie: 'fafa_oidc=' + cookie.value,
+        },
+      });
+      expect(callback.statusCode).toBe(403);
+      expect(callback.json().code).toBe('OIDC_STATE');
+      expect(callback.cookies.find((c) => c.name === 'fafa_oidc')?.domain).toBe(
+        '.fafa.test',
+      );
+      const logout = await send(3, '/api/logout', 'POST');
+      expect(logout.statusCode).toBe(200);
+      expect(
+        logout.cookies.find((c) => c.name === 'fafa_session')?.domain,
+      ).toBe('.fafa.test');
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 });

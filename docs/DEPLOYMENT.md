@@ -24,7 +24,7 @@
 
 不要求将任何秘密发到聊天。OpenAI Key 和 SSH Key 通过自己的面板 HTTPS 表单配置，不是服务器全局环境变量。Google 登录首次生产激活时不运行演示 seed；bootstrap sub 只有服务端配置能授予 Owner。
 
-OIDC 始终回到配置 WEB_ORIGIN；使用管理端时建议受控父域 Cookie，随后打开 admin 域名。若不希望共享父域 Cookie，应增设独立管理登录回调配置后再部署。SameSite=Lax、生产 Secure + HttpOnly；不要跨不受控站点共享 Cookie。
+OIDC 始终回到配置 WEB_ORIGIN；使用管理端时建议受控父域 Cookie，随后打开 admin 域名。若不希望共享父域 Cookie，应增设独立管理登录回调配置后再部署。会话与短期 OIDC flow Cookie 使用一致的 COOKIE_DOMAIN，退出/回调清理也保持相同作用域；已用无外部请求的 PKCE 与 Cookie 范围测试核验。SameSite=Lax、生产 Secure + HttpOnly；不要跨不受控站点共享 Cookie。
 
 ## 建议规模与网络
 

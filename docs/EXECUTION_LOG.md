@@ -9,7 +9,7 @@
 | glob / 席位 / 恢复补强     | f0b02e5 已推送                                                    |
 | Docker 共享产物 / 回滚说明 | eff804e 已推送                                                    |
 | glob                       | 唯一解析版本 14.0.3；完整依赖审计无已知漏洞                       |
-| 自动检查                   | lint、format、typecheck、46 项 unit、15 项 integration 通过       |
+| 自动检查                   | lint、format、typecheck、46 项 unit、16 项 integration 通过       |
 | 20 人席位                  | 并发激活额外账号被拒绝，逐用户对象隔离通过                        |
 | 加密备份与实际恢复         | 27 张表计数一致、凭据可解密、审计不可修改；非空库和缺少确认均拒绝 |
 | 全服务 / HTTPS / 四浏览器  | 收尾验证中，完成后以 ACCEPTANCE_REPORT.md 为准                    |
