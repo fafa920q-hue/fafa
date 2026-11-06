@@ -27,7 +27,9 @@ test('核心页面浅深色 WCAG A/AA 自动检查', async ({ page }, info) => {
       ]) {
         await page.goto(route);
         await page.waitForLoadState('networkidle');
-        await expect(page.getByRole('button', { name: '切换主题' })).toBeVisible();
+        await expect(
+          page.getByRole('button', { name: '切换主题' }),
+        ).toBeVisible();
         const result = await new AxeBuilder({ page })
           .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
           .analyze();
