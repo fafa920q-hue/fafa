@@ -263,7 +263,8 @@ export function Shell({
             <Brand />
           </div>
           <button
-            aria-label="搜索功能、节点、服务器…"
+            aria-label="搜索功能、节点、服务器… ⌘ K"
+            aria-keyshortcuts="Control+K Meta+K"
             className="search"
             onClick={() => setCommand(true)}
           >

@@ -33,3 +33,31 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with: { name: browser-evidence, path: 'docs/screenshots/' }
+  containers:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '24' }
+      - run: npm install -g pnpm@11.25.0
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec tsx infra/scripts/init-env.ts
+      - name: Build and start isolated development services
+        run: docker compose -f infra/docker/compose.dev.yaml up --build -d --wait --wait-timeout 120
+      - name: Verify Caddy HTTPS and API boundaries
+        run: pnpm verify:tls
+      - name: Retain service health evidence
+        if: always()
+        run: |
+          mkdir -p docs/evidence
+          docker compose -f infra/docker/compose.dev.yaml ps --all --format json > docs/evidence/compose.json
+          docker compose -f infra/docker/compose.dev.yaml logs --tail=50 > /tmp/fafa-compose.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: container-evidence
+          path: docs/evidence/
+      - name: Stop test services, preserve production resources
+        if: always()
+        run: docker compose -f infra/docker/compose.dev.yaml down

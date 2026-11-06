@@ -5,7 +5,11 @@ export default defineConfig({
   workers: 1,
   timeout: 60000,
   expect: { timeout: 10000 },
-  reporter: [['list'], ['html', { open: 'never' }]],
+  reporter: [
+    ['list'],
+    ['html', { open: 'never' }],
+    ['json', { outputFile: 'docs/evidence/playwright.json' }],
+  ],
   use: { baseURL: 'http://localhost:5173', trace: 'retain-on-failure' },
   webServer: {
     command: 'pnpm dev',

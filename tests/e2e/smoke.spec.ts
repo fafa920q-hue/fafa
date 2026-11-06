@@ -35,6 +35,7 @@ test('所有用户页面、真实位置写入与未配置能力说明', async ({
   await expect(page.getByText('暂不支持 · 不会重启生效')).toBeVisible();
 });
 test('手机与桌面各宽度无横向溢出、暗色及键盘导航', async ({ page }, info) => {
+  test.setTimeout(120000);
   await login(page);
   for (const width of [320, 375, 390, 430, 768, 1024, 1440, 1920]) {
     await page.setViewportSize({ width, height: 900 });
@@ -68,16 +69,19 @@ test('手机与桌面各宽度无横向溢出、暗色及键盘导航', async ({
   await page.screenshot({
     path: `docs/screenshots/mobile-dark-${info.project.name}.png`,
     fullPage: true,
+    animations: 'disabled',
   });
   await page.getByRole('button', { name: '切换主题' }).click();
   await page.screenshot({
     path: `docs/screenshots/mobile-${info.project.name}.png`,
     fullPage: true,
+    animations: 'disabled',
   });
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.screenshot({
     path: `docs/screenshots/desktop-${info.project.name}.png`,
     fullPage: true,
+    animations: 'disabled',
   });
   await page.getByRole('button', { name: '搜索功能、节点、服务器…' }).click();
   await page.getByRole('textbox', { name: '搜索页面名称' }).fill('位置');
