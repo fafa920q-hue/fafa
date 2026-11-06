@@ -62,7 +62,13 @@ jobs:
       - run: pnpm test:e2e
       - uses: actions/upload-artifact@v4
         if: always()
-        with: { name: browser-evidence, path: 'docs/screenshots/' }
+        with:
+          name: browser-evidence
+          path: |
+            docs/screenshots/
+            docs/evidence/playwright.json
+            docs/AXE_REPORT.json
+            test-results/
   containers:
     runs-on: ubuntu-latest
     timeout-minutes: 20
