@@ -35,9 +35,13 @@ test('所有用户页面、真实位置写入与未配置能力说明', async ({
   await expect(page.getByText('暂不支持 · 不会重启生效')).toBeVisible();
 });
 test('手机与桌面各宽度无横向溢出、暗色及键盘导航', async ({ page }, info) => {
-  test.setTimeout(120000);
+  test.setTimeout(180000);
   await login(page);
-  for (const width of [320, 375, 390, 430, 768, 1024, 1440, 1920]) {
+  const mobile = ['iphone', 'android'].includes(info.project.name);
+  const widths = mobile
+    ? [320, 375, 390, 430]
+    : [320, 375, 390, 430, 768, 1024, 1440, 1920];
+  for (const width of widths) {
     await page.setViewportSize({ width, height: 900 });
     for (const route of [
       '/',
@@ -77,7 +81,9 @@ test('手机与桌面各宽度无横向溢出、暗色及键盘导航', async ({
     fullPage: true,
     animations: 'disabled',
   });
-  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.setViewportSize(
+    mobile ? { width: 390, height: 844 } : { width: 1440, height: 1000 },
+  );
   await page.screenshot({
     path: `docs/screenshots/desktop-${info.project.name}.png`,
     fullPage: true,

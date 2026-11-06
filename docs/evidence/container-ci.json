@@ -1,0 +1,24 @@
+{
+  "verifiedAt": "2026-11-06T02:31:52.996Z",
+  "environment": "GitHub Actions ubuntu-latest（独立 CI；非生产）",
+  "commit": "44355e11dc6520a9a98546acff39d5cc105f1503",
+  "runId": 42150478474,
+  "jobId": 127672244206,
+  "conclusion": "success",
+  "runUrl": "https://github.com/fafa920q-hue/fafa/actions/runs/42150478474",
+  "artifactUrl": "https://github.com/fafa920q-hue/fafa/actions/runs/42150478474/artifacts/13471709433",
+  "composeBuildAndHealthPassed": true,
+  "services": [
+    "postgres",
+    "migrate（退出 0）",
+    "seed（退出 0）",
+    "api",
+    "worker",
+    "web",
+    "admin"
+  ],
+  "httpsAndProxyAssertionsPassed": true,
+  "tlsVerificationScript": "infra/scripts/verify-tls.ts",
+  "dnsChanged": false,
+  "productionDeployed": false
+}

@@ -1,0 +1,41 @@
+{
+  "recordedAt": "2026-11-06T02:44:34.395475+00:00",
+  "unitTests": {
+    "passed": 46
+  },
+  "integrationTests": {
+    "passed": 15,
+    "covers": [
+      "20 人满额并发激活",
+      "RBAC",
+      "跨用户 404",
+      "Token 轮换撤销",
+      "凭据信封加密",
+      "SSH 实际握手与指纹固定",
+      "审计不可修改"
+    ]
+  },
+  "browserFullRound": {
+    "startTime": "2026-11-06T02:30:30.915Z",
+    "duration": 581955.858,
+    "expected": 25,
+    "skipped": 4,
+    "unexpected": 1,
+    "flaky": 0
+  },
+  "targetedRetest": {
+    "project": "iphone",
+    "case": "手机与桌面各宽度无横向溢出、暗色及键盘导航",
+    "passed": true,
+    "command": "PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS=1 node node_modules/@playwright/test/cli.js test tests/e2e/smoke.spec.ts --project=iphone --grep 手机与桌面",
+    "evidence": "固定对话框到视口并保持搜索结果区尺寸后，原生 locator.click 复测通过（1.9m）；没有使用 force 或跳过动作断言"
+  },
+  "effectiveBrowserResult": {
+    "passed": 26,
+    "skipped": 4,
+    "unresolved": 0,
+    "note": "25 项完整轮次通过 + 1 项失败修复后复测通过；不表示原始整轮一次性全绿。4 个跳过为其他引擎重复的 axe 审计，axe 在 Chromium 覆盖 6 页面 × 2 主题 × 2 宽度。"
+  },
+  "realIphoneSafari": "待人工真机验收，不以模拟器替代",
+  "externalServices": "无真实 OAuth / OpenAI / 公网 SSH 凭据，仍待实连验收"
+}

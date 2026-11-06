@@ -1,61 +1,145 @@
 [
   {
     "theme": "light",
+    "width": 390,
     "route": "/",
     "violations": []
   },
   {
     "theme": "light",
+    "width": 390,
     "route": "/subscriptions",
     "violations": []
   },
   {
     "theme": "light",
+    "width": 390,
     "route": "/codex",
     "violations": []
   },
   {
     "theme": "light",
+    "width": 390,
     "route": "/servers",
     "violations": []
   },
   {
     "theme": "light",
+    "width": 390,
     "route": "/locations",
     "violations": []
   },
   {
     "theme": "light",
+    "width": 390,
+    "route": "/account",
+    "violations": []
+  },
+  {
+    "theme": "light",
+    "width": 1280,
+    "route": "/",
+    "violations": []
+  },
+  {
+    "theme": "light",
+    "width": 1280,
+    "route": "/subscriptions",
+    "violations": []
+  },
+  {
+    "theme": "light",
+    "width": 1280,
+    "route": "/codex",
+    "violations": []
+  },
+  {
+    "theme": "light",
+    "width": 1280,
+    "route": "/servers",
+    "violations": []
+  },
+  {
+    "theme": "light",
+    "width": 1280,
+    "route": "/locations",
+    "violations": []
+  },
+  {
+    "theme": "light",
+    "width": 1280,
     "route": "/account",
     "violations": []
   },
   {
     "theme": "dark",
+    "width": 390,
     "route": "/",
     "violations": []
   },
   {
     "theme": "dark",
+    "width": 390,
     "route": "/subscriptions",
     "violations": []
   },
   {
     "theme": "dark",
+    "width": 390,
     "route": "/codex",
     "violations": []
   },
   {
     "theme": "dark",
+    "width": 390,
     "route": "/servers",
     "violations": []
   },
   {
     "theme": "dark",
+    "width": 390,
     "route": "/locations",
     "violations": []
   },
   {
     "theme": "dark",
+    "width": 390,
+    "route": "/account",
+    "violations": []
+  },
+  {
+    "theme": "dark",
+    "width": 1280,
+    "route": "/",
+    "violations": []
+  },
+  {
+    "theme": "dark",
+    "width": 1280,
+    "route": "/subscriptions",
+    "violations": []
+  },
+  {
+    "theme": "dark",
+    "width": 1280,
+    "route": "/codex",
+    "violations": []
+  },
+  {
+    "theme": "dark",
+    "width": 1280,
+    "route": "/servers",
+    "violations": []
+  },
+  {
+    "theme": "dark",
+    "width": 1280,
+    "route": "/locations",
+    "violations": []
+  },
+  {
+    "theme": "dark",
+    "width": 1280,
     "route": "/account",
     "violations": []
   }

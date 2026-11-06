@@ -1064,6 +1064,9 @@ svg {
   color: var(--danger);
 }
 dialog {
+  position: fixed;
+  inset: 0;
+  margin: auto;
   color: var(--text);
   border: 1px solid var(--line);
   border-radius: 22px;
@@ -1119,6 +1122,9 @@ dialog::backdrop {
   color: var(--danger);
 }
 .command-list {
+  height: min(360px, 45dvh);
+  overflow-y: auto;
+  align-content: start;
   display: grid;
   gap: 8px;
   margin-top: 16px;

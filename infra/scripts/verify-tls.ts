@@ -140,6 +140,6 @@ try {
   );
   console.log('Caddy HTTPS、证书验证、三端反向代理与 API 错误安全检查通过');
 } finally {
-  if (created) docker(['rm', '--force', container]);
+  if (created) docker(['rm', '--force', '--volumes', container]);
   await rm(temporary, { recursive: true, force: true });
 }

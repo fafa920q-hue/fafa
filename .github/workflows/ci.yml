@@ -1,8 +1,12 @@
 name: FAFA ONE checks
 on: [push, pull_request]
+concurrency:
+  group: fafa-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
 permissions: { contents: read }
 jobs:
   checks:
+    timeout-minutes: 20
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -45,6 +49,12 @@ jobs:
       - run: pnpm exec tsx infra/scripts/init-env.ts
       - name: Build and start isolated development services
         run: docker compose -f infra/docker/compose.dev.yaml up --build -d --wait --wait-timeout 120
+      - name: Validate production Caddy configuration
+        run: >-
+          docker run --rm -i
+          -e PANEL_DOMAIN=panel.fafa.test -e ADMIN_DOMAIN=admin.fafa.test -e API_DOMAIN=api.fafa.test
+          caddy:2.10.2-alpine caddy adapt --config - --adapter caddyfile --validate
+          < infra/reverse-proxy/Caddyfile > /tmp/fafa-caddy-adapt.json
       - name: Verify Caddy HTTPS and API boundaries
         run: pnpm verify:tls
       - name: Retain service health evidence
