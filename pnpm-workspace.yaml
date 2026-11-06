@@ -1,0 +1,9 @@
+packages:
+  - apps/*
+  - packages/*
+allowBuilds:
+  esbuild: true
+  cpu-features: false
+  ssh2: false
+overrides:
+  minimatch: 11.0.4

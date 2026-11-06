@@ -1,0 +1,67 @@
+name: fafa-one
+x-runtime: &runtime
+  image: fafa-one-runtime:${IMAGE_TAG:?set IMAGE_TAG}
+  env_file: ../../.env.production
+  environment:
+    { NODE_ENV: production, DEV_MOCK_LOGIN: 'false', DEMO_MODE: 'false' }
+  restart: unless-stopped
+  security_opt: ['no-new-privileges:true']
+  cap_drop: [ALL]
+  read_only: true
+  tmpfs: ['/tmp']
+services:
+  postgres:
+    image: postgres:17.7-alpine
+    environment:
+      POSTGRES_DB: fafa
+      POSTGRES_USER: fafa
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set a strong password}
+    volumes: ['pg:/var/lib/postgresql/data']
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U fafa']
+      interval: 5s
+      timeout: 3s
+      retries: 30
+  migrate:
+    <<: *runtime
+    command: ['pnpm', 'db:migrate']
+    restart: 'no'
+    healthcheck: { disable: true }
+    depends_on: { postgres: { condition: service_healthy } }
+  api:
+    <<: *runtime
+    depends_on: { migrate: { condition: service_completed_successfully } }
+  worker:
+    <<: *runtime
+    command: ['pnpm', 'dev:worker']
+    healthcheck:
+      test: ['CMD', 'pnpm', 'exec', 'tsx', 'infra/scripts/worker-health.ts']
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    depends_on: { migrate: { condition: service_completed_successfully } }
+  web:
+    image: fafa-one-web:${IMAGE_TAG:?set IMAGE_TAG}
+    tmpfs: ['/config', '/data']
+    restart: unless-stopped
+  admin:
+    image: fafa-one-admin:${IMAGE_TAG:?set IMAGE_TAG}
+    tmpfs: ['/config', '/data']
+    restart: unless-stopped
+  proxy:
+    image: caddy:2.10.2-alpine
+    ports: ['80:80', '443:443', '443:443/udp']
+    environment:
+      PANEL_DOMAIN: ${PANEL_DOMAIN:?set domain}
+      ADMIN_DOMAIN: ${ADMIN_DOMAIN:?set domain}
+      API_DOMAIN: ${API_DOMAIN:?set domain}
+    volumes:
+      [
+        '../reverse-proxy/Caddyfile:/etc/caddy/Caddyfile:ro',
+        'caddy:/data',
+        'caddy_config:/config',
+      ]
+    restart: unless-stopped
+    depends_on: [api, web, admin]
+volumes: { pg: {}, caddy: {}, caddy_config: {} }

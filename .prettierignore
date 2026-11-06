@@ -1,0 +1,7 @@
+node_modules
+pnpm-lock.yaml
+dist
+reference_images
+docs/FAFA_ONE_Codex_Cloud_Master_Instruction.md
+playwright-report
+test-results

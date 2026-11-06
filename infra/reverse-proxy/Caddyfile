@@ -1,0 +1,10 @@
+# 环境变量必须使用自己拥有的域名；不要直接使用参考图示例域名。
+{$PANEL_DOMAIN} {
+ reverse_proxy web:8080
+}
+{$ADMIN_DOMAIN} {
+ reverse_proxy admin:8080
+}
+{$API_DOMAIN} {
+ reverse_proxy api:4000
+}

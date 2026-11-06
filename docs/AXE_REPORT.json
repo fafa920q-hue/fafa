@@ -1,0 +1,62 @@
+[
+  {
+    "theme": "light",
+    "route": "/",
+    "violations": []
+  },
+  {
+    "theme": "light",
+    "route": "/subscriptions",
+    "violations": []
+  },
+  {
+    "theme": "light",
+    "route": "/codex",
+    "violations": []
+  },
+  {
+    "theme": "light",
+    "route": "/servers",
+    "violations": []
+  },
+  {
+    "theme": "light",
+    "route": "/locations",
+    "violations": []
+  },
+  {
+    "theme": "light",
+    "route": "/account",
+    "violations": []
+  },
+  {
+    "theme": "dark",
+    "route": "/",
+    "violations": []
+  },
+  {
+    "theme": "dark",
+    "route": "/subscriptions",
+    "violations": []
+  },
+  {
+    "theme": "dark",
+    "route": "/codex",
+    "violations": []
+  },
+  {
+    "theme": "dark",
+    "route": "/servers",
+    "violations": []
+  },
+  {
+    "theme": "dark",
+    "route": "/locations",
+    "violations": []
+  },
+  {
+    "theme": "dark",
+    "route": "/account",
+    "violations": []
+  }
+]

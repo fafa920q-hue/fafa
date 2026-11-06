@@ -1,0 +1,35 @@
+name: FAFA ONE checks
+on: [push, pull_request]
+permissions: { contents: read }
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17.7-alpine
+        env:
+          {
+            POSTGRES_DB: fafa,
+            POSTGRES_USER: fafa,
+            POSTGRES_PASSWORD: fafa_dev_only,
+          }
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U fafa" --health-interval 5s
+          --health-timeout 3s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '24' }
+      - run: npm install -g pnpm@11.25.0
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec tsx infra/scripts/init-env.ts
+      - run: pnpm db:migrate && pnpm db:seed
+      - run: pnpm lint && pnpm format:check && pnpm typecheck
+      - run: pnpm test && pnpm test:integration && pnpm build
+      - run: pnpm security && pnpm audit --audit-level=moderate
+      - run: pnpm exec playwright install --with-deps chromium firefox webkit
+      - run: pnpm test:e2e
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: browser-evidence, path: 'docs/screenshots/' }
