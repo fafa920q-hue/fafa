@@ -17,10 +17,10 @@
 
 ## 尚未解决 / 上线前要求
 
-1. 没有生产服务器与真实凭据，Google / OpenAI / 公网 SSH 和客户端导入尚未实连验收。受控测试服务器和 SDK stub 只能证明实现逻辑。
+1. 目标服务器为 3.19.237.155；Google / OpenAI / 公网 SSH 和客户端导入须以真实部署后的验收记录为准。受控测试服务器和 SDK stub 只能证明实现逻辑。
 2. 交互 shell 是远程用户的完整权限，不能保证逐条危险命令二次审批或沙箱；默认保持 SSH_INTERACTIVE_ENABLED=false，生产进一步采用隔离账户和受控模板。
 3. Admin MFA / WebAuthn、细粒度每日 token 预算、每 Token 分布式下载限额、自动审计归档/保留清理、告警推送尚未完成。现有限流为进程内，适用于首期单 API 实例。
 4. append-only 对数据库超级用户无效。开发数据库用户可迁移；上线必须建立独立最小权限运行角色，禁止 DELETE/UPDATE audit、禁止 DDL，数据库不暴露公网。
 5. 无自动硬删除与自动备份调度；脚本须由运维在新数据库上恢复演练。没有专业渗透测试；规则扫描与依赖审计不等于完整安全认证。
 6. 不从用户网页搜集任何 ChatGPT 登录材料，不提供 iOS GPS 改写或伪造定位承诺。
-7. 设置 COOKIE_DOMAIN 时所有子域须受控，避免子域 Cookie 注入。API 只信任直接反向代理；未开启通用 trustProxy，部署多层代理前须配置精确可信网段。
+7. 新安装使用主域名 host-only Cookie，管理端带凭据访问主域名 API，CORS/CSRF 精确允许两个正式 Origin。升级保留已有 Cookie 作用域。设置 COOKIE_DOMAIN 时所有子域须受控，避免子域 Cookie 注入。API 只信任直接反向代理；未开启通用 trustProxy，部署多层代理前须配置精确可信网段。

@@ -38,6 +38,7 @@ import {
 import { registerSsh } from './ssh';
 import { registerAdmin } from './admin';
 import { registerAi } from './ai';
+import { publicOrigin } from '../../../packages/auth/src/urls';
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -154,7 +155,15 @@ export async function buildApp() {
       .header('cache-control', 'no-store')
       .header('x-robots-tag', 'noindex, nofollow')
       .header('referrer-policy', 'no-referrer');
-    if (!req.url.startsWith('/api/')) return;
+    // Public download tokens have their own authentication. Exempt only exact GET/HEAD routes.
+    const path = req.url.split('?')[0];
+    if (
+      ['GET', 'HEAD'].includes(req.method) &&
+      (['/api/health', '/api/ready'].includes(path) ||
+        /^\/api\/subscription\/download\/[^/]+$/.test(path))
+    )
+      return;
+    if (!path.startsWith('/api/')) return;
     const actor = await authenticate(req.cookies.fafa_session);
     if (!actor) throw new AppError(401, 'UNAUTHENTICATED', '请先登录');
     req.actor = actor;
@@ -186,6 +195,14 @@ export async function buildApp() {
       )
         throw new AppError(403, 'REAUTH_REQUIRED', '敏感操作需要重新登录');
     }
+  });
+  app.get('/api/health', async () => ({
+    status: 'ok',
+    demo: process.env.DEMO_MODE === 'true',
+  }));
+  app.get('/api/ready', async () => {
+    await sql`select 1`;
+    return { status: 'ready' };
   });
   app.get('/health', async () => ({
     status: 'ok',
@@ -490,7 +507,7 @@ export async function buildApp() {
     });
     await audit(req.actor.id, 'subscription.rotated', null, req.id);
     return {
-      url: `${process.env.API_PUBLIC_URL || 'http://localhost:4000'}/subscription/${raw}`,
+      url: `${publicOrigin()}/api/subscription/download/${raw}`,
       notice: '此链接仅显示一次，请妥善保存',
     };
   });
@@ -499,8 +516,13 @@ export async function buildApp() {
     await audit(req.actor.id, 'subscription.revoked');
     return { ok: true };
   });
-  app.get(
+  // Keep existing tokens and legacy URLs valid without redirecting secret URLs.
+  for (const path of [
+    '/api/subscription/download/:token',
     '/subscription/:token',
+  ])
+    app.get(
+    path,
     { config: { rateLimit: { max: 20, timeWindow: '1 minute' } } },
     async (req, reply) => {
       const raw = params(req).token;

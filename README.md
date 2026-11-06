@@ -1,6 +1,6 @@
 # FAFA ONE
 
-玻璃质感的私有控制台：VPN 多源订阅、OpenAI API 多账户、SSH 授权工作区、位置预设与独立管理员后台。当前是开发交付版，**没有生产部署**。原仓库 Apache-2.0 许可证保留。
+玻璃质感的私有控制台：VPN 多源订阅、OpenAI API 多账户、SSH 授权工作区、位置预设与独立管理员后台。正式架构为用户端 https://fafa888.uk、独立管理端 https://a.fafa888.uk，API 统一通过主域名 /api 访问；生产执行结果需以部署记录为准。原仓库 Apache-2.0 许可证保留。
 
 ## Windows 最简启动（只需 Docker Desktop）
 

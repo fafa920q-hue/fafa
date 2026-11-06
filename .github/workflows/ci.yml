@@ -56,6 +56,11 @@ jobs:
       - run: pnpm exec tsx infra/scripts/init-env.ts
       - run: pnpm db:migrate && pnpm db:seed
       - run: pnpm lint && pnpm format:check && pnpm typecheck
+      - name: Show formatting diff on failure
+        if: failure()
+        run: |
+          pnpm exec prettier --write infra/docker/compose.production.yaml .github/workflows/ci.yml infra/docker/compose.tls-test.yaml packages/ui/src/endpoints.ts apps/admin/vite.config.ts apps/web/vite.config.ts packages/ui/src/core.tsx apps/web/src/pages/Servers.tsx apps/web/src/pages/Codex.tsx apps/api/src/server.ts packages/auth/src/urls.ts packages/auth/src/index.ts package.json tests/domain.test.ts tests/integration.test.ts infra/scripts/verify-tls.ts docs/DEPLOYMENT.md docs/ARCHITECTURE.md docs/API.md docs/ROLLBACK.md README.md docs/SECURITY.md docs/DOMAIN_MIGRATION.md > /dev/null
+          git diff
       - run: pnpm test && pnpm test:integration && pnpm build
       - run: pnpm security && pnpm audit --audit-level=moderate
       - run: pnpm exec playwright install --with-deps chromium firefox webkit
@@ -74,13 +79,14 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec tsx infra/scripts/init-env.ts
       - name: Build and start isolated development services
-        run: docker compose -f infra/docker/compose.dev.yaml up --build -d --wait --wait-timeout 120
+        run: docker compose -f infra/docker/compose.dev.yaml -f infra/docker/compose.tls-test.yaml up --build -d --wait --wait-timeout 120
       - name: Validate production Caddy configuration
         run: >-
           docker run --rm -i
-          -e PANEL_DOMAIN=panel.fafa.test -e ADMIN_DOMAIN=admin.fafa.test -e API_DOMAIN=api.fafa.test
+          -e PANEL_DOMAIN=fafa888.uk -e ADMIN_DOMAIN=a.fafa888.uk
           caddy:2.10.2-alpine caddy adapt --config - --adapter caddyfile --validate
           < infra/reverse-proxy/Caddyfile > /tmp/fafa-caddy-adapt.json
+      - run: pnpm exec playwright install --with-deps chromium
       - name: Verify Caddy HTTPS and API boundaries
         run: pnpm verify:tls
       - name: Retain service health evidence

@@ -91,6 +91,28 @@ describe('真实数据库 API 闭环', () => {
     ).toBe(403);
     expect((await send(1, '/api/admin/users')).statusCode).toBe(403);
   });
+  it('管理端精确 CORS 预检与 CSRF 来源校验', async () => {
+    const adminOrigin = 'http://localhost:5174';
+    const preflight = await app.inject({
+      method: 'OPTIONS',
+      url: '/api/admin/users',
+      headers: {
+        origin: adminOrigin,
+        'access-control-request-method': 'GET',
+        'access-control-request-headers': 'x-csrf-token,content-type',
+      },
+    });
+    expect(preflight.statusCode).toBe(204);
+    expect(preflight.headers['access-control-allow-origin']).toBe(adminOrigin);
+    expect(preflight.headers['access-control-allow-credentials']).toBe('true');
+    expect((await send(0, '/api/admin/users', 'GET', undefined, { origin: adminOrigin })).statusCode).toBe(200);
+    const evil = await send(1, '/api/location_presets', 'POST',
+      { name: '拒绝写入', latitude: 1, longitude: 2 },
+      { origin: 'https://evil.invalid' });
+    expect(evil.statusCode).toBe(403);
+    expect(evil.headers['access-control-allow-origin']).toBeUndefined();
+    expect(evil.json().code).toBe('CSRF');
+  });
   it('自有订阅创建、持久化、密钥不同节点保留', async () => {
     const r = await send(1, '/api/node_sources', 'POST', {
       name: '真实配置测试',
@@ -119,6 +141,11 @@ describe('真实数据库 API 闭环', () => {
     const first = (await send(1, '/api/subscription/rotate', 'POST')).json()
       .url;
     const path = new URL(first).pathname;
+    expect(path).toMatch(/^\/api\/subscription\/download\//);
+    expect(path).not.toContain('/api/api/');
+    const legacy = '/subscription/' + path.split('/').pop();
+    expect((await app.inject(legacy)).statusCode).toBe(200);
+    expect((await app.inject('/api/subscription/profile')).statusCode).toBe(401);
     const output = await app.inject(path + '?format=mihomo');
     expect(output.statusCode).toBe(200);
     expect(output.body).toContain('proxies:');
@@ -128,6 +155,7 @@ describe('真实数据库 API 闭环', () => {
     await send(1, '/api/subscription/profile', 'PUT', { country: '' });
     await send(1, '/api/subscription/rotate', 'POST');
     expect((await app.inject(path)).statusCode).toBe(404);
+    expect((await app.inject(legacy)).statusCode).toBe(404);
     await send(1, '/api/subscription', 'DELETE');
   });
   it('共享资源只能由拥有者授权，撤销立即生效', async () => {

@@ -14,7 +14,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run tests/unit.test.ts",
+    "test": "vitest run tests/unit.test.ts tests/domain.test.ts",
     "test:integration": "tsx infra/scripts/integration.ts",
     "test:e2e": "playwright test",
     "build": "vite build --config apps/web/vite.config.ts && vite build --config apps/admin/vite.config.ts && tsc --noEmit",

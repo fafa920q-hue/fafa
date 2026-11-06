@@ -1,6 +1,6 @@
 # 回滚与恢复操作手册
 
-本项目没有生产部署记录。以下流程供以后在用户自己的新服务器上执行；本次只进行了独立测试数据库的加密备份与恢复，未改变生产 DNS、域名或服务器。
+目标为已有服务器 3.19.237.155。生产执行结果必须另行记录；CI 和独立测试数据库的成功不能视为生产上线。域名升级应同时保存并在需要时恢复旧 Caddyfile 与公开环境配置；不得恢复已取消的 API 子域名作为正式架构。
 
 ## 发布前保留项
 
@@ -15,15 +15,15 @@
 
 ```bash
 export IMAGE_TAG=已验证的旧镜像标签
-docker compose -f infra/docker/compose.production.yaml pull api worker web admin
-docker compose -f infra/docker/compose.production.yaml up -d --no-deps api worker web admin
+docker compose --env-file .env.production -f infra/docker/compose.production.yaml pull api worker web admin
+docker compose --env-file .env.production -f infra/docker/compose.production.yaml up -d --no-deps api worker web admin
 ```
 
 镜像来自自己的可信镜像仓库；示例默认使用本机镜像名，按实际 registry 配置。不要执行 migrate 服务的降级，不删除数据库卷。检查 api/worker health、用户登录、订阅导出、资源隔离和错误日志；失败时停止写入，转入数据库恢复流程。
 
 ## 需要恢复数据库时
 
-1. 暂停应用写入并停止 API / Worker：`docker compose -f infra/docker/compose.production.yaml stop api worker`。保留原数据库、数据卷与故障现场。
+1. 暂停应用写入并停止 API / Worker：`docker compose --env-file .env.production -f infra/docker/compose.production.yaml stop api worker`。保留原数据库、数据卷与故障现场。
 2. 创建全新的空数据库，不在原数据库上覆盖。安全注入 RESTORE_DATABASE_URL、AGE_IDENTITY_FILE，并设置 `CONFIRM_RESTORE=RESTORE_TO_NEW_DATABASE`。
 3. 执行 `bash infra/scripts/restore.sh 加密备份路径`。脚本先拒绝非空库，再以单个 PostgreSQL 事务恢复；不会执行 `--clean`。失败时不切换流量。
 4. 使用匹配的加密主密钥和兼容镜像连接恢复库，校验 readiness、数据计数、凭据解密、订阅 Token 和权限。记录备份时间与可能丢失的写入范围，不承诺零数据丢失。

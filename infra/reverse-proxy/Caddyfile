@@ -5,16 +5,25 @@
   X-Content-Type-Options nosniff
  }
 }
-# 环境变量必须使用自己拥有的域名；不要直接使用参考图示例域名。
 {$PANEL_DOMAIN} {
  import security_headers
- reverse_proxy web:8080
+ # Preserve /api: Fastify routes already contain this prefix.
+ @backend path /api /api/* /auth /auth/* /subscription /subscription/* /health /ready
+ handle @backend {
+  reverse_proxy api:4000
+ }
+ handle {
+  reverse_proxy web:8080
+ }
 }
 {$ADMIN_DOMAIN} {
  import security_headers
- reverse_proxy admin:8080
-}
-{$API_DOMAIN} {
- import security_headers
- reverse_proxy api:4000
+ # All backend traffic uses the primary origin; never serve the SPA here.
+ @backend path /api /api/* /auth /auth/* /subscription /subscription/* /health /ready
+ handle @backend {
+  respond "Use the primary origin" 404
+ }
+ handle {
+  reverse_proxy admin:8080
+ }
 }

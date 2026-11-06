@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import type { User } from '../../shared/src';
 import './style.css';
+import { backendUrl } from './endpoints';
 export type Row = { id: string; [key: string]: any };
 type Session = { user: User; csrf: string; demo: boolean };
 const Context = createContext<{
@@ -44,7 +45,7 @@ export async function api<T = any>(
   body?: unknown,
   csrf?: string,
 ): Promise<T> {
-  const response = await fetch(path, {
+  const response = await fetch(backendUrl(path), {
     method,
     credentials: 'include',
     headers: {
@@ -141,7 +142,7 @@ function Login({ onLogin }: { onLogin: (s: Session) => void }) {
         </p>
         <a
           className="button primary"
-          href="/auth/google"
+          href={backendUrl('/auth/google')}
           aria-disabled={!config?.google}
           onClick={(e) => {
             if (!config?.google) e.preventDefault();

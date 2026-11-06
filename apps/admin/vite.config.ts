@@ -1,6 +1,11 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
+  define: {
+    'import.meta.env.VITE_API_ORIGIN': JSON.stringify(
+      mode === 'production' ? 'https://fafa888.uk' : '',
+    ),
+  },
   root: 'apps/admin',
   plugins: [react()],
   server: {
@@ -12,4 +17,4 @@ export default defineConfig({
     },
   },
   build: { outDir: 'dist', emptyOutDir: true },
-});
+}));

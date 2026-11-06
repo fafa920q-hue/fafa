@@ -19,6 +19,7 @@ import {
   type Row,
   type Field,
 } from '../../../../packages/ui/src/core';
+import { terminalUrl } from '../../../../packages/ui/src/endpoints';
 const fields: Field[] = [
   { name: 'name', label: '备注名称', required: true },
   {
@@ -300,7 +301,7 @@ function TerminalView({ server, ticket }: { server: Row; ticket: string }) {
         term.open(ref.current!);
         fit.fit();
         const ws = new WebSocket(
-          `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/api/servers/${server.id}/terminal`,
+          terminalUrl(`/api/servers/${server.id}/terminal`, location.origin),
         );
         ws.onopen = () => {
           ws.send(JSON.stringify({ ticket, csrf: session.csrf }));

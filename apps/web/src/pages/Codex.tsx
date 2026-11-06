@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { backendUrl } from '../../../../packages/ui/src/endpoints';
 import { Code2, Plus, ExternalLink, Send, Square } from 'lucide-react';
 import {
   Card,
@@ -32,7 +33,7 @@ export function Codex() {
   }, [accounts.data, selected]);
   useEffect(() => {
     if (!task?.id || !['QUEUED', 'RUNNING'].includes(task.status)) return;
-    const events = new EventSource(`/api/ai/tasks/${task.id}/events`, {
+    const events = new EventSource(backendUrl(`/api/ai/tasks/${task.id}/events`), {
       withCredentials: true,
     });
     events.onmessage = (e) => {

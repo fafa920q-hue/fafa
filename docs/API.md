@@ -1,10 +1,10 @@
 # API
 
-统一错误：`{code,message,correlationId}`。REST 所有 /api 路径要求 Cookie 会话；写操作要求准确 Origin 与 x-csrf-token。凭据不会在读接口回显。UUID 无权访问返回 404。JSON 请求上限约 1 MiB。
+统一错误：`{code,message,correlationId}`。正式 API Origin 为 https://fafa888.uk，路由已包含 /api，客户端不得重复添加。REST /api 路径除 GET/HEAD /api/health、/api/ready 和 /api/subscription/download/:token 外要求 Cookie 会话；写操作要求准确 Origin 与 x-csrf-token。凭据不会在读接口回显。UUID 无权访问返回 404。JSON 请求上限约 1 MiB。
 
 | 路径                                                                | 方法               | 功能                                                                           |
 | ------------------------------------------------------------------- | ------------------ | ------------------------------------------------------------------------------ |
-| /health / /ready                                                    | GET                | 进程健康 / PostgreSQL readiness                                                |
+| /api/health / /api/ready（兼容 /health / /ready）                                                    | GET                | 进程健康 / PostgreSQL readiness                                                |
 | /auth/config                                                        | GET                | 非秘密能力开关                                                                 |
 | /auth/google / /auth/google/callback                                | GET                | Google code + PKCE OIDC                                                        |
 | /auth/dev                                                           | POST               | 仅显式 development 的固定 seed 角色登录                                        |
@@ -18,7 +18,7 @@
 | /api/node_sources/:id/refresh / /api/sync-runs                      | POST / GET         | 入队刷新 / 个人同步历史                                                        |
 | /api/subscription/rotate / /api/subscription                        | POST / DELETE      | 一次性回显新 URL / 撤销所有令牌                                                |
 | /api/subscription/profile                                           | GET / PUT          | 国家筛选配置                                                                   |
-| /subscription/:token?format=mihomo                                  | GET                | Token 导出，format 支持 mihomo / sing-box / uri / base64                       |
+| /api/subscription/download/:token?format=mihomo（兼容 /subscription/:token）                                  | GET                | Token 导出，format 支持 mihomo / sing-box / uri / base64                       |
 | /api/ai/select                                                      | POST               | {accountId}，仅本人账户                                                        |
 | /api/ai/tasks                                                       | GET / POST         | 个人任务 / {accountId,prompt,workspace}                                        |
 | /api/ai/tasks/:id/cancel / events                                   | POST / GET         | 取消 / SSE 持久快照                                                            |

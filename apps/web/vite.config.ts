@@ -3,6 +3,7 @@ import react from '@vitejs/plugin-react';
 export default defineConfig({
   root: 'apps/web',
   plugins: [react()],
+  define: { 'import.meta.env.VITE_API_ORIGIN': JSON.stringify('') },
   server: {
     port: 5173,
     proxy: {

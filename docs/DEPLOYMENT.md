@@ -1,56 +1,85 @@
-# 部署准备（尚未部署）
+# FAFA ONE 生产部署
 
-当前不购买服务器、收费账户，不变更 DNS。以下是将来在自己新购的机器上执行的准备流程，不得指向旧生产环境。
+目标为现有服务器 **3.19.237.155**，沿用现有数据库、卷、密钥及安全设置。正式域名仅有用户端 <https://fafa888.uk> 与独立管理端 <https://a.fafa888.uk>。不创建 API 子域名，不需要额外服务器。
 
-## 配置清单
+## 域名与路由
 
-| 配置                                     | 用途                                                                           |
-| ---------------------------------------- | ------------------------------------------------------------------------------ |
-| DATABASE_URL                             | 私网 PostgreSQL 连接；生产使用随机强密码，运行/迁移账号分离                    |
-| ENCRYPTION_KEY / ENCRYPTION_KEY_ID       | 32 字节随机 base64 主密钥与版本，独立 secret 存储                              |
-| ENCRYPTION_PREVIOUS_KEYS_JSON            | 可选轮换 key ring，受保护 JSON ID→base64                                       |
-| NODE_ENV / DEMO_MODE / DEV_MOCK_LOGIN    | 生产必须 production / false / false                                            |
-| WEB_ORIGIN / ADMIN_ORIGIN                | 精确 https://panel.你的域名 / https://admin.你的域名                           |
-| API_PUBLIC_URL                           | 客户端订阅 URL 的公共 https://api.你的域名                                     |
-| GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET  | 在你自己的 Google Cloud 项目配置 Web OIDC 客户端                               |
-| GOOGLE_REDIRECT_URI                      | 例如 https://panel.你的域名/auth/google/callback，必须在 Google 控制台精确登记 |
-| BOOTSTRAP_ADMIN_GOOGLE_SUB               | 可信渠道取得的首次 Owner Google sub，完成绑定后移除                            |
-| COOKIE_DOMAIN                            | 可选 .你的域名，使 panel/admin 共享已登录 Cookie；仅在所有子域受控时使用       |
-| SSH_ALLOWED_TARGETS                      | 精确逗号分隔 host:port；只允许拥有管理权的公网目标                             |
-| SSH_INTERACTIVE_ENABLED                  | 默认 false，仅理解远程完整 shell 风险后设置 true                               |
-| OPENAI_MODEL                             | 账户实际可用的 Responses 模型，默认 gpt-4.1-mini                               |
-| PANEL_DOMAIN / ADMIN_DOMAIN / API_DOMAIN | Caddy 三域名，不使用参考图域名                                                 |
-| AGE_RECIPIENT / AGE_IDENTITY_FILE        | 备份公钥 / 恢复私钥文件，私钥离线存储                                          |
+| 入口 | 上游 / 行为 |
+| --- | --- |
+| https://fafa888.uk/api/* | Fastify api:4000，保留 /api 前缀 |
+| https://fafa888.uk/auth/* | Fastify，Google 回调固定 /auth/google/callback |
+| https://fafa888.uk/api/servers/:id/terminal | Fastify WebSocket，通过 wss:// 连接 |
+| https://fafa888.uk/api/ai/tasks/:id/events | Fastify SSE |
+| https://fafa888.uk/api/subscription/download/:token | Token 认证下载，无需浏览器会话 |
+| https://fafa888.uk/subscription/:token | 兼容已有订阅 URL，令牌及撤销语义不变 |
+| https://fafa888.uk/health 与 /ready | 保留内部健康路径的兼容入口，推荐 /api/health 与 /api/ready |
+| 主域名其他页面 | 独立 Web 构建 |
+| https://a.fafa888.uk | 独立 Admin React 构建；后端路径返回 404，不回退 SPA |
 
-不要求将任何秘密发到聊天。OpenAI Key 和 SSH Key 通过自己的面板 HTTPS 表单配置，不是服务器全局环境变量。Google 登录首次生产激活时不运行演示 seed；bootstrap sub 只有服务端配置能授予 Owner。
+Caddy 使用互斥 `handle`，不使用会剥离前缀的 `handle_path`，不添加 /api。WebSocket / SSE 都在 /api 内，由 reverse_proxy 处理，不配置 SPA rewrite。未知后端路径返回后端错误，绝不能返回 index.html。
 
-OIDC 始终回到配置 WEB_ORIGIN；使用管理端时建议受控父域 Cookie，随后打开 admin 域名。若不希望共享父域 Cookie，应增设独立管理登录回调配置后再部署。会话与短期 OIDC flow Cookie 使用一致的 COOKIE_DOMAIN，退出/回调清理也保持相同作用域；已用无外部请求的 PKCE 与 Cookie 范围测试核验。SameSite=Lax、生产 Secure + HttpOnly；不要跨不受控站点共享 Cookie。
+用户构建固定使用相对 /api；管理构建固定使用 https://fafa888.uk 作为 API Origin，登录入口也指向主域名。开发 Vite 仍使用同源代理。本项目路由本身已经包含 /api，API_PUBLIC_URL **只能是 Origin，不得附加 /api**。
 
-## 建议规模与网络
+## 生产配置
 
-20 人起步可评估 2 vCPU / 4GB RAM / 40GB SSD 的面板机器，视并发 SSH、队列延迟、数据库增长和响应时间扩容；这不是性能实测容量保证。VPN 出口节点与面板 API 不是同一台必需机器，代理流量不应经此 API 转发。PostgreSQL 不映射公网端口，公网只开放 80/443，SSH 运维按自己的最小出口策略管理。
+模板见根目录 `.env.production.example`。升级时只调整下面的公开字段，删除旧的 API_DOMAIN 配置，不得用模板覆盖已有生产文件或重新生成密钥：
 
-需要公网 DNS 与 TLS 后自行执行（未在本任务执行）：
-
-1. 设置自己拥有的三域名，配置 Google OIDC 回调并将生产秘密写入 `.env.production`（chmod 600），设置不可预测 DB 密码。保留现有配置与备份。
-2. 构建并固定镜像标签（例如本 PR 的 commit SHA）：
-
-```bash
-docker build --secret id=proxy_ca,src=/etc/ssl/certs/ca-certificates.crt -f infra/docker/Dockerfile --target runtime -t fafa-one-runtime:YOUR_TAG .
-docker build --secret id=proxy_ca,src=/etc/ssl/certs/ca-certificates.crt -f infra/docker/Dockerfile --target web -t fafa-one-web:YOUR_TAG .
-docker build --secret id=proxy_ca,src=/etc/ssl/certs/ca-certificates.crt -f infra/docker/Dockerfile --target admin -t fafa-one-admin:YOUR_TAG .
+```dotenv
+NODE_ENV=production
+DEMO_MODE=false
+DEV_MOCK_LOGIN=false
+PANEL_DOMAIN=fafa888.uk
+ADMIN_DOMAIN=a.fafa888.uk
+WEB_ORIGIN=https://fafa888.uk
+ADMIN_ORIGIN=https://a.fafa888.uk
+API_PUBLIC_URL=https://fafa888.uk
+GOOGLE_REDIRECT_URI=https://fafa888.uk/auth/google/callback
 ```
 
-3. 使用受保护环境配置 IMAGE_TAG / POSTGRES_PASSWORD / 三域名后执行 `docker compose -f infra/docker/compose.production.yaml up -d`。迁移为一次性任务；API/Worker 非 root、只读根文件系统、drop capabilities、禁止权限提升。Caddy 静态服务监听 8080，外层 Caddy 终止 TLS。实际镜像发布与 DNS 修改不在本任务内。
-4. 检查 `/ready`、日志脱敏、Google 邀请激活、跨用户 404、真实订阅、API 任务、SSH 指纹/撤销；再做真机与 Lighthouse 验收。未达到上线验收前不要宣传正式上线。
-5. 使用非 superuser 运行角色，对 audit_events 只授 SELECT/INSERT，迁移角色单独保管。复核容器出口、主密钥注入、CSP 与反向代理日志，不记录订阅 URL 或 OAuth code。样例 Caddy 未启 access log。
+保留 DATABASE_URL、POSTGRES_PASSWORD、ENCRYPTION_KEY、ENCRYPTION_KEY_ID、旧 key ring、Google 客户端凭据、SSH 白名单及交互开关。API 生产启动会拒绝错误 Origin、HTTP 公共 URL 或错误 OAuth 回调。API_PORT 保持 4000，但不发布到宿主机；生产 Compose 只有 proxy 发布 80/443，PostgreSQL 与 API 均为 Docker 内部服务。
+
+Google Cloud 的现有 Web OAuth 客户端必须登记唯一回调 `https://fafa888.uk/auth/google/callback`；此项不是 DNS 记录。首次 Owner 绑定继续使用 BOOTSTRAP_ADMIN_GOOGLE_SUB，绑定后可移除，不运行演示 seed。不要发送客户端 Secret、SSH 私钥、会话 Cookie 或订阅令牌到聊天 / PR。
+
+Cookie 使用 HttpOnly、SameSite=Lax，生产 Secure。新安装默认 COOKIE_DOMAIN 留空：Cookie 属于主域名，管理端通过 credentials:include 向主域名发请求；无需把 Cookie 发给管理端静态站。升级时保留已有受控父域 COOKIE_DOMAIN，避免改变现有会话作用域；不要同时切换 Cookie 策略。清理 Cookie 与设置 Cookie 使用一致作用域。
+
+管理域名与主域名属于相同 HTTPS site，但属于不同 Origin。API 只允许上述两个精确 Origin，带凭据 CORS 不使用通配符；写请求仍要求 Origin + 会话 CSRF。管理端 CSP 允许主域名 HTTPS/WSS 连接，禁止 HTTP/WS 混合内容。管理权限及对象级隔离继续由 Fastify 校验。
+
+## 在现有服务器发布
+
+先通过现有可信 SSH / SSM 通道进入 3.19.237.155。检查部署目录、Compose 项目名和现有卷绑定，保留当前镜像 SHA/tag、Caddyfile、受保护环境文件及可恢复的加密数据库备份。本仓库不能自动得知服务器现有目录或凭据。
+
+1. 在现有 checkout 切换到 PR #2 的最新已验证提交。保留工作目录的本地生产配置；若有未提交修改先比较，不能用 reset --hard 覆盖。
+2. 仅调整上文公开配置。Compose 项目名 `fafa-one`、卷 pg/caddy/caddy_config 及 PostgreSQL 挂载保持不变；如果现有部署另有项目名或卷名，继续显式使用原项目名和原 override，不能创建新空数据库替换业务库。
+3. 设置 IMAGE_TAG 为待发布提交 SHA，通过现有受保护 .env.production 注入其余变量，顺序构建三个目标：
+
+```bash
+docker build -f infra/docker/Dockerfile --target runtime -t fafa-one-runtime:YOUR_COMMIT_SHA .
+docker build -f infra/docker/Dockerfile --target web -t fafa-one-web:YOUR_COMMIT_SHA .
+docker build -f infra/docker/Dockerfile --target admin -t fafa-one-admin:YOUR_COMMIT_SHA .
+```
+
+如构建需受信代理 CA，保留已有 BuildKit `--secret id=proxy_ca,src=受信CA路径`，不要关闭 TLS 校验。
+
+4. 本次不包含数据库 schema 变更。先做不泄漏配置的校验，再更新服务，重建代理以加载新路由：
+
+```bash
+docker compose --env-file .env.production -f infra/docker/compose.production.yaml config --quiet
+docker run --rm -i -e PANEL_DOMAIN=fafa888.uk -e ADMIN_DOMAIN=a.fafa888.uk caddy:2.10.2-alpine caddy adapt --config - --adapter caddyfile --validate < infra/reverse-proxy/Caddyfile > /dev/null
+docker compose --env-file .env.production -f infra/docker/compose.production.yaml up -d --wait --wait-timeout 120
+docker compose --env-file .env.production -f infra/docker/compose.production.yaml up -d --no-deps --force-recreate proxy
+```
+
+保留现有非 root / read-only / cap_drop / no-new-privileges 和数据库最小权限角色，不更改防火墙。禁止 down -v、卷删除、演示 seed 和生产恢复覆盖。不要把完整 compose config 或 env 输出到日志。
+
+5. 检查两个现有域名是否已指向目标 IP；本修改不自动变更 DNS。核验公开 TLS、/api/ready、匿名 /api/me=401、主域名 SPA 深链接和独立 Admin 页面。通过真实受邀账号完成 Google 登录，管理端验证 Owner/Admin 可用且 Member/Viewer 被拒绝；在浏览器检查无 CORS/CSP/混合内容报错。
+6. 使用已有授权订阅验证下载及客户端导入；使用已白名单、固定指纹的 SSH 目标验证 WSS 终端、票据、撤销。不放宽白名单或重新固定未知指纹来通过测试。服务器上 `docker compose ... port api 4000` 应无发布端口，同时检查现有防火墙/安全组没有额外开放 4000。失败时按 [ROLLBACK.md](ROLLBACK.md) 回退镜像及代理配置，保留数据。
+
+## 自动验证的边界
+
+`pnpm test` 包含生产 Origin / OAuth 校验、API 路径拼接与 Compose 端口/数据卷安全契约；集成测试覆盖订阅新旧路径、撤销、权限、CORS/CSRF、Google PKCE 和 SSH fixture。
+
+`pnpm verify:tls` 仅在一次性 CI 容器运行，配套 `compose.dev.yaml + compose.tls-test.yaml`，读取实际生产 Caddyfile 并仅换为内部 CA。Chromium 的两个域名只映射 loopback，不更改 DNS；Node HTTPS 显式信任临时 CA 并验证未受信证书被拒绝。测试独立 Web/Admin 构建、管理端跨源会话、订阅下载、OAuth 回调路由与 WSS Upgrade。测试内 Google 客户端和订阅数据是 fixture，WSS 无效票据必须被拒绝；这不等于真实 Google 登录或生产 SSH 验收。不要把此 CI override 或演示登录部署到生产。
 
 ## 备份 / 恢复
 
-机器上需要 Node.js 24、PostgreSQL 17 客户端（pg_dump、pg_restore、psql）和 age；通过安全 shell 注入 DATABASE_URL 与 AGE_RECIPIENT，执行 `bash infra/scripts/backup.sh`。可以在运维确认后配置每日定时任务，保留 30 天加密备份并异地保存。不要在 CI 上传数据库备份。
-
-恢复先创建新空数据库，设置 RESTORE_DATABASE_URL / AGE_IDENTITY_FILE / CONFIRM_RESTORE=RESTORE_TO_NEW_DATABASE，执行 `bash infra/scripts/restore.sh path/to/backup.dump.age`。脚本会拒绝非空库，不使用 --clean，并在单个事务中恢复。数据库 URL 经 libpq 环境变量注入，不放入子进程参数。必须配套主密钥备份，否则存储的加密凭据无法恢复。已在独立测试数据库执行加密备份与恢复，27 张表计数一致；报告见 evidence/backup-restore.json。还未在生产执行恢复演练。
-
-回滚使用旧镜像标签，数据库只采用向前兼容迁移；重要迁移先备份并在副本演练。生产升级不能直接删除数据卷。开发的 `docker compose down` 不加 `-v` 即保留数据。
-
-完整回滚步骤见 [ROLLBACK.md](ROLLBACK.md)。低磁盘空间的云环境建议顺序构建 `api`、`web`、`admin` 三个目标，然后 `docker compose -f infra/docker/compose.dev.yaml up -d --no-build`；四个运行服务共用同一开发镜像。
+沿用现有 `infra/scripts/backup.sh` 与 `restore.sh`。备份需要 PostgreSQL 客户端和 age，主密钥独立备份；本次不安装软件或调整备份策略。恢复必须指向新空库，设置 RESTORE_DATABASE_URL / AGE_IDENTITY_FILE / CONFIRM_RESTORE=RESTORE_TO_NEW_DATABASE；脚本拒绝非空库并在单个事务恢复。不得覆盖生产数据库。详见回滚文档。

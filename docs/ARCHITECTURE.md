@@ -4,9 +4,9 @@ Web 和 Admin 为独立 Vite + React 构建，各自 HTML / JS 入口，不把�
 
 ```mermaid
 flowchart LR
-  W[用户端 React] --> P[同源反向代理]
-  A[管理端 React] --> P
-  P --> API[Fastify API / WS / SSE]
+  W[用户端 fafa888.uk] --> P[主域名 Caddy /api /auth]
+  A[独立管理端 a.fafa888.uk] --> P
+  P --> API[Docker 内 Fastify API / WS / SSE]
   API --> PG[(PostgreSQL)]
   Worker[独立 Worker] --> PG
   Worker --> Upstream[HTTPS 授权订阅 / OpenAI Responses]

@@ -1,0 +1,60 @@
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { parse } from 'yaml';
+import { backendUrl, terminalUrl } from '../packages/ui/src/endpoints';
+import {
+  assertPublicUrls,
+  googleRedirectUri,
+  publicOrigin,
+} from '../packages/auth/src/urls';
+afterEach(() => vi.unstubAllEnvs());
+describe('双域名契约', () => {
+  it('用户端使用相对路径；管理端只拼接 Origin，拒绝重复前缀', () => {
+    expect(backendUrl('/api/me', '')).toBe('/api/me');
+    expect(backendUrl('/api/me', 'https://fafa888.uk/')).toBe(
+      'https://fafa888.uk/api/me',
+    );
+    expect(backendUrl('/auth/google', 'https://fafa888.uk')).toBe(
+      'https://fafa888.uk/auth/google',
+    );
+    expect(() => backendUrl('/api/api/me')).toThrow();
+    expect(() => backendUrl('//external.invalid')).toThrow();
+    expect(terminalUrl('/api/servers/id/terminal', 'https://fafa888.uk')).toBe(
+      'wss://fafa888.uk/api/servers/id/terminal',
+    );
+  });
+  it('生产 Origin 与 OAuth 回调固定，拒绝混合内容和 /api/api 配置', () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    vi.stubEnv('WEB_ORIGIN', 'https://fafa888.uk');
+    vi.stubEnv('ADMIN_ORIGIN', 'https://a.fafa888.uk');
+    vi.stubEnv('API_PUBLIC_URL', 'https://fafa888.uk');
+    vi.stubEnv('GOOGLE_REDIRECT_URI', 'https://fafa888.uk/auth/google/callback');
+    expect(assertPublicUrls).not.toThrow();
+    expect(publicOrigin()).toBe('https://fafa888.uk');
+    vi.stubEnv('API_PUBLIC_URL', 'https://fafa888.uk/api');
+    expect(assertPublicUrls).toThrow();
+    vi.stubEnv('API_PUBLIC_URL', 'http://fafa888.uk');
+    expect(assertPublicUrls).toThrow();
+    vi.stubEnv('API_PUBLIC_URL', 'https://fafa888.uk');
+    vi.stubEnv('GOOGLE_REDIRECT_URI', '');
+    expect(googleRedirectUri()).toBe('https://fafa888.uk/auth/google/callback');
+    vi.stubEnv('GOOGLE_REDIRECT_URI', 'https://a.fafa888.uk/auth/google/callback');
+    expect(assertPublicUrls).toThrow();
+  });
+  it('生产 Compose 仅代理发布端口，数据卷与容器安全选项保留', () => {
+    const source = readFileSync('infra/docker/compose.production.yaml', 'utf8');
+    expect(source).not.toContain('API_DOMAIN');
+    const compose = parse(source);
+    for (const [name, service] of Object.entries<any>(compose.services)) {
+      if (name !== 'proxy') {
+        expect(service.ports).toBeUndefined();
+        expect(service.network_mode).not.toBe('host');
+      }
+    }
+    expect(compose.services.api.read_only).toBe(true);
+    expect(compose.services.api.cap_drop).toEqual(['ALL']);
+    expect(compose.services.api.security_opt).toContain('no-new-privileges:true');
+    expect(compose.services.postgres.volumes).toContain('pg:/var/lib/postgresql/data');
+    expect(Object.keys(compose.volumes)).toEqual(['pg', 'caddy', 'caddy_config']);
+  });
+});

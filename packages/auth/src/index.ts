@@ -1,3 +1,4 @@
+import { assertPublicUrls, googleRedirectUri } from './urls';
 import { OAuth2Client } from 'google-auth-library';
 import { sql, audit } from '../../db/src';
 import { token, hash } from '../../shared/src/crypto';
@@ -9,6 +10,7 @@ export function mockEnabled() {
   );
 }
 export function assertEnvironment() {
+  assertPublicUrls();
   if (
     process.env.NODE_ENV === 'production' &&
     (process.env.DEV_MOCK_LOGIN === 'true' || process.env.DEMO_MODE === 'true')
@@ -21,7 +23,7 @@ export const google = () =>
   new OAuth2Client(
     process.env.GOOGLE_CLIENT_ID,
     process.env.GOOGLE_CLIENT_SECRET,
-    process.env.GOOGLE_REDIRECT_URI,
+    googleRedirectUri(),
   );
 export async function activateGoogle(payload: {
   sub: string;
