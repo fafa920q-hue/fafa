@@ -18,7 +18,9 @@
     "test:integration": "tsx infra/scripts/integration.ts",
     "test:e2e": "playwright test",
     "build": "vite build --config apps/web/vite.config.ts && vite build --config apps/admin/vite.config.ts && tsc --noEmit",
-    "security": "tsx infra/scripts/security.ts"
+    "security": "tsx infra/scripts/security.ts",
+    "verify:backup": "tsx infra/scripts/verify-backup.ts",
+    "verify:tls": "tsx infra/scripts/verify-tls.ts"
   },
   "dependencies": {
     "@fastify/cookie": "11.1.5",
@@ -41,6 +43,7 @@
     "react-dom": "19.3.1",
     "react-router-dom": "7.18.5",
     "ssh2": "1.17.0",
+    "tsx": "4.23.15",
     "yaml": "2.9.1",
     "zod": "4.6.7"
   },
@@ -58,7 +61,6 @@
     "eslint-plugin-react-hooks": "7.1.1",
     "lighthouse": "13.6.0",
     "prettier": "3.9.10",
-    "tsx": "4.23.15",
     "typescript": "5.9.3",
     "typescript-eslint": "8.72.1",
     "vite": "8.3.5",

@@ -47,8 +47,10 @@ docker build --secret id=proxy_ca,src=/etc/ssl/certs/ca-certificates.crt -f infr
 
 ## 备份 / 恢复
 
-机器上需要 PostgreSQL 17 客户端和 age；通过安全 shell 注入 DATABASE_URL 与 AGE_RECIPIENT，执行 `bash infra/scripts/backup.sh`。可以在运维确认后配置每日定时任务，保留 30 天加密备份并异地保存。不要在 CI 上传数据库备份。
+机器上需要 Node.js 24、PostgreSQL 17 客户端（pg_dump、pg_restore、psql）和 age；通过安全 shell 注入 DATABASE_URL 与 AGE_RECIPIENT，执行 `bash infra/scripts/backup.sh`。可以在运维确认后配置每日定时任务，保留 30 天加密备份并异地保存。不要在 CI 上传数据库备份。
 
-恢复先创建新空数据库，设置 RESTORE_DATABASE_URL / AGE_IDENTITY_FILE / CONFIRM_RESTORE=RESTORE_TO_NEW_DATABASE，执行 `bash infra/scripts/restore.sh path/to/backup.dump.age`。脚本不使用 --clean，不自动覆盖已有数据库。必须配套主密钥备份，否则存储的加密凭据无法恢复。还未在生产执行恢复演练。
+恢复先创建新空数据库，设置 RESTORE_DATABASE_URL / AGE_IDENTITY_FILE / CONFIRM_RESTORE=RESTORE_TO_NEW_DATABASE，执行 `bash infra/scripts/restore.sh path/to/backup.dump.age`。脚本会拒绝非空库，不使用 --clean，并在单个事务中恢复。数据库 URL 经 libpq 环境变量注入，不放入子进程参数。必须配套主密钥备份，否则存储的加密凭据无法恢复。已在独立测试数据库执行加密备份与恢复，27 张表计数一致；报告见 evidence/backup-restore.json。还未在生产执行恢复演练。
 
 回滚使用旧镜像标签，数据库只采用向前兼容迁移；重要迁移先备份并在副本演练。生产升级不能直接删除数据卷。开发的 `docker compose down` 不加 `-v` 即保留数据。
+
+完整回滚步骤见 [ROLLBACK.md](ROLLBACK.md)。低磁盘空间的云环境建议顺序构建 `api`、`web`、`admin` 三个目标，然后 `docker compose -f infra/docker/compose.dev.yaml up -d --no-build`；四个运行服务共用同一开发镜像。

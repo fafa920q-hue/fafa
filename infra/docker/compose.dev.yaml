@@ -55,24 +55,22 @@ services:
     depends_on: { seed: { condition: service_completed_successfully } }
   web:
     build:
-      {
-        context: ../..,
-        dockerfile: infra/docker/Dockerfile,
-        target: web,
-        secrets: [proxy_ca],
-      }
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.static
+      target: web
+      additional_contexts:
+        runtime: service:api
     ports: ['127.0.0.1:5173:8080']
     tmpfs: ['/config', '/data']
     security_opt: ['no-new-privileges:true']
     depends_on: [api]
   admin:
     build:
-      {
-        context: ../..,
-        dockerfile: infra/docker/Dockerfile,
-        target: admin,
-        secrets: [proxy_ca],
-      }
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.static
+      target: admin
+      additional_contexts:
+        runtime: service:api
     ports: ['127.0.0.1:5174:8080']
     tmpfs: ['/config', '/data']
     security_opt: ['no-new-privileges:true']

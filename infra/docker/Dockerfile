@@ -3,7 +3,7 @@ FROM node:24-alpine AS build
 WORKDIR /app
 # One source layer and one install/build layer also work with VFS in small cloud workspaces.
 COPY . .
-RUN --mount=type=secret,id=proxy_ca export NODE_EXTRA_CA_CERTS=${NODE_EXTRA_CA_CERTS:-/run/secrets/proxy_ca}; npm install -g pnpm@11.25.0 && pnpm install --frozen-lockfile --network-concurrency=4 && pnpm build
+RUN --mount=type=secret,id=proxy_ca export NODE_EXTRA_CA_CERTS=${NODE_EXTRA_CA_CERTS:-/run/secrets/proxy_ca}; npm install -g pnpm@11.25.0 && pnpm install --frozen-lockfile --network-concurrency=4 && pnpm build && pnpm prune --prod --ignore-scripts && rm -r /root/.local/share/pnpm/store /root/.npm
 FROM build AS runtime
 USER node
 EXPOSE 4000
