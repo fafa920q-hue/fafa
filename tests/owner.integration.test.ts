@@ -293,6 +293,7 @@ describe('一次性 Owner 初始化真实数据库安全边界', () => {
         await expect(
           runtime.unsafe('create table forbidden_ddl(id integer)'),
         ).rejects.toThrow();
+        await runtime`update users set name='Owner fixture renamed' where role='Owner'`;
         await expect(
           runtime`insert into users(email,name,role) values('forbidden@example.invalid','forbidden','Owner')`,
         ).rejects.toThrow();

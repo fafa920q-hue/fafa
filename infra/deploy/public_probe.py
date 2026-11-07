@@ -2,6 +2,7 @@
 import datetime
 import json
 import pathlib
+import socket
 import urllib.error
 import urllib.request
 
@@ -13,6 +14,20 @@ CHECKS = [
     ("authConfig", "https://fafa888.uk/auth/config", 200),
 ]
 def main():
+    network = {}
+    for host in ('fafa888.uk', 'a.fafa888.uk', '3.19.237.155'):
+        item = {}
+        try:
+            item['addresses'] = sorted({entry[4][0] for entry in socket.getaddrinfo(host, 443, type=socket.SOCK_STREAM)})
+        except OSError as error:
+            item['dnsError'] = type(error).__name__
+        for port in (80, 443):
+            try:
+                with socket.create_connection((host, port), timeout=5):
+                    item[str(port)] = 'TCP_CONNECTED'
+            except OSError as error:
+                item[str(port)] = type(error).__name__
+        network[host] = item
     results = {}
     passed = True
     for name, url, expected in CHECKS:
@@ -41,7 +56,7 @@ def main():
     directory.mkdir(parents=True, exist_ok=True)
     report = {"verifiedAt": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         "scope": "Read-only public HTTPS; no AWS execution and no authenticated user actions",
-        "checks": results, "passed": passed,
+        "network": network, "checks": results, "passed": passed,
         "googleLogin": "NOT_TESTED", "ownerBinding": "NOT_TESTED", "nodeImport": "NOT_PERFORMED"}
     (directory / "public-observation.json").write_text(json.dumps(report, ensure_ascii=False, indent=2)+"\n")
     print(json.dumps(report, ensure_ascii=False))

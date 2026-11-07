@@ -63,6 +63,7 @@ trap deployment_failed ERR
 "${compose[@]}" exec -T api node -e 'fetch("http://127.0.0.1:4000/ready").then(r=>{if(!r.ok)process.exit(1)})'
 if [[ -n "$("${compose[@]}" port api 4000 2>/dev/null || true)" || -n "$("${compose[@]}" port postgres 5432 2>/dev/null || true)" ]]; then
   printf '%s\n' 'Forbidden published database/API port' >&2
+  deployment_failed
   exit 1
 fi
 "${compose[@]}" ps --all --format json > "deployments/$deployment_sha-services.json"
@@ -72,6 +73,7 @@ fi
 for unit in fafa-backup.service fafa-backup.timer; do
   if [[ -f "/etc/systemd/system/$unit" ]] && ! cmp -s "infra/deploy/$unit" "/etc/systemd/system/$unit"; then
     printf '%s\n' 'Existing backup policy differs; preserving it, manual verification required.' >&2
+    deployment_failed
     exit 1
   fi
 done
