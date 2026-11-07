@@ -22,7 +22,12 @@ jobs:
     services:
       postgres:
         image: postgres:17.7-alpine
-        env: { POSTGRES_DB: fafa, POSTGRES_USER: fafa, POSTGRES_PASSWORD: fafa_dev_only }
+        env:
+          {
+            POSTGRES_DB: fafa,
+            POSTGRES_USER: fafa,
+            POSTGRES_PASSWORD: fafa_dev_only,
+          }
         ports: ['5432:5432']
         options: >-
           --health-cmd "pg_isready -U fafa" --health-interval 5s

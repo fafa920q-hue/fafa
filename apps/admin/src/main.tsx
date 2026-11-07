@@ -63,7 +63,10 @@ function Admin() {
         <Route path="/jobs" element={<ResourceAdmin kind="jobs" />} />
         <Route path="/audit" element={<ResourceAdmin kind="audit" />} />
         <Route path="/settings" element={<SystemSettings />} />
-        <Route path="/member-registration" element={<MemberRegistrationPolicy />} />
+        <Route
+          path="/member-registration"
+          element={<MemberRegistrationPolicy />}
+        />
         <Route path="*" element={<Empty title="页面不存在" />} />
       </Routes>
     </Shell>

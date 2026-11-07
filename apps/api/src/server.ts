@@ -273,7 +273,11 @@ export async function buildApp() {
       return setSession(reply, u as User);
     },
   );
-  const startGoogle = async (reply: any, credential?: string, memberLink?: string) => {
+  const startGoogle = async (
+    reply: any,
+    credential?: string,
+    memberLink?: string,
+  ) => {
     if (!process.env.GOOGLE_CLIENT_ID)
       throw new AppError(503, 'GOOGLE_UNCONFIGURED', 'Google 登录尚未配置');
     const state = token(),
@@ -282,7 +286,14 @@ export async function buildApp() {
     const ownerCredential = credential
       ? await beginOwnerCredential(credential, state)
       : undefined;
-    const flow = { state, nonce, verifier, at: Date.now(), ownerCredential, memberLink };
+    const flow = {
+      state,
+      nonce,
+      verifier,
+      at: Date.now(),
+      ownerCredential,
+      memberLink,
+    };
     reply.setCookie(
       'fafa_oidc',
       Buffer.from(JSON.stringify(seal(JSON.stringify(flow)))).toString(
@@ -367,12 +378,18 @@ export async function buildApp() {
     )
       throw new AppError(403, 'OIDC_NONCE', '登录验证失败');
     const user = flow.memberLink
-      ? await completeMemberGoogleLink(flow.memberLink, hash(req.cookies.fafa_session || ''), p)
+      ? await completeMemberGoogleLink(
+          flow.memberLink,
+          hash(req.cookies.fafa_session || ''),
+          p,
+        )
       : flow.ownerCredential
         ? await completeOwnerCredential(flow.ownerCredential, flow.state, p)
         : await activateGoogle(p);
     await setSession(reply, user);
-    return reply.redirect(flow.memberLink ? origins[0] + '/member/account' : origins[0]);
+    return reply.redirect(
+      flow.memberLink ? origins[0] + '/member/account' : origins[0],
+    );
   });
   app.get('/api/me', async (req) => ({
     user: {
