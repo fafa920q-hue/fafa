@@ -11,3 +11,8 @@ export function terminalUrl(path: string, pageOrigin: string) {
   url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
   return url.toString();
 }
+// 登录来源只区分前台与管理后台两个固定值；生产按域名区分，开发按端口区分。
+export function loginApp(hostname: string, port: string): 'web' | 'admin' {
+  if (hostname === 'a.fafa888.uk' || port === '5174') return 'admin';
+  return 'web';
+}
