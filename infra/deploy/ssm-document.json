@@ -37,7 +37,7 @@
           "git checkout --detach \"{{ CommitSHA }}\"",
           "umask 077",
           "mkdir -p /opt/fafa-one/deployments",
-          "deployment_log=\"/opt/fafa-one/deployments/{{ CommitSHA }}.log\"",
+          "deployment_log=\"$(mktemp \"/opt/fafa-one/deployments/{{ CommitSHA }}-XXXXXX.log\")\"",
           "if bash infra/scripts/deploy-production.sh \"{{ CommitSHA }}\" deploy > \"$deployment_log\" 2>&1; then tail -n 1 \"$deployment_log\"; else echo \"Deployment failed; protected server log retained, no raw output copied to SSM.\"; exit 1; fi"
         ]
       }

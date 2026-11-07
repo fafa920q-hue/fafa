@@ -14,6 +14,10 @@ if [[ "$deployment_action" == deploy ]]; then chmod 600 .env.production; fi
 [[ "$(git rev-parse HEAD)" == "$deployment_sha" ]]
 [[ -z "$(git status --porcelain --untracked-files=no)" ]]
 if [[ "$(git rev-parse --is-shallow-repository)" == true ]]; then git fetch --unshallow origin; fi
+if [[ -e .deployed-sha ]]; then
+  [[ -f .deployed-sha && ! -L .deployed-sha ]]
+  [[ "$(cat .deployed-sha)" =~ ^[0-9a-f]{40}$ ]]
+fi
 export IMAGE_TAG="$deployment_sha"
 compose=(docker compose --env-file .env.production -f infra/docker/compose.production.yaml)
 if [[ "$deployment_action" == check ]]; then
@@ -31,10 +35,11 @@ if [[ -f .env.runtime ]]; then runtime_owner="$(stat -c %u .env.runtime):$(stat 
 git log -p --all -- . ':!pnpm-lock.yaml' | "${compose[@]}" run --rm -T --no-deps --user "$env_owner" -v /opt/fafa-one:/config:ro ops node --import tsx infra/scripts/audit-production-config.ts
 "${compose[@]}" config --quiet
 mkdir -p backups deployments
+chmod 700 backups deployments
 # Record only public status and image identifiers; never serialize container Env.
 docker ps --format '{{.Names}} {{.Image}} {{.Status}}' > "deployments/$deployment_sha-before.txt"
 "${compose[@]}" up -d --wait --wait-timeout 120 postgres
-backup_path="backups/pre-$deployment_sha-$(date -u +%Y%m%dT%H%M%SZ).dump.envelope"
+backup_path="$(mktemp "backups/pre-$deployment_sha-XXXXXX.dump.envelope")"
 "${compose[@]}" exec -T postgres sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" --format=custom --no-owner' |
   "${compose[@]}" run --rm -T --no-deps ops node --max-old-space-size=2048 --import tsx infra/scripts/backup-envelope.ts encrypt > "$backup_path"
 [[ -s "$backup_path" ]]
