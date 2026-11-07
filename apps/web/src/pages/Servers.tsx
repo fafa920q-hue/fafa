@@ -82,13 +82,16 @@ export function Servers() {
   const [approve, setApprove] = useState<Row>();
   const [terminal, setTerminal] = useState<{ row: Row; ticket: string }>();
   const writable = session.user.role !== 'Viewer';
+  // 旧会话无此字段时默认开通（与后端保持一致）；明确为 false 时才隐藏。
+  const serverConnectEnabled = session.user.serverConnectEnabled !== false;
   return (
     <>
       <PageTitle
         title="我的服务器"
         description="自己的基础设施，独立凭据、固定指纹与可审计的连接。"
         action={
-          writable && (
+          writable &&
+          serverConnectEnabled && (
             <button className="primary" onClick={() => setEdit(null)}>
               <Plus size={16} />
               添加服务器
@@ -102,6 +105,12 @@ export function Servers() {
           → 通过可信渠道核验并固定 → 显式批准终端。内网目标暂不开放，请规划受控
           agent / Tailscale 接入。
         </div>
+        {!serverConnectEnabled && (
+          <div className="callout">
+            <ShieldCheck size={15} />{' '}
+            服务器连接功能尚未开通：请联系管理员开通后， 再添加自己的服务器。
+          </div>
+        )}
         <Card
           title="服务器列表"
           description="状态来自真实连接；未连接的服务器显示未知"
