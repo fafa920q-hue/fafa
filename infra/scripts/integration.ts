@@ -39,7 +39,14 @@ try {
     ['exec', 'tsx', 'packages/db/src/migrate.ts'],
     ['exec', 'vitest', 'run', 'tests/owner.integration.test.ts'],
   ]) {
-    const result = spawnSync('pnpm', args, { stdio: 'inherit', env: { ...env, DATABASE_URL: ownerUrl.toString(), TEST_DATABASE_URL: ownerUrl.toString() } });
+    const result = spawnSync('pnpm', args, {
+      stdio: 'inherit',
+      env: {
+        ...env,
+        DATABASE_URL: ownerUrl.toString(),
+        TEST_DATABASE_URL: ownerUrl.toString(),
+      },
+    });
     if (result.status) throw Error('Owner 隔离测试失败');
   }
 } finally {

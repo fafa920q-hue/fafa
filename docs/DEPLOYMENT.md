@@ -84,7 +84,6 @@ docker compose --env-file .env.production -f infra/docker/compose.production.yam
 
 沿用现有 `infra/scripts/backup.sh` 与 `restore.sh`。备份需要 PostgreSQL 客户端和 age，主密钥独立备份；本次不安装软件或调整备份策略。恢复必须指向新空库，设置 RESTORE_DATABASE_URL / AGE_IDENTITY_FILE / CONFIRM_RESTORE=RESTORE_TO_NEW_DATABASE；脚本拒绝非空库并在单个事务恢复。不得覆盖生产数据库。详见回滚文档。
 
-
 ## 当前服务器与新版初始化
 
 环境搭建已由用户完成，不要求重新安装或生成密钥。正式发布采用 [PRODUCTION_RUNBOOK.md](PRODUCTION_RUNBOOK.md) 的受保护执行通道与最小数据库角色；Owner 采用 [OWNER_SETUP.md](OWNER_SETUP.md) 的一次性本地授权，替代手工配置 sub。节点使用 [NODE_IMPORT.md](NODE_IMPORT.md) 的加密表单导入。历史部署命令只作参考，以新版手册为准。

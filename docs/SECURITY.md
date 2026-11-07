@@ -25,5 +25,4 @@
 6. 不从用户网页搜集任何 ChatGPT 登录材料，不提供 iOS GPS 改写或伪造定位承诺。
 7. 新安装使用主域名 host-only Cookie，管理端带凭据访问主域名 API，CORS/CSRF 精确允许两个正式 Origin。升级保留已有 Cookie 作用域。设置 COOKIE_DOMAIN 时所有子域须受控，避免子域 Cookie 注入。API 只信任直接反向代理；未开启通用 trustProxy，部署多层代理前须配置精确可信网段。
 
-
 一次性 Owner、数据库最小权限与受保护 SSM 部署的边界及操作见 OWNER_SETUP.md / PRODUCTION_RUNBOOK.md。节点导入只保存加密配置和脱敏错误行号，不写原始节点凭据到日志。

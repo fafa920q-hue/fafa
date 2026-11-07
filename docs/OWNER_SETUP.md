@@ -7,7 +7,7 @@
 在已上线服务器的受信交互终端（/opt/fafa-one）执行：
 
 ```bash
-docker compose --env-file .env.production -f infra/docker/compose.production.yaml run --rm --no-deps -it ops node --import tsx infra/scripts/owner-setup.ts
+bash infra/scripts/production-compose.sh run --rm --no-deps -it ops node --import tsx infra/scripts/owner-setup.ts
 ```
 
 该命令只创建一条授权哈希记录，不执行迁移，不修改现有密钥。工具容器使用 none 日志驱动，且拒绝非交互输出，不能放进 GitHub Actions、SSM Run Command、日志采集或录屏会话；使用既有受信终端，保管一次性输出。

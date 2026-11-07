@@ -31,7 +31,9 @@ export async function runSubscriptionJob(job: any) {
   const previous =
     await sql`select * from nodes where source_id=${source.id} order by updated_at desc`;
   const old = new Set(
-    previous.filter((n) => !n.revoked_at).map((n) => identity(JSON.parse(unseal(n.secret)) as Node)),
+    previous
+      .filter((n) => !n.revoked_at)
+      .map((n) => identity(JSON.parse(unseal(n.secret)) as Node)),
   );
   const overrides = new Map<string, any>();
   for (const row of previous) {

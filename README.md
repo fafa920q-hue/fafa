@@ -70,5 +70,4 @@ pnpm audit --audit-level=moderate
 
 [架构](docs/ARCHITECTURE.md) · [产品规格](docs/PRODUCT_SPEC.md) · [安全与限制](docs/SECURITY.md) · [部署](docs/DEPLOYMENT.md) · [API](docs/API.md) · [许可证](docs/OPEN_SOURCE_ATTRIBUTION.md) · [验收报告](docs/ACCEPTANCE_REPORT.md)
 
-
 正式升级和受保护 SSM/GitHub 部署见 [生产运维手册](docs/PRODUCTION_RUNBOOK.md)，节点导入见 [节点导入](docs/NODE_IMPORT.md)。已有环境与密钥继续沿用。

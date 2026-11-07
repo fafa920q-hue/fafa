@@ -62,7 +62,7 @@ jobs:
             exit 1
           fi
       - run: pnpm lint && pnpm typecheck
-      - run: bash -n infra/scripts/deploy-production.sh
+      - run: bash -n infra/scripts/deploy-production.sh infra/scripts/production-compose.sh infra/scripts/backup-production.sh
       - run: python3 -m unittest discover -s infra/deploy -p 'test_*.py'
       - run: pnpm db:migrate && pnpm db:seed
       - run: pnpm test && pnpm test:integration && pnpm build

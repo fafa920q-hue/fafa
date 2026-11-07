@@ -1,7 +1,11 @@
 import { readFile } from 'node:fs/promises';
 import { sql } from './index';
 await sql`create table if not exists migrations (name text primary key, applied_at timestamptz default now())`;
-for (const name of ['001_initial.sql', '002_limits.sql', '003_owner_setup.sql']) {
+for (const name of [
+  '001_initial.sql',
+  '002_limits.sql',
+  '003_owner_setup.sql',
+]) {
   await sql.begin(async (tx) => {
     await tx`select pg_advisory_xact_lock(77701)`;
     if (!(await tx`select name from migrations where name=${name}`).length) {

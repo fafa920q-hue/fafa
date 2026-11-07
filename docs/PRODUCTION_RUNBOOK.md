@@ -43,3 +43,6 @@ GitHub production Environment 必须有人工 required reviewers 且禁止管理
 保持备份离机副本与主密钥的独立保管；定期做新空库恢复演练。业务镜像、生产配置、PG/Caddy 数据卷持续保留。现有容器 unless-stopped 自动恢复，Docker 服务的系统级自启动需在真实服务器检查；本环境未连接服务器时不能声称已启用。检查 worker_heartbeat、磁盘、证书到期、任务错误与经过脱敏的日志；json-file 轮换上限10MiB×3/容器。
 
 数据库/加密凭据轮换沿用现有脚本，先备份、重包加密数据并验证，再清理旧版本。Google Secret 与第三方节点泄露必须通过各自提供商撤销/重签发；不能靠改数据库字段使原凭据失效。
+
+
+成功发布的镜像 SHA 单独保存在 .deployed-sha，不改 .env.production 的旧 IMAGE_TAG。后续工具命令用 production-compose.sh 读取实际发布版本。脚本配置每日加密备份 timer 和 Docker 自启动；遇到同名但不同内容的现有备份单元会保留并停止，不能覆盖用户策略。工具容器禁用 Docker 日志采集，防止备份明文被日志驱动保存。

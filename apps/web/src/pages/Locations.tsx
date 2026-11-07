@@ -71,14 +71,15 @@ export function Locations() {
         >
           <Badge tone="warning">实验性 · iOS 26.3 未通过真机验收</Badge>
           <p>
-            WLOC 通过代理客户端处理 Apple Wi-Fi/基站网络定位响应；
-            不修改 GPS 硬件，也不保证所有 App 会采用修改后的坐标。
+            WLOC 通过代理客户端处理 Apple Wi-Fi/基站网络定位响应； 不修改 GPS
+            硬件，也不保证所有 App 会采用修改后的坐标。
             网页仅提供使用说明和上游入口，不会远程控制你的 iPhone。
           </p>
           <p className="callout">
             上游 2026 年 11 月报告部分 iOS 26 设备无法拦截 Apple 定位请求，
             重启或更新系统后可能失效。请先了解 HTTPS 解密证书信任带来的风险，
-            仅在本人设备、知晓影响并主动同意时使用。不要把此模块与 VPN 节点订阅混淆。
+            仅在本人设备、知晓影响并主动同意时使用。不要把此模块与 VPN
+            节点订阅混淆。
           </p>
           <div className="toolbar">
             <a
@@ -99,7 +100,8 @@ export function Locations() {
           </div>
           <p>
             建议先阅读上游的安装、恢复定位及兼容性说明；实际修改需由用户在自己的
-            Shadowrocket 客户端执行。FAFA ONE 不会自动安装证书或开启 HTTPS 解密。
+            Shadowrocket 客户端执行。FAFA ONE 不会自动安装证书或开启 HTTPS
+            解密。
           </p>
         </Card>
         <Card

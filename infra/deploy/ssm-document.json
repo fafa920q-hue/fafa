@@ -25,6 +25,8 @@
           "set -eu",
           "cd /opt/fafa-one",
           "test -f .env.production",
+          "test ! -L .env.production",
+          "if [ \"{{ Action }}\" = \"deploy\" ]; then chmod 600 .env.production; fi",
           "test \"$(stat -c %a .env.production)\" = 600",
           "if [ \"{{ Action }}\" = \"check\" ]; then git rev-parse HEAD; docker ps --all --filter label=com.docker.compose.project=fafa-one --format json; exit 0; fi",
           "test -z \"$(git status --porcelain --untracked-files=no)\"",

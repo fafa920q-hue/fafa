@@ -58,6 +58,7 @@ BEGIN
  END IF;
  UPDATE public.owner_initialization SET owner_id=owner_uuid,google_sub=verified_sub,completed_at=now(),closed=true WHERE singleton;
  UPDATE public.owner_setup_credentials SET expires_at=now();
+ UPDATE public.sessions SET revoked_at=now() WHERE owner_id=owner_uuid AND revoked_at IS NULL;
  INSERT INTO public.audit_events(owner_id,action) VALUES(owner_uuid,'owner.initialized');
  RETURN owner_uuid;
 END $$;
@@ -75,7 +76,7 @@ CREATE TRIGGER bound_owner_protected BEFORE UPDATE OR DELETE ON users FOR EACH R
 
 CREATE FUNCTION restrict_owner_role() RETURNS trigger LANGUAGE plpgsql SET search_path=pg_catalog,public AS $$
 BEGIN
- IF NEW.role='Owner' AND current_user<>(SELECT tableowner FROM pg_catalog.pg_tables WHERE schemaname='public' AND tablename='users') THEN RAISE EXCEPTION 'Owner requires local authorization'; END IF;
+ IF NEW.role='Owner' AND current_user<>(SELECT pg_get_userbyid(proowner) FROM pg_catalog.pg_proc WHERE oid='public.complete_owner_setup(uuid,text,text,text,text)'::regprocedure) THEN RAISE EXCEPTION 'Owner requires local authorization'; END IF;
  RETURN NEW;
 END $$;
 CREATE TRIGGER owner_role_restricted BEFORE INSERT OR UPDATE ON users FOR EACH ROW EXECUTE FUNCTION restrict_owner_role();

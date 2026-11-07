@@ -10,7 +10,9 @@ const schema = z
     credential: z.string().min(1).max(4096),
     cipher: z.string().optional(),
     alterId: z.number().int().min(0).max(65535).optional(),
-    security: z.enum(['auto', 'aes-128-gcm', 'chacha20-poly1305', 'none', 'zero']).optional(),
+    security: z
+      .enum(['auto', 'aes-128-gcm', 'chacha20-poly1305', 'none', 'zero'])
+      .optional(),
     country: z.string().max(32).optional(),
     tags: z.array(z.string().max(200)).max(100).optional(),
     aliases: z.array(z.string().max(200)).max(100).optional(),
@@ -32,7 +34,13 @@ const schema = z
   }));
 export type Node = z.infer<typeof schema>;
 export function identity(node: Node) {
-  const { name: _name, country: _country, tags: _tags, aliases: _aliases, ...value } = node;
+  const {
+    name: _name,
+    country: _country,
+    tags: _tags,
+    aliases: _aliases,
+    ...value
+  } = node;
   if (node.protocol === 'vmess') {
     value.alterId = node.alterId || 0;
     value.security = node.security || 'auto';
@@ -46,23 +54,53 @@ export function deduplicate(nodes: Node[]) {
   for (const node of nodes) {
     const key = identity(node);
     const existing = result.get(key);
-    result.set(key, existing ? {
-      ...existing,
-      tags: [...new Set([...(existing.tags || []), ...(node.tags || [])])],
-      aliases: [...new Set([...(existing.aliases || []), node.name, ...(node.aliases || [])])].filter((name) => name !== existing.name).slice(0,100),
-    } : node);
+    result.set(
+      key,
+      existing
+        ? {
+            ...existing,
+            tags: [
+              ...new Set([...(existing.tags || []), ...(node.tags || [])]),
+            ],
+            aliases: [
+              ...new Set([
+                ...(existing.aliases || []),
+                node.name,
+                ...(node.aliases || []),
+              ]),
+            ]
+              .filter((name) => name !== existing.name)
+              .slice(0, 100),
+          }
+        : node,
+    );
   }
   return [...result.values()];
 }
 const b64 = (v: string) => Buffer.from(v, 'base64').toString('utf8');
 export function parseNodeUri(line: string): Node {
-  if (!line.includes('://') && /^(ss|vmess)%3a/i.test(line)) line = decodeURIComponent(line);
+  if (!line.includes('://') && /^(ss|vmess)%3a/i.test(line))
+    line = decodeURIComponent(line);
   if (line.startsWith('vmess://'))
     return vmess(JSON.parse(b64(decodeURIComponent(line.slice(8)))));
   let raw = line;
-  if (line.startsWith('ss://') && !line.slice(5).includes('@')) {
-    const [body, fragment] = line.slice(5).split('#');
-    raw = 'ss://' + b64(body) + (fragment ? '#' + fragment : '');
+  if (line.startsWith('ss://') && !line.slice(5).split('#')[0].includes('@')) {
+    const separator = line.indexOf('#');
+    const body = separator < 0 ? line.slice(5) : line.slice(5, separator);
+    const fragment = separator < 0 ? '' : line.slice(separator + 1);
+    const decoded = b64(body);
+    const at = decoded.lastIndexOf('@');
+    const colon = decoded.indexOf(':');
+    if (at < 0 || colon < 1 || colon > at) throw Error('SS 凭据无效');
+    raw = 'ss://' + encodeURIComponent(decoded.slice(0, colon)) + ':' +
+      encodeURIComponent(decoded.slice(colon + 1, at)) + '@' + decoded.slice(at + 1) +
+      (fragment ? '#' + fragment : '');
+  }
+  if (raw.startsWith('ss://')) {
+    const at = raw.indexOf('@');
+    const userinfo = raw.slice(5, at);
+    if (at > 5 && !userinfo.includes(':'))
+      raw = 'ss://' + Buffer.from(b64(decodeURIComponent(userinfo))).toString('base64url') + raw.slice(at);
   }
   const u = new URL(raw);
   const protocol =
@@ -115,7 +153,9 @@ function structured(v: any, sing = false): Node {
     (v.network && !['tcp', 'ws'].includes(v.network)) ||
     v.tls?.reality?.enabled ||
     v['reality-opts'] ||
-    v.plugin || v['skip-cert-verify'] || v.tls?.insecure
+    v.plugin ||
+    v['skip-cert-verify'] ||
+    v.tls?.insecure
   )
     throw Error('暂不支持此高级节点配置');
   return schema.parse({
@@ -281,55 +321,112 @@ export function exportSubscription(nodes: Node[], format: string) {
 
 export function labelsForName(name: string) {
   const regions: [string, RegExp][] = [
-    ['香港', /香港|hong.?kong|🇭🇰/i], ['台湾', /台湾|台灣|taiwan|🇹🇼/i],
-    ['日本', /日本|东京|大阪|japan|tokyo|🇯🇵/i], ['新加坡', /新加坡|singapore|🇸🇬/i],
-    ['美国', /美国|美國|洛杉矶|united.?states|🇺🇸/i], ['英国', /英国|英國|united.?kingdom|🇬🇧/i],
-    ['德国', /德国|德國|germany|🇩🇪/i], ['法国', /法国|法國|france|🇫🇷/i],
-    ['韩国', /韩国|韓國|korea|🇰🇷/i], ['加拿大', /加拿大|canada|🇨🇦/i],
-    ['澳大利亚', /澳大利亚|澳洲|australia|🇦🇺/i], ['印度', /印度|india|🇮🇳/i],
-    ['荷兰', /荷兰|荷蘭|netherlands|🇳🇱/i], ['爱尔兰', /爱尔兰|愛爾蘭|ireland|🇮🇪/i],
+    ['香港', /香港|hong.?kong|🇭🇰/i],
+    ['台湾', /台湾|台灣|taiwan|🇹🇼/i],
+    ['日本', /日本|东京|大阪|japan|tokyo|🇯🇵/i],
+    ['新加坡', /新加坡|singapore|🇸🇬/i],
+    ['美国', /美国|美國|洛杉矶|united.?states|🇺🇸/i],
+    ['英国', /英国|英國|united.?kingdom|🇬🇧/i],
+    ['德国', /德国|德國|germany|🇩🇪/i],
+    ['法国', /法国|法國|france|🇫🇷/i],
+    ['韩国', /韩国|韓國|korea|🇰🇷/i],
+    ['加拿大', /加拿大|canada|🇨🇦/i],
+    ['澳大利亚', /澳大利亚|澳洲|australia|🇦🇺/i],
+    ['印度', /印度|india|🇮🇳/i],
+    ['荷兰', /荷兰|荷蘭|netherlands|🇳🇱/i],
+    ['爱尔兰', /爱尔兰|愛爾蘭|ireland|🇮🇪/i],
   ];
   const flag = name.match(/[\u{1F1E6}-\u{1F1FF}]{2}/u)?.[0];
-  const iso = flag ? [...flag].map((character) => String.fromCharCode(character.codePointAt(0)! - 0x1f1e6 + 65)).join('') : undefined;
+  const iso = flag
+    ? [...flag]
+        .map((character) =>
+          String.fromCharCode(character.codePointAt(0)! - 0x1f1e6 + 65),
+        )
+        .join('')
+    : undefined;
   return {
-    country: regions.find(([, pattern]) => pattern.test(name))?.[0] || (iso ? new Intl.DisplayNames(['zh-CN'], { type: 'region' }).of(iso) : undefined) || '未标注',
-    tags: [...new Set(name.match(/IEPL|IPLC|(?:下载|下載)(?:专用|專用)?|download(?:.?only)?|\d+(?:\.\d+)?\s*(?:倍|[xX])/gi) || [])],
+    country:
+      regions.find(([, pattern]) => pattern.test(name))?.[0] ||
+      (iso
+        ? new Intl.DisplayNames(['zh-CN'], { type: 'region' }).of(iso)
+        : undefined) ||
+      '未标注',
+    tags: [
+      ...new Set(
+        name.match(
+          /IEPL|IPLC|(?:下载|下載)(?:专用|專用)?|download(?:.?only)?|\d+(?:\.\d+)?\s*(?:倍|[xX])/gi,
+        ) || [],
+      ),
+    ],
   };
 }
 function vmess(v: any): Node {
-  if ((v.net && !['tcp', 'ws'].includes(v.net)) ||
-    (v.type && v.type !== 'none') || (v.tls && v.tls !== 'tls' && v.tls !== true) || v.allowInsecure === true || v.allowInsecure === '1' ||
-    v.alpn || v.fp)
+  if (
+    (v.net && !['tcp', 'ws'].includes(v.net)) ||
+    (v.type && v.type !== 'none') ||
+    (v.tls && v.tls !== 'tls' && v.tls !== true) ||
+    v.allowInsecure === true ||
+    v.allowInsecure === '1' ||
+    v.alpn ||
+    v.fp
+  )
     throw Error('不支持的 VMess 参数，未改写配置');
   if (!z.uuid().safeParse(v.id).success) throw Error('VMess 身份格式无效');
   return schema.parse({
-    name: v.ps || v.add, protocol: 'vmess', host: v.add,
-    port: Number(v.port), credential: v.id, alterId: Number(v.aid || 0),
-    security: v.scy || 'auto', tls: v.tls === 'tls' || v.tls === true,
-    sni: v.sni, transport: v.net || 'tcp', path: v.path, wsHost: v.host,
+    name: v.ps || v.add,
+    protocol: 'vmess',
+    host: v.add,
+    port: Number(v.port),
+    credential: v.id,
+    alterId: Number(v.aid || 0),
+    security: v.scy || 'auto',
+    tls: v.tls === 'tls' || v.tls === true,
+    sni: v.sni,
+    transport: v.net || 'tcp',
+    path: v.path,
+    wsHost: v.host,
   });
 }
 export function parseBatch(input: string) {
   if (Buffer.byteLength(input) > 1048576) throw Error('订阅超过大小限制');
   let text = input.trim();
-  if (!text.includes('://') && !text.startsWith('{') && !text.startsWith('proxies') &&
-    !/^(ss|vmess)%3a/i.test(text)) text = b64(text);
-  const entries = text.startsWith('{') || /^proxies\s*:/m.test(text)
-    ? [text] : text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-  if (!entries.length || entries.length > 5000) throw Error('节点数必须在 1 至 5000 之间');
+  if (/^(ss|vmess)%3a/i.test(text)) text = decodeURIComponent(text);
+  if (
+    !text.includes('://') &&
+    !text.startsWith('{') &&
+    !text.startsWith('proxies') &&
+    !/^(ss|vmess)%3a/i.test(text)
+  )
+    text = b64(text);
+  const entries =
+    text.startsWith('{') || /^proxies\s*:/m.test(text)
+      ? [text]
+      : text
+          .split(/\r?\n/)
+          .map((line) => line.trim())
+          .filter(Boolean);
+  if (!entries.length || entries.length > 5000)
+    throw Error('节点数必须在 1 至 5000 之间');
   const accepted: Node[] = [];
   const failures: { line: number; code: string }[] = [];
   entries.forEach((entry, index) => {
-    try { accepted.push(...parseSubscription(entry)); }
-    catch { failures.push({ line: index + 1, code: 'PARSE_FAILED' }); }
+    try {
+      accepted.push(...parseSubscription(entry));
+    } catch {
+      failures.push({ line: index + 1, code: 'PARSE_FAILED' });
+    }
   });
   const nodes = deduplicate(accepted);
   return { nodes, failures, duplicates: accepted.length - nodes.length };
 }
 export function nodeMetadata(node: Node, country = '未标注') {
-  return { name: node.name, protocol: node.protocol,
+  return {
+    name: node.name,
+    protocol: node.protocol,
     country: node.country === '未标注' ? country : node.country,
-    tags: node.tags || [], aliases: node.aliases || [],
-    enabled: true, status: 'PENDING_VERIFICATION',
+    tags: node.tags || [],
+    aliases: node.aliases || [],
+    enabled: true,
+    status: 'PENDING_VERIFICATION',
   };
 }

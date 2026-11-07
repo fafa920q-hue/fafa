@@ -39,7 +39,8 @@ export async function activateGoogle(payload: {
       await tx`select u.* from users u join google_identities g on g.user_id=u.id where g.sub=${payload.sub}`;
     if (existing) {
       if (existing.role === 'Owner') {
-        const [binding] = await tx`select owner_identity_allowed(${payload.sub}) as allowed`;
+        const [binding] =
+          await tx`select owner_identity_allowed(${payload.sub}) as allowed`;
         if (!binding.allowed)
           throw new AppError(403, 'OWNER_IDENTITY', 'Owner 身份不匹配');
       }
@@ -49,8 +50,7 @@ export async function activateGoogle(payload: {
     }
     const [invite] =
       await tx`select * from invitations where lower(data->>'email')=lower(${payload.email!}) and revoked_at is null and (data->>'expiresAt')::timestamptz>now() and not (data ? 'usedAt') for update`;
-    if (!invite)
-      throw new AppError(403, 'INVITE_REQUIRED', '此账号尚未受邀');
+    if (!invite) throw new AppError(403, 'INVITE_REQUIRED', '此账号尚未受邀');
     const [limit] = await tx`select value from settings where key='seat_limit'`;
     const [count] =
       await tx`select count(*)::int as total from users where deleted_at is null`;

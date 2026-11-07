@@ -92,8 +92,17 @@ export async function registerAdmin(app: FastifyInstance) {
     const [r] =
       await sql`select id,data from ${sql(table)} where id=${resourceId} and owner_id=${req.actor.id} and revoked_at is null`;
     if (!r) throw notFound();
-    if (kind === 'source' && r.data.kind !== 'OWNED_NODE' && (r.data.redistributionAuthorized !== true || !r.data.authorizationReference?.trim()))
-      throw new AppError(403, 'REDISTRIBUTION_REQUIRED', '第三方节点必须确认再分发授权');
+    if (
+      kind === 'source' &&
+      r.data.kind !== 'OWNED_NODE' &&
+      (r.data.redistributionAuthorized !== true ||
+        !r.data.authorizationReference?.trim())
+    )
+      throw new AppError(
+        403,
+        'REDISTRIBUTION_REQUIRED',
+        '第三方节点必须确认再分发授权',
+      );
     const grant =
       kind === 'source' ? 'node_group_grants' : 'server_access_grants';
     const fk = kind === 'source' ? 'source_id' : 'server_id';

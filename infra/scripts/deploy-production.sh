@@ -13,6 +13,7 @@ if [[ "$deployment_action" == deploy ]]; then chmod 600 .env.production; fi
 [[ "$(stat -c %a .env.production)" == 600 ]]
 [[ "$(git rev-parse HEAD)" == "$deployment_sha" ]]
 [[ -z "$(git status --porcelain --untracked-files=no)" ]]
+if [[ "$(git rev-parse --is-shallow-repository)" == true ]]; then git fetch --unshallow origin; fi
 export IMAGE_TAG="$deployment_sha"
 compose=(docker compose --env-file .env.production -f infra/docker/compose.production.yaml)
 if [[ "$deployment_action" == check ]]; then
@@ -62,5 +63,20 @@ fi
 "${compose[@]}" ps --all --format json > "deployments/$deployment_sha-services.json"
 "${compose[@]}" exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -X -Atc "select name from migrations order by name"' > "deployments/$deployment_sha-migrations.txt"
 "${compose[@]}" exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -X -At' < infra/deploy/status.sql > "deployments/$deployment_sha-owner.json"
+# Do not overwrite an existing operator-defined backup unit.
+for unit in fafa-backup.service fafa-backup.timer; do
+  if [[ -f "/etc/systemd/system/$unit" ]] && ! cmp -s "infra/deploy/$unit" "/etc/systemd/system/$unit"; then
+    printf '%s\n' 'Existing backup policy differs; preserving it, manual verification required.' >&2
+    exit 1
+  fi
+done
+printf '%s\n' "$deployment_sha" > .deployed-sha
+chmod 600 .deployed-sha
+for unit in fafa-backup.service fafa-backup.timer; do
+  if [[ ! -e "/etc/systemd/system/$unit" ]]; then install -m 644 "infra/deploy/$unit" "/etc/systemd/system/$unit"; fi
+done
+systemctl daemon-reload
+systemctl enable docker >/dev/null
+systemctl enable --now fafa-backup.timer >/dev/null
 trap - ERR
 printf '%s\n' 'FAFA_DEPLOY_RESULT={"deployed":true,"databaseBackupVerified":true,"runtimeRole":"fafa_app","ports4000and5432Published":false,"ownerGoogleLogin":"REQUIRES_BROWSER_VERIFICATION","nodeImport":"NOT_PERFORMED"}'

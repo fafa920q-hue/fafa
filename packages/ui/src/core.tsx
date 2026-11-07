@@ -157,25 +157,40 @@ function Login({ onLogin }: { onLogin: (s: Session) => void }) {
         {config?.ownerSetup && (
           <details>
             <summary>首次 Owner 初始化</summary>
-            <form onSubmit={async (event) => {
-              event.preventDefault();
-              const credential = ownerCredential;
-              setOwnerCredential('');
-              try {
-                const result = await api<{ url: string }>('/auth/owner/start', 'POST', { credential });
-                window.location.assign(result.url);
-              } catch (error) {
-                setError((error as Error).message);
-              }
-            }}>
+            <form
+              onSubmit={async (event) => {
+                event.preventDefault();
+                const credential = ownerCredential;
+                setOwnerCredential('');
+                try {
+                  const result = await api<{ url: string }>(
+                    '/auth/owner/start',
+                    'POST',
+                    { credential },
+                  );
+                  window.location.assign(result.url);
+                } catch (error) {
+                  setError((error as Error).message);
+                }
+              }}
+            >
               <label>
                 服务器一次性授权凭据
-                <input type="password" value={ownerCredential}
+                <input
+                  type="password"
+                  value={ownerCredential}
                   onChange={(event) => setOwnerCredential(event.target.value)}
-                  autoComplete="off" required maxLength={100} />
+                  autoComplete="off"
+                  required
+                  maxLength={100}
+                />
               </label>
-              <p>凭据由服务器交互终端生成，输入后使用正式 Google 登录完成绑定。</p>
-              <button className="primary">授权并使用 Google 初始化 Owner</button>
+              <p>
+                凭据由服务器交互终端生成，输入后使用正式 Google 登录完成绑定。
+              </p>
+              <button className="primary">
+                授权并使用 Google 初始化 Owner
+              </button>
             </form>
           </details>
         )}

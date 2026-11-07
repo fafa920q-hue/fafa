@@ -59,3 +59,25 @@ jobs:
         with:
           name: production-public-evidence
           path: docs/evidence/production/
+  public-observation:
+    if: vars.FAFA_DEPLOY_ENABLED != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions: { contents: read }
+    steps:
+      - uses: actions/checkout@v4
+        with: { persist-credentials: false }
+      - name: Read current public endpoints without AWS access
+        run: python3 infra/deploy/public_probe.py
+      - uses: actions/setup-node@v4
+        with: { node-version: '24' }
+      - run: npm install -g pnpm@11.25.0
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium webkit
+      - name: Capture real public login pages if endpoints passed
+        run: pnpm exec tsx infra/scripts/verify-production.ts
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: current-public-observation
+          path: docs/evidence/production/
