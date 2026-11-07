@@ -21,14 +21,15 @@ afterEach(() => {
 describe('双域名契约', () => {
   it('网络停滞会结束加载并提示确认结果，避免无限等待或盲目重复提交', async () => {
     vi.useFakeTimers();
-    const transport = vi.fn<typeof fetch>((_url, init) =>
-      new Promise<Response>((_resolve, reject) => {
-        init?.signal?.addEventListener(
-          'abort',
-          () => reject(new DOMException('Aborted', 'AbortError')),
-          { once: true },
-        );
-      }),
+    const transport = vi.fn<typeof fetch>(
+      (_url, init) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener(
+            'abort',
+            () => reject(new DOMException('Aborted', 'AbortError')),
+            { once: true },
+          );
+        }),
     );
     vi.stubGlobal('fetch', transport);
     const pending = expect(api('/api/me')).rejects.toThrow('请求超时');
