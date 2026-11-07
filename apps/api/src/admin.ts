@@ -62,6 +62,8 @@ export async function registerAdmin(app: FastifyInstance) {
         revokeSessions: z.boolean().optional(),
         nodeLimit: z.number().int().min(0).max(5000).optional(),
         subscriptionEnabled: z.boolean().optional(),
+        serverConnectEnabled: z.boolean().optional(),
+        codexTasksEnabled: z.boolean().optional(),
         trafficLimitBytes: z
           .number()
           .int()
@@ -81,7 +83,7 @@ export async function registerAdmin(app: FastifyInstance) {
     )
       throw new AppError(403, 'OWNER_PROTECTED', '不允许修改此账户或角色');
     await sql.begin(async (tx) => {
-      await tx`update users set disabled=${d.disabled ?? u.disabled},role=${d.role ?? u.role},node_limit=${d.nodeLimit ?? u.node_limit},subscription_enabled=${d.subscriptionEnabled ?? u.subscription_enabled},traffic_limit_bytes=${d.trafficLimitBytes === undefined ? u.traffic_limit_bytes : d.trafficLimitBytes},updated_at=now() where id=${id}`;
+      await tx`update users set disabled=${d.disabled ?? u.disabled},role=${d.role ?? u.role},node_limit=${d.nodeLimit ?? u.node_limit},subscription_enabled=${d.subscriptionEnabled ?? u.subscription_enabled},server_connect_enabled=${d.serverConnectEnabled ?? u.server_connect_enabled},codex_tasks_enabled=${d.codexTasksEnabled ?? u.codex_tasks_enabled},traffic_limit_bytes=${d.trafficLimitBytes === undefined ? u.traffic_limit_bytes : d.trafficLimitBytes},updated_at=now() where id=${id}`;
       if (d.disabled || d.revokeSessions || d.role)
         await tx`update sessions set revoked_at=now() where owner_id=${id}`;
     });
@@ -187,7 +189,8 @@ export async function registerAdmin(app: FastifyInstance) {
     return { ok: true };
   });
   // 新用户前三天自动授权策略（管理后台配置、记录与补处理）。
-  // 授权本身复用 node_group_grants / server_access_grants / subscription_tokens。
+  // 授权本身复用 node_group_grants / subscription_tokens；服务器一步只开
+  // “连接自己的服务器”功能资格，不授予任何指定服务器行访问。
   app.get('/api/admin/auto-grant/policy', async () => readAutoGrantPolicy());
   app.patch('/api/admin/auto-grant/policy', async (req) => {
     if (req.actor.role !== 'Owner')
@@ -203,23 +206,12 @@ export async function registerAdmin(app: FastifyInstance) {
           '指定的免费节点组不存在或不属于当前管理员',
         );
     }
-    if (policy.serverId) {
-      const [server] =
-        await sql`select id from server_connections where id=${policy.serverId} and owner_id=${req.actor.id} and revoked_at is null`;
-      if (!server)
-        throw new AppError(
-          400,
-          'SERVER_NOT_FOUND',
-          '指定的体验服务器不存在或不属于当前管理员',
-        );
-    }
     await sql.begin(async (tx) => {
       for (const [key, value] of [
         ['auto_grant_enabled', policy.enabled],
         ['auto_grant_window_start', policy.windowStart],
         ['auto_grant_window_end', policy.windowEnd],
         ['auto_grant_node_source_id', policy.nodeSourceId],
-        ['auto_grant_server_id', policy.serverId],
         ['auto_grant_node_limit', policy.nodeLimit],
         ['auto_grant_trial_valid_days', policy.trialValidDays],
       ] as const) {
