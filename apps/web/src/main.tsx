@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { Provider, Shell, Empty } from '../../../packages/ui/src/core';
 import { Dashboard } from './pages/Dashboard';
+import { MemberPortal } from './member/MemberPortal';
 const Subscriptions = lazy(() =>
   import('./pages/Subscriptions').then((m) => ({ default: m.Subscriptions })),
 );
@@ -36,7 +37,7 @@ const nav = [
 ];
 createRoot(document.getElementById('root')!).render(
   <BrowserRouter>
-    <Provider>
+    {window.location.pathname.startsWith('/member/') ? <MemberPortal /> : <Provider>
       <Shell nav={nav} bottom={[nav[0], nav[1], nav[2], nav[3], nav[5]]}>
         <Suspense
           fallback={<div className="skeleton" aria-label="正在加载页面" />}
@@ -60,6 +61,6 @@ createRoot(document.getElementById('root')!).render(
           </Routes>
         </Suspense>
       </Shell>
-    </Provider>
+    </Provider>}
   </BrowserRouter>,
 );

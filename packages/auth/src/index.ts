@@ -48,15 +48,21 @@ export async function activateGoogle(payload: {
         throw new AppError(403, 'DISABLED', '账户已停用');
       return existing as User;
     }
+    // Never merge by email: a password account must explicitly prove both identities.
+    const emailConflict = await tx.unsafe('SELECT id FROM users WHERE lower(email)=lower($1)', [payload.email]);
+    if (emailConflict.length)
+      throw new AppError(403, 'GOOGLE_LINK_REQUIRED', '请先登录原账户，再从账户安全页面绑定 Google');
     const [invite] =
       await tx`select * from invitations where lower(data->>'email')=lower(${payload.email!}) and revoked_at is null and (data->>'expiresAt')::timestamptz>now() and not (data ? 'usedAt') for update`;
-    if (!invite) throw new AppError(403, 'INVITE_REQUIRED', '此账号尚未受邀');
+    const [registration] = await tx.unsafe("SELECT value FROM settings WHERE key='member_registration_open'");
+    if (!invite && registration?.value !== true)
+      throw new AppError(403, 'INVITE_REQUIRED', '此账号尚未受邀');
     const [limit] = await tx`select value from settings where key='seat_limit'`;
     const [count] =
       await tx`select count(*)::int as total from users where deleted_at is null`;
     if (count.total >= Number(limit.value))
       throw new AppError(409, 'SEAT_LIMIT', '用户席位已满');
-    const role = invite.data.role;
+    const role = invite ? invite.data.role : 'Member';
     if (!['Admin', 'Member', 'Viewer'].includes(role))
       throw new AppError(403, 'INVITE_ROLE', '邀请角色无效');
     const [u] =

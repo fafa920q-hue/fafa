@@ -1,0 +1,7 @@
+# Future reviewed integration overlay only. This branch does not deploy AWS.
+services:
+  api:
+    environment:
+      MAIL_PROVIDER: ${MAIL_PROVIDER:-}
+      MAIL_API_KEY: ${MAIL_API_KEY:-}
+      MAIL_FROM: ${MAIL_FROM:-}

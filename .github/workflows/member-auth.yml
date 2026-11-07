@@ -1,0 +1,60 @@
+name: Member authentication checks
+on:
+  push:
+    branches: [feat/member-auth-registration]
+  pull_request:
+    branches: [feat/fafa-one-control-panel]
+    paths:
+      - 'packages/auth/**'
+      - 'apps/api/src/member-auth.ts'
+      - 'apps/web/src/member/**'
+      - 'tests/member-auth*'
+      - 'tests/e2e/member-auth.spec.ts'
+      - '.github/workflows/member-auth.yml'
+permissions: { contents: read }
+concurrency:
+  group: member-auth-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+jobs:
+  member-auth:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17.7-alpine
+        env: { POSTGRES_DB: fafa, POSTGRES_USER: fafa, POSTGRES_PASSWORD: fafa_dev_only }
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U fafa" --health-interval 5s
+          --health-timeout 3s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with: { node-version: '24' }
+      - run: npm install -g pnpm@11.25.0
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec tsx infra/scripts/init-env.ts
+      - name: Verify independent files and formatting
+        run: pnpm exec tsx infra/scripts/check-member-isolation.ts --format
+      - run: pnpm lint && pnpm typecheck
+      - name: Unit, real PostgreSQL and authentication security tests
+        run: pnpm test:member
+      - name: Existing API, Google and unique Owner regression
+        run: pnpm test:integration
+      - run: pnpm test && pnpm build && pnpm security
+      - name: Prepare isolated browser fixture
+        run: pnpm db:migrate && pnpm db:seed
+      - run: pnpm exec playwright install --with-deps chromium webkit
+      - name: Member browser interactions
+        run: pnpm exec playwright test tests/e2e/member-auth.spec.ts --project=chromium --project=webkit --project=iphone
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: member-auth-test-evidence
+          path: |
+            docs/evidence/playwright.json
+            test-results/
