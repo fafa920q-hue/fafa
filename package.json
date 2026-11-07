@@ -14,13 +14,15 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run tests/unit.test.ts tests/domain.test.ts",
+    "test": "vitest run tests/unit.test.ts tests/domain.test.ts tests/nodes.test.ts tests/backup.test.ts",
     "test:integration": "tsx infra/scripts/integration.ts",
     "test:e2e": "playwright test",
     "build": "vite build --config apps/web/vite.config.ts && vite build --config apps/admin/vite.config.ts && tsc --noEmit",
     "security": "tsx infra/scripts/security.ts",
     "verify:backup": "tsx infra/scripts/verify-backup.ts",
-    "verify:tls": "tsx infra/scripts/verify-tls.ts"
+    "verify:tls": "tsx infra/scripts/verify-tls.ts",
+    "owner:setup": "tsx infra/scripts/owner-setup.ts",
+    "nodes:validate": "tsx infra/scripts/validate-nodes.ts"
   },
   "dependencies": {
     "@fastify/cookie": "11.1.5",

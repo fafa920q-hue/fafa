@@ -1,8 +1,10 @@
 import 'dotenv/config';
+import { assertRuntimeDatabaseRole } from '../../../infra/scripts/check-runtime-db';
 import { sql } from '../../../packages/db/src';
 import { tick } from './jobs';
 import { assertEnvironment } from '../../../packages/auth/src';
 assertEnvironment();
+await assertRuntimeDatabaseRole();
 console.log('FAFA ONE Worker 已启动');
 async function heartbeat() {
   await sql`insert into settings(key,value) values('worker_heartbeat',${sql.json(new Date().toISOString())}) on conflict(key) do update set value=excluded.value,updated_at=now()`;

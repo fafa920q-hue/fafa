@@ -29,7 +29,7 @@ export const resourceTables = [
   'location_presets',
 ] as const;
 export type ResourceTable = (typeof resourceTables)[number];
-export async function own(table: ResourceTable, id: string, owner: string) {
+export async function own(table: ResourceTable | 'nodes', id: string, owner: string) {
   const [row] =
     await sql`select * from ${sql(table)} where id=${id} and owner_id=${owner} and revoked_at is null`;
   return row;

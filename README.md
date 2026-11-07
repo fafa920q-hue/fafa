@@ -45,7 +45,7 @@ docker compose -f infra/docker/compose.dev.yaml up --build -d
 
 只在本地受保护的 `.env` 或部署 secret 中配置凭据，不要发送到聊天、Issue 或 PR。开发模式下将 `DEMO_MODE=false`；正式部署同时使用 `NODE_ENV=production`、`DEV_MOCK_LOGIN=false`，不要运行演示 seed。
 
-- Google：配置 OIDC 客户端、回调与首次 Owner 的 Google sub。默认仅受邀 verified email 激活；详见 [部署文档](docs/DEPLOYMENT.md)。
+- Google：配置 OIDC 客户端、回调与服务器本地一次性 Owner 授权。默认仅受邀 verified email 激活；详见 [首次 Owner 绑定](docs/OWNER_SETUP.md) 与 [部署文档](docs/DEPLOYMENT.md)。
 - 订阅：添加有权聚合的 HTTPS URL 或已支持的节点文本；Worker 刷新；生成独立链接供客户端更新。服务端能实际转换，但客户端真机导入仍待验收。
 - AI：在面板添加自己的 OpenAI API Key，选择账户并创建任务；Responses API 独立计费。不接管官方 Codex Cloud，不使用 Plus 额度。
 - SSH：先配置 `SSH_ALLOWED_TARGETS=host:port`，添加自己的私钥或密码，核验并固定主机指纹，批准只读诊断。完整交互终端还需 `SSH_INTERACTIVE_ENABLED=true` 与额外批准；有真实写入风险。
@@ -69,3 +69,6 @@ pnpm audit --audit-level=moderate
 集成测试可设置 `TEST_DATABASE_URL`，数据库名必须以 `_test` 结尾。E2E 使用本地开发数据库，会新增演示位置和邀请。CI 的 PostgreSQL 为一次性服务。不要将 E2E 指向生产。
 
 [架构](docs/ARCHITECTURE.md) · [产品规格](docs/PRODUCT_SPEC.md) · [安全与限制](docs/SECURITY.md) · [部署](docs/DEPLOYMENT.md) · [API](docs/API.md) · [许可证](docs/OPEN_SOURCE_ATTRIBUTION.md) · [验收报告](docs/ACCEPTANCE_REPORT.md)
+
+
+正式升级和受保护 SSM/GitHub 部署见 [生产运维手册](docs/PRODUCTION_RUNBOOK.md)，节点导入见 [节点导入](docs/NODE_IMPORT.md)。已有环境与密钥继续沿用。

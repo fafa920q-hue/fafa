@@ -1,3 +1,4 @@
+import type { TokenPayload } from 'google-auth-library';
 import Fastify, { type FastifyRequest } from 'fastify';
 import cookie from '@fastify/cookie';
 import cors from '@fastify/cors';
@@ -30,14 +31,17 @@ import {
   exportSubscription,
   deduplicate,
   type Node,
+  nodeMetadata,
 } from '../../../packages/subscription/src';
 import {
   validateUrl,
   resolvePublic,
 } from '../../../packages/subscription/src/network';
+import { registerNodes } from './nodes';
 import { registerSsh } from './ssh';
 import { registerAdmin } from './admin';
 import { registerAi } from './ai';
+import { beginOwnerCredential, completeOwnerCredential, ownerSetupAvailable } from '../../../packages/auth/src/owner';
 import { publicOrigin } from '../../../packages/auth/src/urls';
 
 declare module 'fastify' {
@@ -63,35 +67,19 @@ function publicRow(row: any) {
   };
 }
 export async function visibleNodes(owner: string) {
-  const sources =
-    await sql`select s.* from node_sources s where s.revoked_at is null and (s.owner_id=${owner} or exists(select 1 from node_group_grants g where g.source_id=s.id and g.user_id=${owner} and g.revoked_at is null))`;
-  const active = sources.filter(
-    (s) =>
-      s.data.enabled &&
-      !s.data.demo &&
-      (!s.data.expiresAt || new Date(s.data.expiresAt) > new Date()),
-  );
-  if (!active.length) return [];
-  const rows =
-    await sql`select secret from nodes where source_id in ${sql(active.map((s) => s.id))} and revoked_at is null`;
-  const [profile] =
-    await sql`select data from subscription_profiles where owner_id=${owner} and revoked_at is null order by updated_at desc limit 1`;
-  const country = profile?.data.country;
-  const selected = country
-    ? active.filter((s) => s.data.country === country)
-    : active;
-  const selectedRows = country
-    ? selected.length
-      ? await sql`select secret from nodes where source_id in ${sql(selected.map((s) => s.id))} and revoked_at is null`
-      : []
-    : rows;
-  const [user] =
-    await sql`select node_limit,subscription_enabled from users where id=${owner}`;
-  return user?.subscription_enabled
-    ? deduplicate(
-        selectedRows.map((r) => JSON.parse(unseal(r.secret)) as Node),
-      ).slice(0, user.node_limit)
-    : [];
+  const [user] = await sql`select node_limit,subscription_enabled from users where id=${owner} and not disabled and deleted_at is null`;
+  if (!user?.subscription_enabled) return [];
+  const [profile] = await sql`select data from subscription_profiles where owner_id=${owner} and revoked_at is null order by updated_at desc limit 1`;
+  const filter = profile?.data || {};
+  const rows = await sql`select n.*,s.data as source_data from nodes n join node_sources s on s.id=n.source_id join users u on u.id=s.owner_id where n.revoked_at is null and s.revoked_at is null and not u.disabled and u.deleted_at is null and (s.owner_id=${owner} or ((s.data->>'kind'='OWNED_NODE' or s.data->>'redistributionAuthorized'='true') and exists(select 1 from node_group_grants g where g.source_id=s.id and g.user_id=${owner} and g.revoked_at is null)))`;
+  const nodes = rows.filter((row) => row.source_data.enabled && !row.source_data.demo &&
+    row.data.enabled !== false && (!row.source_data.expiresAt || new Date(row.source_data.expiresAt)>new Date()) &&
+    (!filter.country || (row.data.country || row.source_data.country) === filter.country) &&
+    (!filter.protocol || row.data.protocol === filter.protocol) &&
+    (!filter.group || (row.data.group || row.source_data.group || row.source_data.kind) === filter.group))
+    .map((row) => ({ ...JSON.parse(unseal(row.secret)), name: row.data.name,
+      country: row.data.country, tags: row.data.tags, aliases: row.data.aliases }) as Node);
+  return deduplicate(nodes).slice(0, user.node_limit);
 }
 function sharedCookieDomain() {
   return process.env.COOKIE_DOMAIN ? { domain: process.env.COOKIE_DOMAIN } : {};
@@ -174,7 +162,8 @@ export async function buildApp() {
       )
         throw new AppError(403, 'CSRF', '安全验证失败，请刷新页面');
       if (
-        (req.url.startsWith('/api/ai_accounts') ||
+        (req.url.startsWith('/api/node-import') || req.url.startsWith('/api/nodes') ||
+          req.url.startsWith('/api/ai_accounts') ||
           req.url.startsWith('/api/server_connections') ||
           req.url === '/api/subscription/rotate') &&
         Date.now() - new Date(actor.reauthenticated_at).getTime() > 600000
@@ -227,6 +216,7 @@ export async function buildApp() {
   app.get('/auth/config', async () => ({
     mock: mockEnabled(),
     google: !!process.env.GOOGLE_CLIENT_ID,
+    ownerSetup: await ownerSetupAvailable(),
     demo: process.env.DEMO_MODE === 'true',
   }));
   app.post(
@@ -250,13 +240,14 @@ export async function buildApp() {
       return setSession(reply, u as User);
     },
   );
-  app.get('/auth/google', async (_req, reply) => {
+  const startGoogle = async (reply: any, credential?: string) => {
     if (!process.env.GOOGLE_CLIENT_ID)
       throw new AppError(503, 'GOOGLE_UNCONFIGURED', 'Google 登录尚未配置');
     const state = token(),
       nonce = token(),
       verifier = token();
-    const flow = { state, nonce, verifier, at: Date.now() };
+    const ownerCredential = credential ? await beginOwnerCredential(credential, state) : undefined;
+    const flow = { state, nonce, verifier, at: Date.now(), ownerCredential };
     reply.setCookie(
       'fafa_oidc',
       Buffer.from(JSON.stringify(seal(JSON.stringify(flow)))).toString(
@@ -271,8 +262,7 @@ export async function buildApp() {
         maxAge: 600,
       },
     );
-    return reply.redirect(
-      google().generateAuthUrl({
+    return google().generateAuthUrl({
         scope: ['openid', 'email', 'profile'],
         state,
         nonce,
@@ -281,8 +271,15 @@ export async function buildApp() {
         ),
         code_challenge_method: 'S256' as any,
         prompt: 'select_account',
-      }),
-    );
+      });
+  };
+  app.get('/auth/google', async (_req, reply) => reply.redirect(await startGoogle(reply)));
+  app.post('/auth/owner/start', { config: { rateLimit: { max: 5, timeWindow: '15 minutes' } } }, async (req, reply) => {
+    if (!(await ownerSetupAvailable())) throw notFound();
+    if (!origins.includes(req.headers.origin || ''))
+      throw new AppError(403, 'ORIGIN', '来源不允许');
+    const { credential } = z.object({ credential: z.string().min(70).max(100) }).parse(req.body);
+    return { url: await startGoogle(reply, credential) };
   });
   app.get('/auth/google/callback', async (req, reply) => {
     const { state, code } = z
@@ -304,18 +301,22 @@ export async function buildApp() {
     if (state !== flow.state || Date.now() - flow.at > 600000)
       throw new AppError(403, 'OIDC_STATE', '登录验证已失效');
     const client = google();
-    const { tokens } = await client.getToken({
-      code,
-      codeVerifier: flow.verifier,
-    });
-    const ticket = await client.verifyIdToken({
-      idToken: tokens.id_token!,
-      audience: process.env.GOOGLE_CLIENT_ID,
-    });
-    const p = ticket.getPayload();
-    if (!p || p.nonce !== flow.nonce)
+    let p: TokenPayload | undefined;
+    try {
+      const { tokens } = await client.getToken({ code, codeVerifier: flow.verifier });
+      const ticket = await client.verifyIdToken({ idToken: tokens.id_token!, audience: process.env.GOOGLE_CLIENT_ID });
+      p = ticket.getPayload();
+    } catch {
+      throw new AppError(403, 'OIDC_TOKEN', 'Google 身份验证失败，请重新登录');
+    }
+    if (!p || !p.sub ||
+      !['accounts.google.com', 'https://accounts.google.com'].includes(p.iss) ||
+      p.aud !== process.env.GOOGLE_CLIENT_ID || !p.exp || p.exp <= Math.floor(Date.now() / 1000) ||
+      p.nonce !== flow.nonce)
       throw new AppError(403, 'OIDC_NONCE', '登录验证失败');
-    const user = await activateGoogle(p);
+    const user = flow.ownerCredential
+      ? await completeOwnerCredential(flow.ownerCredential, flow.state, p)
+      : await activateGoogle(p);
     await setSession(reply, user);
     return reply.redirect(origins[0]);
   });
@@ -377,6 +378,8 @@ export async function buildApp() {
     });
     const save = async (req: FastifyRequest) => {
       const data: any = schemas[table].parse(req.body);
+      if (table === 'node_sources' && data.kind === 'THIRD_PARTY_NODE' && (!isAdmin(req.actor.role) || (!data.redistributionAuthorized || !data.authorizationReference.trim())))
+        throw new AppError(403, 'REDISTRIBUTION_REQUIRED', '第三方节点需要管理员权限与再分发授权');
       let secret: any = null;
       const id = (req.params as any)?.id;
       if (id && !(await own(table, z.uuid().parse(id), req.actor.id)))
@@ -430,7 +433,7 @@ export async function buildApp() {
         await sql.begin(async (tx) => {
           await tx`update nodes set revoked_at=now() where source_id=${row.id} and revoked_at is null`;
           for (const node of nodes)
-            await tx`insert into nodes(owner_id,source_id,data,secret) values(${req.actor.id},${row.id},${tx.json({ name: node.name, protocol: node.protocol, country: data.country })},${tx.json(seal(JSON.stringify(node)))})`;
+            await tx`insert into nodes(owner_id,source_id,data,secret) values(${req.actor.id},${row.id},${tx.json(nodeMetadata(node, data.country))},${tx.json(seal(JSON.stringify(node)))})`;
           await tx`update node_sources set data=data || ${tx.json({ nodeCount: nodes.length, status: 'READY', lastSuccess: new Date().toISOString() })} where id=${row.id}`;
         });
       }
@@ -479,12 +482,13 @@ export async function buildApp() {
     return r?.data || { country: '' };
   });
   app.put('/api/subscription/profile', async (req) => {
-    const { country } = z
-      .object({ country: z.string().max(32) })
-      .parse(req.body);
+    const profile = z.object({ country: z.string().max(32).default(''),
+      protocol: z.enum(['', 'ss', 'vmess', 'vless', 'trojan', 'hysteria2']).default(''),
+      group: z.string().max(80).default(''),
+    }).parse(req.body);
     await sql.begin(async (tx) => {
       await tx`update subscription_profiles set revoked_at=now() where owner_id=${req.actor.id} and revoked_at is null`;
-      await tx`insert into subscription_profiles(owner_id,data) values(${req.actor.id},${tx.json({ country })})`;
+      await tx`insert into subscription_profiles(owner_id,data) values(${req.actor.id},${tx.json(profile)})`;
     });
     await audit(req.actor.id, 'subscription.profile_updated');
     return { ok: true };
@@ -566,6 +570,7 @@ export async function buildApp() {
     await audit(req.actor.id, 'data.deletion_requested');
     return { message: '删除请求已登记，请联系管理员核验并处理' };
   });
+  await registerNodes(app);
   await registerAdmin(app);
   await registerAi(app, origins);
   await registerSsh(app, origins);

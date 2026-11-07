@@ -15,6 +15,7 @@ import {
   type Field,
 } from '../../../../packages/ui/src/core';
 import QRCode from 'qrcode';
+import { NodeManager } from '../components/NodeManager';
 import { flag } from './Dashboard';
 const fields: Field[] = [
   { name: 'name', label: '源名称', required: true },
@@ -42,6 +43,9 @@ const fields: Field[] = [
   },
   { name: 'country', label: '国家 / 地区', value: '未标注' },
   { name: 'provider', label: '供应商（可选）' },
+  { name: 'group', label: '分组（可选）' },
+  { name: 'authorizationReference', label: '聚合与再分发授权依据（可选）' },
+  { name: 'redistributionAuthorized', label: '我已获得向授权用户再分发的许可', type: 'checkbox' },
   {
     name: 'expiresAt',
     label: '有效期（ISO 时间，可选）',
@@ -81,7 +85,7 @@ export function Subscriptions() {
   const writable = session.user.role !== 'Viewer';
   const filtered = [...(data.data || []), ...(shared.data || [])].filter(
     (r) =>
-      (tab === 'ALL' || r.kind === tab) &&
+      (tab === 'ALL' || r.kind === tab || (tab === 'REMOTE_SUBSCRIPTION' && r.kind === 'THIRD_PARTY_NODE')) &&
       (country === 'ALL' || r.country === country) &&
       (r.name + r.country).toLowerCase().includes(q.toLowerCase()),
   );
@@ -100,6 +104,7 @@ export function Subscriptions() {
         }
       />
       <div className="stack">
+        <NodeManager onChanged={data.refresh} />
         <Card
           title="统一订阅"
           description="汇集个人源与获授权共享源 · 独立令牌，可轮换与撤销"

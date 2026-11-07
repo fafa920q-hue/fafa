@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import postgres from 'postgres';
+import { randomBytes } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 const url = new URL(
   process.env.TEST_DATABASE_URL ||
@@ -26,4 +27,22 @@ for (const args of [
 ]) {
   const result = spawnSync('pnpm', args, { stdio: 'inherit', env });
   if (result.status) process.exit(result.status);
+}
+
+const ownerUrl = new URL(url);
+const ownerDatabase = 'fafa_owner_' + randomBytes(6).toString('hex') + '_test';
+ownerUrl.pathname = '/' + ownerDatabase;
+const ownerAdmin = postgres(adminUrl.toString());
+await ownerAdmin`create database ${ownerAdmin(ownerDatabase)}`;
+try {
+  for (const args of [
+    ['exec', 'tsx', 'packages/db/src/migrate.ts'],
+    ['exec', 'vitest', 'run', 'tests/owner.integration.test.ts'],
+  ]) {
+    const result = spawnSync('pnpm', args, { stdio: 'inherit', env: { ...env, DATABASE_URL: ownerUrl.toString(), TEST_DATABASE_URL: ownerUrl.toString() } });
+    if (result.status) throw Error('Owner 隔离测试失败');
+  }
+} finally {
+  await ownerAdmin`drop database ${ownerAdmin(ownerDatabase)}`;
+  await ownerAdmin.end();
 }

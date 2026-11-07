@@ -2,7 +2,7 @@
 
 ## 已实施
 
-- Google 官方 google-auth-library 校验签名、iss、aud、exp；本项目校验 nonce / state、PKCE、10 分钟 OIDC Cookie，要求 verified email。sub 唯一，不用邮箱做身份主键。服务端固定 bootstrap sub；生产禁止 dev 登录 / demo。
+- Google 官方 google-auth-library 校验签名、iss、aud、exp；本项目校验 nonce / state、PKCE、10 分钟 OIDC Cookie，要求 verified email。sub 唯一，不用邮箱做身份主键。Owner 通过服务器本地一次性哈希凭据 + 已验证 Google 身份绑定；入口永久关闭，旧 bootstrap sub 不再授予 Owner；生产禁止 dev 登录 / demo。
 - 随机 256-bit 会话 / 订阅 Token；数据库只存 hash。Cookie HttpOnly / SameSite=Lax，生产 Secure。7 天绝对有效期、30 分钟闲置期；角色变更、禁用、会话撤销即时阻止 HTTP。敏感配置和管理写入需要 10 分钟内重新登录。
 - 精确 CORS、Origin + 会话 CSRF；参数化 SQL、Zod 输入大小与类型校验、Helmet 安全头；API 不记录请求 URL / body，统一中文错误与 correlation ID，无堆栈泄漏。
 - AES-256-GCM 信封加密，随机 DEK、独立 IV、认证标签，主密钥版本 ID；订阅 URL、节点凭据、AI Key、SSH 凭据都不明文落库。管理员无解密他人密钥接口，秘密不会写入前端 localStorage。
@@ -24,3 +24,6 @@
 5. 无自动硬删除与自动备份调度；脚本须由运维在新数据库上恢复演练。没有专业渗透测试；规则扫描与依赖审计不等于完整安全认证。
 6. 不从用户网页搜集任何 ChatGPT 登录材料，不提供 iOS GPS 改写或伪造定位承诺。
 7. 新安装使用主域名 host-only Cookie，管理端带凭据访问主域名 API，CORS/CSRF 精确允许两个正式 Origin。升级保留已有 Cookie 作用域。设置 COOKIE_DOMAIN 时所有子域须受控，避免子域 Cookie 注入。API 只信任直接反向代理；未开启通用 trustProxy，部署多层代理前须配置精确可信网段。
+
+
+一次性 Owner、数据库最小权限与受保护 SSM 部署的边界及操作见 OWNER_SETUP.md / PRODUCTION_RUNBOOK.md。节点导入只保存加密配置和脱敏错误行号，不写原始节点凭据到日志。

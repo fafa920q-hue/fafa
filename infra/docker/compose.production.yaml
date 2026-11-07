@@ -1,16 +1,38 @@
 name: fafa-one
 x-runtime: &runtime
   image: fafa-one-runtime:${IMAGE_TAG:?set IMAGE_TAG}
-  env_file: ../../.env.production
+  env_file:
+    - path: ../../.env.runtime
+      required: false
   environment:
-    { NODE_ENV: production, DEV_MOCK_LOGIN: 'false', DEMO_MODE: 'false' }
+    NODE_ENV: production
+    DEV_MOCK_LOGIN: 'false'
+    DEMO_MODE: 'false'
+    API_PORT: '4000'
+    WEB_ORIGIN: ${WEB_ORIGIN:-https://fafa888.uk}
+    ADMIN_ORIGIN: ${ADMIN_ORIGIN:-https://a.fafa888.uk}
+    API_PUBLIC_URL: ${API_PUBLIC_URL:-https://fafa888.uk}
+    GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI:-https://fafa888.uk/auth/google/callback}
+    GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+    GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+    ENCRYPTION_KEY: ${ENCRYPTION_KEY:?retain existing encryption key}
+    ENCRYPTION_KEY_ID: ${ENCRYPTION_KEY_ID:-v1}
+    ENCRYPTION_PREVIOUS_KEYS_JSON: ${ENCRYPTION_PREVIOUS_KEYS_JSON:-}
+    COOKIE_DOMAIN: ${COOKIE_DOMAIN:-}
+    SSH_ALLOWED_TARGETS: ${SSH_ALLOWED_TARGETS:-}
+    SSH_INTERACTIVE_ENABLED: ${SSH_INTERACTIVE_ENABLED:-false}
+    OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4.1-mini}
   restart: unless-stopped
+  logging: &logging
+    driver: json-file
+    options: { max-size: '10m', max-file: '3' }
   security_opt: ['no-new-privileges:true']
   cap_drop: [ALL]
   read_only: true
   tmpfs: ['/tmp']
 services:
   postgres:
+    logging: *logging
     image: postgres:17.7-alpine
     environment:
       POSTGRES_DB: fafa
@@ -25,6 +47,7 @@ services:
       retries: 30
   migrate:
     <<: *runtime
+    env_file: ../../.env.production
     command: ['node', '--import', 'tsx', 'packages/db/src/migrate.ts']
     restart: 'no'
     healthcheck: { disable: true }
@@ -42,14 +65,17 @@ services:
       retries: 3
     depends_on: { migrate: { condition: service_completed_successfully } }
   web:
+    logging: *logging
     image: fafa-one-web:${IMAGE_TAG:?set IMAGE_TAG}
     tmpfs: ['/config', '/data']
     restart: unless-stopped
   admin:
+    logging: *logging
     image: fafa-one-admin:${IMAGE_TAG:?set IMAGE_TAG}
     tmpfs: ['/config', '/data']
     restart: unless-stopped
   proxy:
+    logging: *logging
     image: caddy:2.10.2-alpine
     ports: ['80:80', '443:443', '443:443/udp']
     environment:

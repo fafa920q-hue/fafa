@@ -55,7 +55,16 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec tsx infra/scripts/init-env.ts
       - run: pnpm db:migrate && pnpm db:seed
-      - run: pnpm lint && pnpm format:check && pnpm typecheck
+      - name: Check formatting and retain corrective diff
+        run: |
+          if ! pnpm format:check; then
+            pnpm exec prettier --write . > /dev/null
+            git diff
+            exit 1
+          fi
+      - run: pnpm lint && pnpm typecheck
+      - run: bash -n infra/scripts/deploy-production.sh
+      - run: python3 -m unittest discover -s infra/deploy -p 'test_*.py'
       - run: pnpm test && pnpm test:integration && pnpm build
       - run: pnpm security && pnpm audit --audit-level=moderate
       - run: pnpm exec playwright install --with-deps chromium firefox webkit

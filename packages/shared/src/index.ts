@@ -12,7 +12,10 @@ export const isAdmin = (role: Role) => role === 'Owner' || role === 'Admin';
 export const writable = (role: Role) => role !== 'Viewer';
 export const sourceSchema = z.object({
   name: z.string().min(1).max(80),
-  kind: z.enum(['OWNED_NODE', 'REMOTE_SUBSCRIPTION']),
+  kind: z.enum(['OWNED_NODE', 'REMOTE_SUBSCRIPTION', 'THIRD_PARTY_NODE']),
+  group: z.string().max(80).default(''),
+  redistributionAuthorized: z.boolean().default(false),
+  authorizationReference: z.string().max(200).default(''),
   url: z.string().max(4096).optional(),
   content: z.string().max(1048576).optional(),
   country: z.string().max(16).default('未标注'),

@@ -5,6 +5,7 @@ import { safeFetch } from '../../../packages/subscription/src/network';
 import {
   parseSubscription,
   identity,
+  nodeMetadata,
   type Node,
 } from '../../../packages/subscription/src';
 export async function runSubscriptionJob(job: any) {
@@ -28,10 +29,15 @@ export async function runSubscriptionJob(job: any) {
   }
   const nodes = parseSubscription(result.body);
   const previous =
-    await sql`select secret from nodes where source_id=${source.id} and revoked_at is null`;
+    await sql`select * from nodes where source_id=${source.id} order by updated_at desc`;
   const old = new Set(
-    previous.map((n) => identity(JSON.parse(unseal(n.secret)) as Node)),
+    previous.filter((n) => !n.revoked_at).map((n) => identity(JSON.parse(unseal(n.secret)) as Node)),
   );
+  const overrides = new Map<string, any>();
+  for (const row of previous) {
+    const key = identity(JSON.parse(unseal(row.secret)) as Node);
+    if (!overrides.has(key)) overrides.set(key, row.data);
+  }
   const fresh = new Set(nodes.map(identity));
   const diff = {
     added: [...fresh].filter((x) => !old.has(x)).length,
@@ -39,8 +45,11 @@ export async function runSubscriptionJob(job: any) {
   };
   await sql.begin(async (tx) => {
     await tx`update nodes set revoked_at=now() where source_id=${source.id} and revoked_at is null`;
-    for (const n of nodes)
-      await tx`insert into nodes(owner_id,source_id,data,secret) values(${source.owner_id},${source.id},${tx.json({ name: n.name, protocol: n.protocol, country: source.data.country })},${tx.json(seal(JSON.stringify(n)))})`;
+    for (const n of nodes) {
+      const saved = overrides.get(identity(n));
+      if (saved?.userDeleted) continue;
+      await tx`insert into nodes(owner_id,source_id,data,secret) values(${source.owner_id},${source.id},${tx.json({ ...nodeMetadata(n, source.data.country), group: source.data.group || '', ...(saved?.overrides || {}), overrides: saved?.overrides || {} })},${tx.json(seal(JSON.stringify(n)))})`;
+    }
     await tx`update node_sources set data=data || ${tx.json({ nodeCount: nodes.length, lastSuccess: new Date().toISOString(), status: 'READY', error: null, etag: result.etag || null, lastModified: result.modified || null })},updated_at=now() where id=${source.id}`;
   });
   return diff;

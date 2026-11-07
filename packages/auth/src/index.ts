@@ -38,21 +38,27 @@ export async function activateGoogle(payload: {
     const [existing] =
       await tx`select u.* from users u join google_identities g on g.user_id=u.id where g.sub=${payload.sub}`;
     if (existing) {
+      if (existing.role === 'Owner') {
+        const [binding] = await tx`select owner_identity_allowed(${payload.sub}) as allowed`;
+        if (!binding.allowed)
+          throw new AppError(403, 'OWNER_IDENTITY', 'Owner 身份不匹配');
+      }
       if (existing.disabled || existing.deleted_at)
         throw new AppError(403, 'DISABLED', '账户已停用');
       return existing as User;
     }
-    const bootstrap = payload.sub === process.env.BOOTSTRAP_ADMIN_GOOGLE_SUB;
     const [invite] =
       await tx`select * from invitations where lower(data->>'email')=lower(${payload.email!}) and revoked_at is null and (data->>'expiresAt')::timestamptz>now() and not (data ? 'usedAt') for update`;
-    if (!bootstrap && !invite)
+    if (!invite)
       throw new AppError(403, 'INVITE_REQUIRED', '此账号尚未受邀');
     const [limit] = await tx`select value from settings where key='seat_limit'`;
     const [count] =
       await tx`select count(*)::int as total from users where deleted_at is null`;
     if (count.total >= Number(limit.value))
       throw new AppError(409, 'SEAT_LIMIT', '用户席位已满');
-    const role = bootstrap ? 'Owner' : invite.data.role;
+    const role = invite.data.role;
+    if (!['Admin', 'Member', 'Viewer'].includes(role))
+      throw new AppError(403, 'INVITE_ROLE', '邀请角色无效');
     const [u] =
       await tx`insert into users(email,name,role) values(${payload.email!},${payload.name || 'Google 用户'},${role}) returning *`;
     await tx`insert into google_identities(user_id,sub) values(${u.id},${payload.sub})`;

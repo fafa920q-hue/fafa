@@ -158,6 +158,8 @@ describe('真实数据库 API 闭环', () => {
           email: 'fixture@example.invalid',
           email_verified: true,
           nonce: flow.nonce,
+          iss: 'https://accounts.google.com', aud: 'fixture.apps.googleusercontent.com',
+          exp: Math.floor(Date.now()/1000)+300,
         }),
       } as any);
       const callback = await production.inject({
@@ -192,6 +194,44 @@ describe('真实数据库 API 闭环', () => {
       vi.restoreAllMocks();
       vi.unstubAllEnvs();
     }
+  });
+  it('批量 SS/VMess 导入、权限、筛选、节点编辑与撤销', async () => {
+    const raw = 'ss://' + Buffer.from('aes-256-gcm:fictional-fixture-password').toString('base64url') + '@node.example.com:8388#' + encodeURIComponent('香港 IEPL 0.5倍 下载专用');
+    const input = { name: '隔离导入 fixture', group: '下载组', kind: 'THIRD_PARTY_NODE',
+      content: raw + '\n' + raw + '\ninvalid-fixture', authorized: true, redistributionAuthorized: true,
+      authorizationReference: '虚构提供商授权 fixture' };
+    expect((await send(1, '/api/node-import', 'POST', input)).statusCode).toBe(403);
+    const preview = await send(0, '/api/node-import/preview', 'POST', input);
+    expect(preview.statusCode).toBe(200);
+    expect(preview.json()).toMatchObject({ valid: 1, duplicates: 1, failures: [{ line: 3, code: 'PARSE_FAILED' }] });
+    expect(preview.body).not.toContain('fictional-fixture-password');
+    const imported = await send(0, '/api/node-import', 'POST', input);
+    expect(imported.statusCode).toBe(200);
+    const id = imported.json().sourceId;
+    const [stored] = await sql`select * from nodes where source_id=${id}`;
+    expect(JSON.stringify(stored)).not.toContain('fictional-fixture-password');
+    const node = (await send(0, '/api/nodes')).json().find((n: any) => n.sourceId === id);
+    expect(node.country).toBe('香港');
+    expect(node.status).toBe('PENDING_VERIFICATION');
+    expect((await send(1, '/api/nodes/' + node.id, 'PATCH', { enabled: false })).statusCode).toBe(404);
+    await send(0, '/api/admin/grants', 'POST', { kind: 'source', resourceId: id, userId: ids[1] });
+    const url = (await send(1, '/api/subscription/rotate', 'POST')).json().url;
+    const path = new URL(url).pathname;
+    expect((await app.inject(path + '?format=uri')).body).toContain('ss://');
+    await send(1, '/api/subscription/profile', 'PUT', { country: '美国', protocol: 'ss', group: '下载组' });
+    expect((await app.inject(path + '?format=uri')).body).toBe('');
+    await send(1, '/api/subscription/profile', 'PUT', { country: '香港', protocol: 'vmess' });
+    expect((await app.inject(path + '?format=uri')).body).toBe('');
+    await send(1, '/api/subscription/profile', 'PUT', { country: '香港', protocol: 'ss', group: '下载组' });
+    expect((await app.inject(path + '?format=uri')).body).toContain('ss://');
+    await send(0, '/api/nodes/' + node.id, 'PATCH', { enabled: false });
+    expect((await app.inject(path + '?format=uri')).body).toBe('');
+    await send(0, '/api/nodes/' + node.id, 'PATCH', { enabled: true });
+    expect((await app.inject(path + '?format=uri')).body).toContain('ss://');
+    await send(0, '/api/nodes/' + node.id, 'DELETE');
+    expect((await app.inject(path + '?format=uri')).body).toBe('');
+    await send(1, '/api/subscription/profile', 'PUT', { country: '' });
+    await send(0, '/api/node_sources/' + id, 'DELETE');
   });
   it('自有订阅创建、持久化、密钥不同节点保留', async () => {
     const r = await send(1, '/api/node_sources', 'POST', {

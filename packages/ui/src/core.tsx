@@ -119,6 +119,7 @@ export function Provider({ children }: { children: ReactNode }) {
 }
 function Login({ onLogin }: { onLogin: (s: Session) => void }) {
   const [config, setConfig] = useState<any>();
+  const [ownerCredential, setOwnerCredential] = useState('');
   const [error, setError] = useState('');
   useEffect(() => {
     api('/auth/config')
@@ -152,6 +153,31 @@ function Login({ onLogin }: { onLogin: (s: Session) => void }) {
         </a>
         {!config?.google && (
           <p className="muted">Google 登录未配置 · 仅受邀账号可激活</p>
+        )}
+        {config?.ownerSetup && (
+          <details>
+            <summary>首次 Owner 初始化</summary>
+            <form onSubmit={async (event) => {
+              event.preventDefault();
+              const credential = ownerCredential;
+              setOwnerCredential('');
+              try {
+                const result = await api<{ url: string }>('/auth/owner/start', 'POST', { credential });
+                window.location.assign(result.url);
+              } catch (error) {
+                setError((error as Error).message);
+              }
+            }}>
+              <label>
+                服务器一次性授权凭据
+                <input type="password" value={ownerCredential}
+                  onChange={(event) => setOwnerCredential(event.target.value)}
+                  autoComplete="off" required maxLength={100} />
+              </label>
+              <p>凭据由服务器交互终端生成，输入后使用正式 Google 登录完成绑定。</p>
+              <button className="primary">授权并使用 Google 初始化 Owner</button>
+            </form>
+          </details>
         )}
         {config?.mock && (
           <div className="dev-login">
