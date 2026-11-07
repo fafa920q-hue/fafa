@@ -39,7 +39,9 @@ test('map selection, conversion, link parsing, real private favorite API and dir
     steps: 10,
   });
   await page.mouse.up();
-  await expect(page.getByTestId('selected-coordinate')).not.toHaveText(beforeDrag);
+  await expect(page.getByTestId('selected-coordinate')).not.toHaveText(
+    beforeDrag,
+  );
   await page.getByLabel('输入坐标系', { exact: true }).selectOption('GCJ02');
   await page.getByLabel('纬度', { exact: true }).fill('39.9164043');
   await page.getByLabel('经度', { exact: true }).fill('116.4102445');

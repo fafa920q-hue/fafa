@@ -48,7 +48,7 @@ jobs:
       - run: pnpm security && pnpm audit --audit-level=moderate
       - run: pnpm exec playwright install --with-deps chromium webkit
       - name: Verify WLOC operations before full shared regression
-        run: pnpm exec playwright test tests/e2e/wloc.spec.ts --project=chromium --project=webkit --max-failures=1
+        run: pnpm exec playwright test tests/e2e/accessibility.spec.ts tests/e2e/wloc.spec.ts --project=chromium --project=webkit --max-failures=1
       - uses: actions/upload-artifact@v4
         if: always()
         with:
