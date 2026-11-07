@@ -106,7 +106,7 @@ export function parseMapLink(
 ) {
   const url = mapUrl(raw);
   const host = url.hostname;
-  let numbers: number[] | null = null;
+  let numbers: number[] | null;
   let source: 'APPLE' | 'AMAP' | 'BAIDU' | 'GOOGLE';
   let system: CoordinateSystem = 'WGS84';
   let reverse = false;

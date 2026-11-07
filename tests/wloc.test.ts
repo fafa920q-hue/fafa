@@ -6,7 +6,7 @@ import {
   parseMapLink,
   mapUrl,
 } from '../packages/shared/src/wloc';
-import { locationTools } from '../apps/api/src/location-tools';
+import { mapFetch, locationTools } from '../apps/api/src/location-tools';
 describe('WLOC independent coordinates and map links', () => {
   it('rejects empty, non-numeric and out-of-range coordinates without corrupting zero', () => {
     expect(coordinate(0, 0)).toEqual({ latitude: 0, longitude: 0 });
@@ -173,4 +173,10 @@ describe('bounded map provider operations', () => {
       ),
     ).rejects.toMatchObject({ code: 'MAP_LINK_INVALID' });
   });
+});
+
+it('blocks literal private/loopback/metadata targets before any TLS connection', async () => {
+  for (const host of ['127.0.0.1', '169.254.169.254', '192.168.1.2', '[::1]', '[::ffff:127.0.0.1]']) {
+    await expect(mapFetch('https://' + host + '/')).rejects.toMatchObject({ code: 'SSRF_BLOCKED' });
+  }
 });
