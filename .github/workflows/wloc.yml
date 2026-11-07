@@ -1,0 +1,17 @@
+name: WLOC dependency preparation
+on:
+  push:
+    branches: [feat/wloc-location-center]
+permissions: { contents: read }
+jobs:
+  lockfile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { persist-credentials: false }
+      - uses: actions/setup-node@v4
+        with: { node-version: '24' }
+      - run: npm install -g pnpm@11.25.0
+      - run: pnpm install --lockfile-only --no-frozen-lockfile
+      - name: Return non-secret dependency lock for connector commit
+        run: node --input-type=module -e "import {readFileSync} from 'node:fs'; console.log('WLOC_LOCK_JSON='+JSON.stringify(readFileSync('pnpm-lock.yaml','utf8')))"
