@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page, type TestInfo } from '@playwright/test';
 
 const adminOrigin = 'http://localhost:5174';
 const memberId = '22222222-2222-4222-8222-222222222222';
@@ -22,6 +22,24 @@ async function api(page: Page, path: string, method = 'GET', body?: unknown) {
     ...(body === undefined ? {} : { data: body }),
   });
   return { status: response.status(), data: await response.json() };
+}
+
+async function cleanupSource(
+  page: Page,
+  id: string,
+  info: TestInfo,
+  primaryFailure: unknown,
+) {
+  try {
+    const cleanup = await api(page, '/api/node_sources/' + id, 'DELETE');
+    expect(cleanup.status).toBe(200);
+  } catch (error) {
+    if (!primaryFailure) throw error;
+    info.annotations.push({
+      type: 'cleanup',
+      description: 'Source cleanup failed after the primary test failure',
+    });
+  }
 }
 
 test('Owner 节点管理与权限隔离', async ({ page, browser }, testInfo) => {
@@ -294,20 +312,8 @@ test('Owner 节点管理与权限隔离', async ({ page, browser }, testInfo) =>
   } finally {
     // Only this test's source is removed; seed resources and Owner binding remain.
     try {
-      if (sourceId) {
-        const cleanup = await api(
-          page,
-          '/api/node_sources/' + sourceId,
-          'DELETE',
-        );
-        expect(cleanup.status).toBe(200);
-      }
-    } catch (error) {
-      if (!originalFailure) throw error;
-      testInfo.annotations.push({
-        type: 'cleanup',
-        description: 'Source cleanup failed after the primary test failure',
-      });
+      if (sourceId)
+        await cleanupSource(page, sourceId, testInfo, originalFailure);
     } finally {
       await memberContext.close().catch((error) => {
         if (!originalFailure) throw error;
@@ -459,22 +465,8 @@ test('Owner 订阅源真实 CRUD', async ({ page }, testInfo) => {
     originalFailure = error;
     throw error;
   } finally {
-    try {
-      if (sourceId && !removed) {
-        const cleanup = await api(
-          page,
-          '/api/node_sources/' + sourceId,
-          'DELETE',
-        );
-        expect(cleanup.status).toBe(200);
-      }
-    } catch (error) {
-      if (!originalFailure) throw error;
-      testInfo.annotations.push({
-        type: 'cleanup',
-        description: 'Source cleanup failed after the primary test failure',
-      });
-    }
+    if (sourceId && !removed)
+      await cleanupSource(page, sourceId, testInfo, originalFailure);
   }
 });
 
