@@ -6,14 +6,15 @@ deployment_action="${2:-deploy}"
 [[ "$deployment_sha" =~ ^[0-9a-f]{40}$ ]]
 [[ "$deployment_action" == deploy || "$deployment_action" == check ]]
 cd /opt/fafa-one
+source infra/scripts/repository-git.sh
 exec 9>/opt/fafa-one/.deployment.lock
 flock -n 9
 [[ -f .env.production && ! -L .env.production ]]
 if [[ "$deployment_action" == deploy ]]; then chmod 600 .env.production; fi
 [[ "$(stat -c %a .env.production)" == 600 ]]
-[[ "$(git rev-parse HEAD)" == "$deployment_sha" ]]
-[[ -z "$(git status --porcelain --untracked-files=no)" ]]
-if [[ "$(git rev-parse --is-shallow-repository)" == true ]]; then git fetch --unshallow origin; fi
+[[ "$(repository_git rev-parse HEAD)" == "$deployment_sha" ]]
+[[ -z "$(repository_git status --porcelain --untracked-files=no)" ]]
+if [[ "$(repository_git rev-parse --is-shallow-repository)" == true ]]; then repository_git fetch --unshallow origin; fi
 if [[ -e .deployed-sha ]]; then
   [[ -f .deployed-sha && ! -L .deployed-sha ]]
   [[ "$(cat .deployed-sha)" =~ ^[0-9a-f]{40}$ ]]
@@ -21,18 +22,18 @@ fi
 export IMAGE_TAG="$deployment_sha"
 compose=(docker compose --env-file .env.production -f infra/docker/compose.production.yaml)
 if [[ "$deployment_action" == check ]]; then
-  git rev-parse HEAD
+  repository_git rev-parse HEAD
   "${compose[@]}" ps --all --format json
   exit 0
 fi
 # Only source changes require rebuilding; no installation, disk, swap or key regeneration.
 for target in runtime web admin; do
-  git archive "$deployment_sha" | docker build -f infra/docker/Dockerfile --target "$target" -t "fafa-one-$target:$deployment_sha" -
+  repository_git archive "$deployment_sha" | docker build -f infra/docker/Dockerfile --target "$target" -t "fafa-one-$target:$deployment_sha" -
 done
 env_owner="$(stat -c %u .env.production):$(stat -c %g .env.production)"
 runtime_owner="$(stat -c %u .):$(stat -c %g .)"
 if [[ -f .env.runtime ]]; then runtime_owner="$(stat -c %u .env.runtime):$(stat -c %g .env.runtime)"; fi
-git log -p --all -- . ':!pnpm-lock.yaml' | "${compose[@]}" run --rm -T --no-deps --user "$env_owner" -v /opt/fafa-one:/config:ro ops node --import tsx infra/scripts/audit-production-config.ts
+repository_git log -p --all -- . ':!pnpm-lock.yaml' | "${compose[@]}" run --rm -T --no-deps --user "$env_owner" -v /opt/fafa-one:/config:ro ops node --import tsx infra/scripts/audit-production-config.ts
 "${compose[@]}" config --quiet
 mkdir -p backups deployments
 chmod 700 backups deployments

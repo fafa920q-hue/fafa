@@ -121,7 +121,12 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: '24' }
       - name: Check deployment shell syntax
-        run: bash -n infra/scripts/deploy-production.sh infra/scripts/verify-production-startup.sh
+        run: bash -n infra/scripts/deploy-production.sh infra/scripts/repository-git.sh infra/scripts/verify-production-startup.sh
+      - name: Verify root uses the existing repository identity
+        run: |
+          expected="$(git rev-parse HEAD)"
+          observed="$(sudo bash -c 'cd "$1"; source infra/scripts/repository-git.sh; repository_git rev-parse HEAD' _ "$GITHUB_WORKSPACE")"
+          test "$expected" = "$observed"
       - name: Verify first deployment with disposable credentials and volumes
         run: bash infra/scripts/verify-production-startup.sh
       - uses: actions/upload-artifact@v4

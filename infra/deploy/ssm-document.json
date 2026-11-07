@@ -21,6 +21,8 @@
         "runCommand": [
           "set -eu",
           "cd /opt/fafa-one",
+          "repository_uid=\"$(stat -c %u .git)\"",
+          "if [ \"$(id -u)\" != \"$repository_uid\" ]; then test \"$(id -u)\" = 0; repository_user=\"$(getent passwd \"$repository_uid\" | cut -d: -f1)\"; test -n \"$repository_user\"; command -v runuser >/dev/null; git() { runuser -u \"$repository_user\" -- git \"$@\"; }; fi",
           "test -f .env.production",
           "test ! -L .env.production",
           "if [ \"{{ Action }}\" = \"deploy\" ]; then chmod 600 .env.production; fi",

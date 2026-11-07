@@ -47,3 +47,5 @@ GitHub production Environment 必须有人工 required reviewers 且禁止管理
 成功发布的镜像 SHA 单独保存在 .deployed-sha，不改 .env.production 的旧 IMAGE_TAG。后续工具命令用 production-compose.sh 读取实际发布版本。脚本配置每日加密备份 timer 和 Docker 自启动；遇到同名但不同内容的现有备份单元会保留并停止，不能覆盖用户策略。工具容器禁用 Docker 日志采集，防止备份明文被日志驱动保存。
 
 首次无 .env.runtime / .deployed-sha 的控制台执行步骤见 [AWS_CONSOLE_HANDOFF.md](AWS_CONSOLE_HANDOFF.md)。发布前的 Cookie/代理域名及管理员数据库连接一致性检查会失败关闭，不重设既有密码。CI production-startup 使用一次性凭据/卷验证首次启动、迁移前备份、恢复新库及PG重启持久化，不访问AWS。
+
+授权 root/SSM 调用发布脚本时，Git 操作以现有仓库属主执行，复用该用户已配置的 Deploy Key；不添加全局 safe.directory 或复制私钥。SSM 固定文档的初始 Git 操作采用相同规则。若已安装旧文档，管理员必须审核文档版本及客户端固定版本后再授权，不擅自改写云端文档。

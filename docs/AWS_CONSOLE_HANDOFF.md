@@ -32,10 +32,11 @@ sudo docker ps --all --filter label=com.docker.compose.project=fafa-one --format
 
 ## 人工批准后调用原发布入口
 
-下面 SHA 是用户当前报告的版本；如需使用后续工具修复，先审核其完整 SHA 与 CI，再同步干净工作区，不执行 reset --hard 或覆盖本地配置。
+服务器当前报告的版本是 43bb8a1；本轮修复了 root 调用 Git 的身份问题，发布前先审核最新工具提交的完整 SHA 与 CI，再通过现有仓库属主同步干净工作区，不执行 reset --hard 或覆盖本地配置。以下变量必须填写这次明确获批准的40位 SHA。
 
 ```bash
-sudo bash infra/scripts/deploy-production.sh 43bb8a1961b0a5b4f3bf0859219664d7a0f17541 deploy
+approved_sha='填写已审核且CI通过的40位提交SHA'
+sudo bash infra/scripts/deploy-production.sh "$approved_sha" deploy
 ```
 
 必须沿用该脚本的部署锁、Git archive 构建、迁移前加密备份、认证解密/目录验证和运行时角色机制。顺序是：构建 → 配置审计 → PG 初始化/健康 → 备份及验证 → 创建运行时身份 → 迁移001–003 → 授予最小权限 → API/Worker/Web/Admin → Caddy → 状态证据。仅创建新的 app 角色凭据，不重设已存在的 PostgreSQL、加密或 Google 密钥。
