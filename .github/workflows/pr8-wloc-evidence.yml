@@ -1,0 +1,47 @@
+name: PR8 original WLOC evidence and reproduction
+on:
+  push:
+    branches: [codex/pr8-wloc-evidence]
+permissions: { contents: read, actions: read }
+jobs:
+  evidence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    services:
+      postgres:
+        image: postgres:17.7-alpine
+        env: { POSTGRES_DB: fafa, POSTGRES_USER: fafa, POSTGRES_PASSWORD: fafa_dev_only }
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U fafa" --health-interval 5s
+          --health-timeout 3s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+        with: { persist-credentials: false }
+      - uses: actions/setup-node@v4
+        with: { node-version: '24' }
+      - run: npm install -g pnpm@11.25.0
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v4
+        with:
+          name: member-auth-test-evidence
+          run-id: 42390559508
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/wloc-pr8-failure
+      - name: Inspect original trace and one synthetic test screenshot
+        run: pnpm exec tsx infra/scripts/inspect-wloc-failure.ts "$RUNNER_TEMP/wloc-pr8-failure"
+      - run: pnpm exec tsx infra/scripts/init-env.ts
+      - run: pnpm db:migrate && pnpm db:seed
+      - run: pnpm exec playwright install --with-deps webkit
+      - name: Reproduce unchanged original five-viewport iPhone case
+        run: /usr/bin/time -v -o /tmp/wloc-original-resource.txt pnpm exec playwright test tests/e2e/wloc.spec.ts --project=iphone --grep=375/390/430/768/1440px --trace=on
+      - name: Retain resource measurements
+        if: always()
+        run: test ! -f /tmp/wloc-original-resource.txt || cat /tmp/wloc-original-resource.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pr8-original-reproduction
+          path: |
+            test-results/
+            docs/evidence/playwright.json
