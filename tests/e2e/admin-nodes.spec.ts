@@ -3,23 +3,23 @@ import { test, expect, type Page } from '@playwright/test';
 const adminOrigin = 'http://localhost:5174';
 const memberId = '22222222-2222-4222-8222-222222222222';
 
-// Browser requests use the real dev proxy, session cookie and CSRF protection.
+// Assertions use the real dev proxy and the browser context's cookie jar.
+// UI mutations still happen through visible controls; HTTP checks verify isolation.
 async function api(page: Page, path: string, method = 'GET', body?: unknown) {
-  return page.evaluate(
-    async ({ path, method, body }) => {
-      const me = await (await fetch('/api/me')).json();
-      const response = await fetch(path, {
-        method,
-        headers: {
-          ...(body === undefined ? {} : { 'content-type': 'application/json' }),
-          'x-csrf-token': me.csrf,
-        },
-        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-      });
-      return { status: response.status, data: await response.json() };
+  const client = page.context().request;
+  const me = await client.get(adminOrigin + '/api/me', { timeout: 5000 });
+  expect(me.status()).toBe(200);
+  const session = await me.json();
+  const response = await client.fetch(adminOrigin + path, {
+    method,
+    timeout: 5000,
+    headers: {
+      origin: adminOrigin,
+      ...(!['GET', 'HEAD'].includes(method) ? { 'x-csrf-token': session.csrf } : {}),
     },
-    { path, method, body },
-  );
+    ...(body === undefined ? {} : { data: body }),
+  });
+  return { status: response.status(), data: await response.json() };
 }
 
 test('Owner 节点管理与权限隔离', async ({ page, browser }, testInfo) => {
@@ -56,6 +56,7 @@ test('Owner 节点管理与权限隔离', async ({ page, browser }, testInfo) =>
     ).toString('base64');
   let sourceId: string | undefined;
   const memberContext = await browser.newContext();
+  let originalFailure: unknown;
   try {
     await page.goto(adminOrigin);
     await page.getByRole('button', { name: '管理员演示', exact: true }).click();
@@ -285,6 +286,9 @@ test('Owner 节点管理与权限隔离', async ({ page, browser }, testInfo) =>
         () => document.documentElement.scrollWidth <= window.innerWidth,
       ),
     ).toBe(true);
+  } catch (error) {
+    originalFailure = error;
+    throw error;
   } finally {
     // Only this test's source is removed; seed resources and Owner binding remain.
     try {
@@ -296,8 +300,13 @@ test('Owner 节点管理与权限隔离', async ({ page, browser }, testInfo) =>
         );
         expect(cleanup.status).toBe(200);
       }
+    } catch (error) {
+      if (!originalFailure) throw error;
+      testInfo.annotations.push({ type: 'cleanup', description: 'Source cleanup failed after the primary test failure' });
     } finally {
-      await memberContext.close();
+      await memberContext.close().catch((error) => {
+        if (!originalFailure) throw error;
+      });
     }
   }
 });
@@ -313,6 +322,7 @@ test('Owner 订阅源真实 CRUD', async ({ page }, testInfo) => {
     encodeURIComponent('日本 IEPL 安全来源fixture');
   let sourceId: string | undefined;
   let removed = false;
+  let originalFailure: unknown;
   try {
     await page.goto(adminOrigin);
     await page.getByRole('button', { name: '管理员演示', exact: true }).click();
@@ -440,31 +450,33 @@ test('Owner 订阅源真实 CRUD', async ({ page }, testInfo) => {
         (item: { sourceId: string }) => item.sourceId === sourceId,
       ),
     ).toBe(false);
+  } catch (error) {
+    originalFailure = error;
+    throw error;
   } finally {
-    if (sourceId && !removed) {
-      const cleanup = await api(
-        page,
-        '/api/node_sources/' + sourceId,
-        'DELETE',
-      );
-      expect(cleanup.status).toBe(200);
+    try {
+      if (sourceId && !removed) {
+        const cleanup = await api(page, '/api/node_sources/' + sourceId, 'DELETE');
+        expect(cleanup.status).toBe(200);
+      }
+    } catch (error) {
+      if (!originalFailure) throw error;
+      testInfo.annotations.push({ type: 'cleanup', description: 'Source cleanup failed after the primary test failure' });
     }
   }
 });
 
-test('节点导入在指定视口、主题和缩小可视高度下可操作', async ({
-  page,
-}, testInfo) => {
-  await page.goto(adminOrigin);
-  await page.getByRole('button', { name: '管理员演示', exact: true }).click();
-  await page.getByRole('heading', { name: '管理概览', exact: true }).waitFor();
-  await page.goto(adminOrigin + '/sources');
-  const content =
-    'ss://' +
-    Buffer.from('aes-256-gcm:synthetic-layout-only').toString('base64url') +
-    '@node.example.com:8388#' +
-    encodeURIComponent('日本 IEPL 1.5倍 布局fixture');
-  for (const width of [375, 390, 430, 768, 1440]) {
+for (const width of [375, 390, 430, 768, 1440]) {
+  test('节点导入在 ' + width + 'px、双主题和缩小可视高度下可操作', async ({ page }, testInfo) => {
+    await page.goto(adminOrigin);
+    await page.getByRole('button', { name: '管理员演示', exact: true }).click();
+    await page.getByRole('heading', { name: '管理概览', exact: true }).waitFor();
+    await page.goto(adminOrigin + '/sources');
+    const content =
+      'ss://' +
+      Buffer.from('aes-256-gcm:synthetic-layout-only').toString('base64url') +
+      '@node.example.com:8388#' +
+      encodeURIComponent('日本 IEPL 1.5倍 布局fixture');
     for (const theme of ['light', 'dark']) {
       await page.setViewportSize({ width, height: 844 });
       const current = await page.locator('html').getAttribute('data-theme');
@@ -546,5 +558,5 @@ test('节点导入在指定视口、主题和缩小可视高度下可操作', as
         .click();
       await expect(preview).not.toBeVisible();
     }
-  }
-});
+  });
+}

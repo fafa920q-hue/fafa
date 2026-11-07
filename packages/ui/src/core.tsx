@@ -4,6 +4,7 @@ import {
   useState,
   useEffect,
   useRef,
+  useId,
   type ReactNode,
   type FormEvent,
 } from 'react';
@@ -600,6 +601,7 @@ export function FormDialog({
   notice?: string;
   submitLabel?: string;
 }) {
+  const fieldPrefix = useId();
   const [busy, setBusy] = useState(false);
   const submitting = useRef(false);
   const [error, setError] = useState('');
@@ -647,6 +649,8 @@ export function FormDialog({
                 </span>
                 {f.options ? (
                   <select
+                    aria-label={f.label}
+                    aria-describedby={f.help ? fieldPrefix + '-' + f.name + '-help' : undefined}
                     name={f.name}
                     defaultValue={f.value}
                     required={f.required}
@@ -659,6 +663,8 @@ export function FormDialog({
                   </select>
                 ) : f.type === 'textarea' ? (
                   <textarea
+                    aria-label={f.label}
+                    aria-describedby={f.help ? fieldPrefix + '-' + f.name + '-help' : undefined}
                     name={f.name}
                     defaultValue={f.value}
                     required={f.required}
@@ -667,6 +673,8 @@ export function FormDialog({
                   />
                 ) : (
                   <input
+                    aria-label={f.label}
+                    aria-describedby={f.help ? fieldPrefix + '-' + f.name + '-help' : undefined}
                     name={f.name}
                     type={f.type || 'text'}
                     defaultValue={f.type === 'checkbox' ? undefined : f.value}
@@ -685,7 +693,7 @@ export function FormDialog({
                     }
                   />
                 )}
-                <small>{f.help}</small>
+                <small id={fieldPrefix + '-' + f.name + '-help'}>{f.help}</small>
               </label>
             ))}
           </div>
