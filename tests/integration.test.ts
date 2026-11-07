@@ -7,6 +7,7 @@ import { sql } from '../packages/db/src';
 import { createSession, activateGoogle } from '../packages/auth/src';
 import { token, seal, unseal, hash } from '../packages/shared/src/crypto';
 import { runAiTask, runSubscriptionJob, tick } from '../apps/worker/src/jobs';
+import { applyAutoGrant } from '../apps/api/src/auto-grant';
 vi.mock('../packages/subscription/src/network', async (importOriginal) => {
   const actual = await importOriginal<any>();
   return {
@@ -54,11 +55,22 @@ const send = (
     },
     ...(body ? { payload: body } : {}),
   });
+const sendAs = (session: any, url: string, method: any = 'GET', body?: any) =>
+  app.inject({
+    method,
+    url,
+    headers: {
+      origin,
+      cookie: `fafa_session=${session.raw}`,
+      'x-csrf-token': session.csrf,
+    },
+    ...(body ? { payload: body } : {}),
+  });
 beforeAll(async () => {
   app = await buildApp();
   for (const [i, role] of ['Owner', 'Member', 'Member', 'Viewer'].entries()) {
     const [u] =
-      await sql`insert into users(id,email,name,role) values(${ids[i]},${token() + '@example.invalid'},${'测试' + i},${role}) returning *`;
+      await sql`insert into users(id,email,name,role,server_connect_enabled,codex_tasks_enabled) values(${ids[i]},${token() + '@example.invalid'},${'测试' + i},${role},${true},${true}) returning *`;
     sessions.push(await createSession(u as any));
   }
 });
@@ -1388,5 +1400,231 @@ describe('真实数据库 API 闭环', () => {
     } finally {
       vi.unstubAllEnvs();
     }
+  });
+  it('新用户自动授权：策略读写、权限与校验', async () => {
+    await sql`update sessions set reauthenticated_at=now() where owner_id=${ids[0]}`;
+    const adminId = randomUUID();
+    const memberId = randomUUID();
+    const [adminUser] =
+      await sql`insert into users(id,email,name,role) values(${adminId},${token() + '@example.invalid'},${'授权测试管理员'},${'Admin'}) returning *`;
+    const adminSession = await createSession(adminUser as any);
+    const [memberUser] =
+      await sql`insert into users(id,email,name,role) values(${memberId},${token() + '@example.invalid'},${'授权测试成员'},${'Member'}) returning *`;
+    const memberSession = await createSession(memberUser as any);
+    const policy = (await send(0, '/api/admin/auto-grant/policy')).json();
+    expect(policy).toMatchObject({
+      enabled: false,
+      windowStart: '2026-11-07T13:33:00Z',
+      windowEnd: '2026-11-10T13:33:00Z',
+      nodeSourceId: null,
+      nodeLimit: null,
+      trialValidDays: 3,
+    });
+    expect(
+      (await sendAs(memberSession, '/api/admin/auto-grant/policy')).statusCode,
+    ).toBe(403);
+    const valid = {
+      enabled: true,
+      windowStart: '2026-11-07T13:33:00Z',
+      windowEnd: '2026-11-10T13:33:00Z',
+      nodeSourceId: null,
+      nodeLimit: null,
+      trialValidDays: 3,
+    };
+    expect(
+      (
+        await sendAs(
+          memberSession,
+          '/api/admin/auto-grant/policy',
+          'PATCH',
+          valid,
+        )
+      ).statusCode,
+    ).toBe(403);
+    const adminWrite = await sendAs(
+      adminSession,
+      '/api/admin/auto-grant/policy',
+      'PATCH',
+      valid,
+    );
+    expect(adminWrite.statusCode).toBe(403);
+    expect(adminWrite.json().code).toBe('OWNER_REQUIRED');
+    const badWindow = await send(0, '/api/admin/auto-grant/policy', 'PATCH', {
+      ...valid,
+      windowStart: '2026-11-10T13:33:00Z',
+      windowEnd: '2026-11-07T13:33:00Z',
+    });
+    expect(badWindow.statusCode).toBe(400);
+    const badSource = await send(0, '/api/admin/auto-grant/policy', 'PATCH', {
+      ...valid,
+      nodeSourceId: randomUUID(),
+    });
+    expect(badSource.statusCode).toBe(400);
+    expect(badSource.json().code).toBe('NODE_SOURCE_NOT_FOUND');
+    const now = Date.now();
+    const start = new Date(now - 3600000).toISOString();
+    const end = new Date(now + 3600000).toISOString();
+    const ok = await send(0, '/api/admin/auto-grant/policy', 'PATCH', {
+      enabled: true,
+      windowStart: start,
+      windowEnd: end,
+      nodeSourceId: null,
+      nodeLimit: 100,
+      trialValidDays: 3,
+    });
+    expect(ok.statusCode, ok.body).toBe(200);
+    expect(ok.json().policy).toMatchObject({
+      enabled: true,
+      windowStart: start,
+      windowEnd: end,
+      nodeLimit: 100,
+    });
+    const reread = (await send(0, '/api/admin/auto-grant/policy')).json();
+    expect(reread.enabled).toBe(true);
+  });
+  it('新用户自动授权：补处理幂等，只补窗口内新用户，不授任何服务器行访问', async () => {
+    await sql`update sessions set reauthenticated_at=now() where owner_id=${ids[0]}`;
+    const [source] =
+      await sql`insert into node_sources(owner_id,data) values(${ids[0]},${sql.json({ name: '免费测试源', kind: 'OWNED_NODE', enabled: true })}) returning *`;
+    const memberId = randomUUID();
+    const oldId = randomUUID();
+    await sql`insert into users(id,email,name,role) values(${memberId},${token() + '@example.invalid'},${'补处理新用户'},${'Member'})`;
+    const current = (await send(0, '/api/admin/auto-grant/policy')).json();
+    await sql`insert into users(id,email,name,role,created_at) values(${oldId},${token() + '@example.invalid'},${'窗口前老用户'},${'Member'},${new Date(new Date(current.windowStart).getTime() - 86400000).toISOString()})`;
+    await send(0, '/api/admin/auto-grant/policy', 'PATCH', {
+      ...current,
+      enabled: false,
+      nodeSourceId: source.id,
+    });
+    const refused = await send(0, '/api/admin/auto-grant/backfill', 'POST', {});
+    expect(refused.statusCode).toBe(400);
+    expect(refused.json().code).toBe('POLICY_DISABLED');
+    const now = Date.now();
+    const ok = await send(0, '/api/admin/auto-grant/policy', 'PATCH', {
+      enabled: true,
+      windowStart: new Date(now - 3600000).toISOString(),
+      windowEnd: new Date(now + 3600000).toISOString(),
+      nodeSourceId: source.id,
+      nodeLimit: 100,
+      trialValidDays: 3,
+    });
+    expect(ok.statusCode, ok.body).toBe(200);
+    const first = await send(0, '/api/admin/auto-grant/backfill', 'POST', {});
+    expect(first.statusCode, first.body).toBe(200);
+    expect(first.json().scanned).toBeGreaterThanOrEqual(1);
+    const grants =
+      await sql`select * from node_group_grants where source_id=${source.id} and user_id=${memberId} and revoked_at is null`;
+    expect(grants.length).toBe(1);
+    const [flag] =
+      await sql`select server_connect_enabled,node_limit from users where id=${memberId}`;
+    expect(flag.server_connect_enabled).toBe(true);
+    expect(flag.node_limit).toBe(100);
+    const tokens =
+      await sql`select * from subscription_tokens where owner_id=${memberId} and revoked_at is null`;
+    expect(tokens.length).toBe(1);
+    const records =
+      await sql`select kind,status from auto_grant_records where user_id=${memberId} order by kind`;
+    expect(records.map((r: any) => r.kind + ':' + r.status).sort()).toEqual([
+      'node:GRANTED',
+      'server:GRANTED',
+      'token:GRANTED',
+    ]);
+    const noServerGrants =
+      await sql`select * from server_access_grants where user_id=${memberId} and revoked_at is null`;
+    expect(noServerGrants.length).toBe(0);
+    const oldRecords =
+      await sql`select * from auto_grant_records where user_id=${oldId}`;
+    expect(oldRecords.length).toBe(0);
+    const second = await send(0, '/api/admin/auto-grant/backfill', 'POST', {});
+    expect(second.statusCode).toBe(200);
+    const grants2 =
+      await sql`select * from node_group_grants where source_id=${source.id} and user_id=${memberId} and revoked_at is null`;
+    expect(grants2.length).toBe(1);
+    const records2 =
+      await sql`select * from auto_grant_records where user_id=${memberId}`;
+    expect(records2.length).toBe(3);
+  });
+  it('服务器连接能力：未开通拒绝新增服务器，开通后放行，前台可见真实状态', async () => {
+    const memberId = randomUUID();
+    const [memberUser] =
+      await sql`insert into users(id,email,name,role) values(${memberId},${token() + '@example.invalid'},${'能力测试成员'},${'Member'}) returning *`;
+    const memberSession = await createSession(memberUser as any);
+    const body = {
+      name: '能力测试',
+      host: 'server.example.com',
+      port: 22,
+      username: 'deploy',
+      authType: 'password',
+      credential: 'fixture-password',
+      authorized: true,
+    };
+    const denied = await sendAs(
+      memberSession,
+      '/api/server_connections',
+      'POST',
+      body,
+    );
+    expect(denied.statusCode).toBe(403);
+    expect(denied.json().code).toBe('SERVER_CONNECT_DISABLED');
+    const meBefore = (await sendAs(memberSession, '/api/me')).json();
+    expect(meBefore.user.serverConnectEnabled).toBe(false);
+    await sql`update sessions set reauthenticated_at=now() where owner_id=${ids[0]}`;
+    const patch = await send(0, '/api/admin/users/' + memberId, 'PATCH', {
+      serverConnectEnabled: true,
+    });
+    expect(patch.statusCode, patch.body).toBe(200);
+    const meAfter = (await sendAs(memberSession, '/api/me')).json();
+    expect(meAfter.user.serverConnectEnabled).toBe(true);
+    const allowed = await sendAs(
+      memberSession,
+      '/api/server_connections',
+      'POST',
+      body,
+    );
+    expect(allowed.statusCode, allowed.body).toBe(200);
+    await send(0, '/api/admin/users/' + memberId, 'PATCH', {
+      serverConnectEnabled: false,
+    });
+    const deniedAgain = await sendAs(
+      memberSession,
+      '/api/server_connections',
+      'POST',
+      { ...body, name: '能力测试2' },
+    );
+    expect(deniedAgain.statusCode).toBe(403);
+  });
+  it('新用户自动授权：注册入口按窗口与角色判断，重复调用不重复授权', async () => {
+    const now = Date.now();
+    const memberId = randomUUID();
+    await sql`insert into users(id,email,name,role) values(${memberId},${token() + '@example.invalid'},${'直接授权成员'},${'Member'})`;
+    const first = await applyAutoGrant(memberId);
+    expect(first.applied).toBe(true);
+    expect(
+      (first as any).results.map((r: any) => r.kind + ':' + r.status).sort(),
+    ).toEqual(['node:GRANTED', 'server:GRANTED', 'token:GRANTED']);
+    const second = await applyAutoGrant(memberId);
+    expect(second.applied).toBe(true);
+    const grants =
+      await sql`select * from node_group_grants where user_id=${memberId} and revoked_at is null`;
+    expect(grants.length).toBe(1);
+    const oldId = randomUUID();
+    await sql`insert into users(id,email,name,role,created_at) values(${oldId},${token() + '@example.invalid'},${'窗口前成员'},${'Member'},${new Date(now - 7200000).toISOString()})`;
+    const old = await applyAutoGrant(oldId);
+    expect(old).toEqual({
+      applied: false,
+      reason: 'USER_CREATED_OUTSIDE_WINDOW',
+    });
+    const policy = (await send(0, '/api/admin/auto-grant/policy')).json();
+    await sql`update sessions set reauthenticated_at=now() where owner_id=${ids[0]}`;
+    await send(0, '/api/admin/auto-grant/policy', 'PATCH', {
+      ...policy,
+      enabled: false,
+    });
+    const disabled = await applyAutoGrant(memberId);
+    expect(disabled).toEqual({ applied: false, reason: 'POLICY_DISABLED' });
+    await send(0, '/api/admin/auto-grant/policy', 'PATCH', {
+      ...policy,
+      enabled: true,
+    });
   });
 });
