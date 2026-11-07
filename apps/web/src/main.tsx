@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { Provider, Shell, Empty } from '../../../packages/ui/src/core';
 import { Dashboard } from './pages/Dashboard';
+import { MemberPortal } from './member/MemberPortal';
 const Subscriptions = lazy(() =>
   import('./pages/Subscriptions').then((m) => ({ default: m.Subscriptions })),
 );
@@ -36,30 +37,34 @@ const nav = [
 ];
 createRoot(document.getElementById('root')!).render(
   <BrowserRouter>
-    <Provider>
-      <Shell nav={nav} bottom={[nav[0], nav[1], nav[2], nav[3], nav[5]]}>
-        <Suspense
-          fallback={<div className="skeleton" aria-label="正在加载页面" />}
-        >
-          <Routes>
-            <Route path="/" element={<Dashboard />} />
-            <Route path="/subscriptions" element={<Subscriptions />} />
-            <Route path="/codex" element={<Codex />} />
-            <Route path="/servers" element={<Servers />} />
-            <Route path="/locations" element={<Locations />} />
-            <Route path="/account" element={<Account />} />
-            <Route
-              path="*"
-              element={
-                <Empty
-                  title="页面不存在"
-                  action={<Link to="/">返回仪表盘</Link>}
-                />
-              }
-            />
-          </Routes>
-        </Suspense>
-      </Shell>
-    </Provider>
+    {window.location.pathname.startsWith('/member/') ? (
+      <MemberPortal />
+    ) : (
+      <Provider>
+        <Shell nav={nav} bottom={[nav[0], nav[1], nav[2], nav[3], nav[5]]}>
+          <Suspense
+            fallback={<div className="skeleton" aria-label="正在加载页面" />}
+          >
+            <Routes>
+              <Route path="/" element={<Dashboard />} />
+              <Route path="/subscriptions" element={<Subscriptions />} />
+              <Route path="/codex" element={<Codex />} />
+              <Route path="/servers" element={<Servers />} />
+              <Route path="/locations" element={<Locations />} />
+              <Route path="/account" element={<Account />} />
+              <Route
+                path="*"
+                element={
+                  <Empty
+                    title="页面不存在"
+                    action={<Link to="/">返回仪表盘</Link>}
+                  />
+                }
+              />
+            </Routes>
+          </Suspense>
+        </Shell>
+      </Provider>
+    )}
   </BrowserRouter>,
 );
