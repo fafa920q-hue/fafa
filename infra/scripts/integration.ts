@@ -23,7 +23,13 @@ const env = {
 };
 for (const args of [
   ['exec', 'tsx', 'packages/db/src/migrate.ts'],
-  ['exec', 'vitest', 'run', 'tests/integration.test.ts', 'tests/wloc.integration.test.ts'],
+  [
+    'exec',
+    'vitest',
+    'run',
+    'tests/integration.test.ts',
+    'tests/wloc.integration.test.ts',
+  ],
 ]) {
   const result = spawnSync('pnpm', args, { stdio: 'inherit', env });
   if (result.status) process.exit(result.status);

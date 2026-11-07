@@ -26,6 +26,7 @@ Photon 软件 Apache-2.0，数据需保留 OSM 署名。公共搜索服务仅合
 不使用上游作者的公共 Worker，也不直接依赖 Nominatim 公共服务。
 
 参考：
+
 - https://github.com/Yu9191/wloc/tree/2644722da7f61256786686983b4fb8500904de8b
 - https://github.com/Leaflet/Leaflet/blob/v1.9.4/LICENSE
 - https://github.com/hujiulong/gcoord
@@ -69,6 +70,7 @@ IP 出口策略保留，更新国家筛选时保留原有协议与分组。
 
 所有设备请求直接来自当前浏览器，不经 AWS API：
 HTTPS gs-loc.apple.com 或 gs-loc-cn.apple.com 的 /wloc-settings/save：
+
 - 保存：GET ?lon=...&lat=...&acc=25&randomRadius=0
 - 查询：GET ?action=query
 - 清除：GET ?action=clear
@@ -95,6 +97,7 @@ HTTPS gs-loc.apple.com 或 gs-loc-cn.apple.com 的 /wloc-settings/save：
 不建议关闭系统安全设置、降低服务器 TLS 验证或将证书绕过当作成功。
 
 必须由账户持有人在真实 iPhone/iPad 验收：
+
 1. 正式 HTTPS 登录现有账户，确认原有 Google/Owner/节点数据仍在。
 2. 未启用模块/未信任证书时查询明确失败，不能显示已保存。
 3. 自行安装获授权原版模块与证书后查询；浏览器验证响应由自己模块拦截。
