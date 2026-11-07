@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 async function login(page: any, profile = '管理员演示') {
+  await page.route('https://tile.openstreetmap.org/**', (r: any) => r.abort());
   await page.goto('/');
   await page.getByRole('button', { name: profile, exact: true }).click();
   await expect(
@@ -24,15 +25,13 @@ test('所有用户页面、真实位置写入与未配置能力说明', async ({
     ).toBeVisible();
   }
   await page.goto('/locations');
-  await page.getByRole('button', { name: '添加位置预设' }).click();
-  await page.getByLabel('地点名称').fill('浏览器验收 ' + Date.now());
-  await page.getByLabel('纬度').fill('31.23');
-  await page.getByLabel('经度').fill('121.47');
-  await page.getByRole('button', { name: '保存', exact: true }).click();
-  await expect(
-    page.getByRole('status').filter({ hasText: '位置预设已保存' }),
-  ).toBeVisible();
-  await expect(page.getByText('暂不支持 · 不会重启生效')).toBeVisible();
+  await page.getByLabel('地点名称', { exact: true }).fill('浏览器验收 ' + Date.now());
+  await page.getByLabel('纬度', { exact: true }).fill('31.23');
+  await page.getByLabel('经度', { exact: true }).fill('121.47');
+  await page.getByRole('button', { name: '应用坐标', exact: true }).click();
+  await page.getByRole('button', { name: '收藏当前地点' }).click();
+  await expect(page.getByRole('status').filter({ hasText: '地点已收藏到你的账户' })).toBeVisible();
+  await expect(page.getByText('实验性 · 真实iOS定位未验收')).toBeVisible();
 });
 test('手机与桌面各宽度无横向溢出、暗色及键盘导航', async ({ page }, info) => {
   test.setTimeout(180000);

@@ -37,6 +37,7 @@ import {
   validateUrl,
   resolvePublic,
 } from '../../../packages/subscription/src/network';
+import { registerLocationTools } from './location-tools';
 import { registerNodes } from './nodes';
 import { registerSsh } from './ssh';
 import { registerAdmin } from './admin';
@@ -736,6 +737,7 @@ export async function buildApp() {
     await audit(req.actor.id, 'data.deletion_requested');
     return { message: '删除请求已登记，请联系管理员核验并处理' };
   });
+  await registerLocationTools(app);
   await registerNodes(app);
   await registerAdmin(app);
   await registerAi(app, origins);

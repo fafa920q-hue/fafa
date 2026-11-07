@@ -54,6 +54,7 @@ export const locationSchema = z.object({
   latitude: z.number().min(-90).max(90),
   longitude: z.number().min(-180).max(180),
   country: z.string().max(32).default(''),
+  coordinateSystem: z.literal('WGS84').optional(),
 });
 export class AppError extends Error {
   constructor(
