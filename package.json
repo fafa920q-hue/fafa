@@ -22,7 +22,8 @@
     "verify:backup": "tsx infra/scripts/verify-backup.ts",
     "verify:tls": "tsx infra/scripts/verify-tls.ts",
     "owner:setup": "tsx infra/scripts/owner-setup.ts",
-    "nodes:validate": "tsx infra/scripts/validate-nodes.ts"
+    "nodes:validate": "tsx infra/scripts/validate-nodes.ts",
+    "test:member": "tsx infra/scripts/test-member-auth.ts"
   },
   "dependencies": {
     "@fastify/cookie": "11.1.5",
