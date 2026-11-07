@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { parse } from 'yaml';
+import { api } from '../packages/ui/src/core';
 import { backendUrl, terminalUrl } from '../packages/ui/src/endpoints';
 import {
   assertPublicUrls,
@@ -12,8 +13,29 @@ import {
   errorCategory,
   corsHeaders,
 } from '../infra/scripts/tls-diagnostics';
-afterEach(() => vi.unstubAllEnvs());
+afterEach(() => {
+  vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
+});
 describe('双域名契约', () => {
+  it('读取请求携带会话但不额外触发 CSRF 预检，写入仍携带 CSRF', async () => {
+    const transport = vi.fn<typeof fetch>(async () => new Response('{}'));
+    vi.stubGlobal('fetch', transport);
+    await api('/api/me', 'GET', undefined, 'synthetic-csrf');
+    const read = transport.mock.calls[0][1]!;
+    expect(read.credentials).toBe('include');
+    expect(read.headers).not.toHaveProperty('x-csrf-token');
+    await api(
+      '/api/nodes/synthetic',
+      'PATCH',
+      { enabled: false },
+      'synthetic-csrf',
+    );
+    const write = transport.mock.calls[1][1]!;
+    expect(write.credentials).toBe('include');
+    expect(write.headers).toHaveProperty('x-csrf-token', 'synthetic-csrf');
+  });
+
   it('用户端使用相对路径；管理端只拼接 Origin，拒绝重复前缀', () => {
     expect(backendUrl('/api/me', '')).toBe('/api/me');
     expect(backendUrl('/api/me', 'https://fafa888.uk/')).toBe(

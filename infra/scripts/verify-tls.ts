@@ -46,9 +46,11 @@ async function waitForNetworkQuiet() {
 }
 
 function docker(args: string[]) {
+  console.log('TLS_FIXTURE_STEP:' + args[0]);
   return execFileSync('docker', args, {
     stdio: ['ignore', 'pipe', 'pipe'],
     encoding: 'utf8',
+    timeout: 15000,
   });
 }
 try {
@@ -77,7 +79,8 @@ try {
   docker(['start', container]);
   const caPath = join(temporary, 'root.crt');
   let ca: Buffer | undefined;
-  for (let i = 0; i < 40 && !ca; i++) {
+  const caDeadline = Date.now() + 10000;
+  for (let i = 0; i < 40 && !ca && Date.now() < caDeadline; i++) {
     try {
       docker([
         'cp',
@@ -215,7 +218,8 @@ try {
   }
   const browserErrors: string[] = [];
   page.on('console', (message) => {
-    if (/^TLS_STAGE:[a-z-]+:[0-9]{3}$/.test(message.text())) console.log(message.text());
+    if (/^TLS_STAGE:[a-z-]+:[0-9]{3}$/.test(message.text()))
+      console.log(message.text());
   });
   page.on('pageerror', (error) =>
     browserErrors.push(JSON.stringify(errorCategory(error.message))),
@@ -281,7 +285,7 @@ try {
         {
           method: 'PATCH',
           credentials: 'include',
-        signal: AbortSignal.timeout(10000),
+          signal: AbortSignal.timeout(10000),
           headers,
           body: JSON.stringify({ name: 'TLS fixture edited' }),
         },
@@ -291,7 +295,7 @@ try {
         {
           method: 'PUT',
           credentials: 'include',
-        signal: AbortSignal.timeout(10000),
+          signal: AbortSignal.timeout(10000),
           headers,
           body: JSON.stringify({
             name: 'TLS fixture edited',
@@ -409,7 +413,10 @@ try {
     await mkdir('docs/evidence', { recursive: true });
     try {
       const health = await request(domains[0], '/api/ready');
-      diagnostics.add('node-api-after-browser', { status: health.status, tls: health.protocol });
+      diagnostics.add('node-api-after-browser', {
+        status: health.status,
+        tls: health.protocol,
+      });
     } catch (error) {
       diagnostics.add('node-api-after-browser', errorCategory(String(error)));
     }

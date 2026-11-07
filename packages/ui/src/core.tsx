@@ -45,12 +45,13 @@ export async function api<T = any>(
   body?: unknown,
   csrf?: string,
 ): Promise<T> {
+  const unsafe = !['GET', 'HEAD', 'OPTIONS'].includes(method.toUpperCase());
   const response = await fetch(backendUrl(path), {
     method,
     credentials: 'include',
     headers: {
       ...(body ? { 'Content-Type': 'application/json' } : {}),
-      ...(csrf ? { 'x-csrf-token': csrf } : {}),
+      ...(csrf && unsafe ? { 'x-csrf-token': csrf } : {}),
     },
     body: body ? JSON.stringify(body) : undefined,
   });
