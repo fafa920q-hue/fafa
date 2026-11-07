@@ -28,6 +28,18 @@ test('map selection, conversion, link parsing, real private favorite API and dir
   const old = await page.getByTestId('selected-coordinate').innerText();
   await map.click({ position: { x: 120, y: 130 } });
   await expect(page.getByTestId('selected-coordinate')).not.toHaveText(old);
+  await expect(
+    page.getByRole('button', { name: '拖动标记选点', exact: true }),
+  ).toBeVisible();
+  const bounds = (await map.boundingBox())!;
+  const beforeDrag = await page.getByTestId('selected-coordinate').innerText();
+  await page.mouse.move(bounds.x + bounds.width * 0.8, bounds.y + 180);
+  await page.mouse.down();
+  await page.mouse.move(bounds.x + bounds.width * 0.6, bounds.y + 140, {
+    steps: 10,
+  });
+  await page.mouse.up();
+  await expect(page.getByTestId('selected-coordinate')).not.toHaveText(beforeDrag);
   await page.getByLabel('输入坐标系', { exact: true }).selectOption('GCJ02');
   await page.getByLabel('纬度', { exact: true }).fill('39.9164043');
   await page.getByLabel('经度', { exact: true }).fill('116.4102445');

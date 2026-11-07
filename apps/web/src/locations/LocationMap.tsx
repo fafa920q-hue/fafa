@@ -37,6 +37,7 @@ export function LocationMap({
     tiles.on('tileerror', () => setFailed(true));
     const pin = L.marker([point.latitude, point.longitude], {
       draggable: true,
+      title: '拖动标记选点',
       icon: L.divIcon({
         className: 'wloc-pin',
         html: '<span aria-hidden="true">●</span>',
