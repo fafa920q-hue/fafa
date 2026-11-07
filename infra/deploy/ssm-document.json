@@ -26,14 +26,17 @@
           "cd /opt/fafa-one",
           "test -f .env.production",
           "test \"$(stat -c %a .env.production)\" = 600",
-          "if [ \"{{ Action }}\" = \"check\" ]; then git rev-parse HEAD; docker ps --format \"{{.Names}} {{.Image}} {{.Status}}\"; exit 0; fi",
+          "if [ \"{{ Action }}\" = \"check\" ]; then git rev-parse HEAD; docker ps --all --filter label=com.docker.compose.project=fafa-one --format json; exit 0; fi",
           "test -z \"$(git status --porcelain --untracked-files=no)\"",
           "remote=\"$(git remote get-url origin)\"",
           "case \"$remote\" in git@github.com:fafa920q-hue/fafa|git@github.com:fafa920q-hue/fafa.git|https://github.com/fafa920q-hue/fafa|https://github.com/fafa920q-hue/fafa.git) ;; *) echo \"Unapproved repository origin\" >&2; exit 1;; esac",
           "git fetch origin feat/fafa-one-control-panel",
           "git merge-base --is-ancestor \"{{ CommitSHA }}\" origin/feat/fafa-one-control-panel",
           "git checkout --detach \"{{ CommitSHA }}\"",
-          "exec bash infra/scripts/deploy-production.sh \"{{ CommitSHA }}\" deploy"
+          "umask 077",
+          "mkdir -p /opt/fafa-one/deployments",
+          "deployment_log=\"/opt/fafa-one/deployments/{{ CommitSHA }}.log\"",
+          "if bash infra/scripts/deploy-production.sh \"{{ CommitSHA }}\" deploy > \"$deployment_log\" 2>&1; then tail -n 1 \"$deployment_log\"; else echo \"Deployment failed; protected server log retained, no raw output copied to SSM.\"; exit 1; fi"
         ]
       }
     }

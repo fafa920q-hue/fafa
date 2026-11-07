@@ -31,6 +31,9 @@ afterAll(async () => {
 });
 describe('一次性 Owner 初始化真实数据库安全边界', () => {
   it('公开登录、邮箱或旧 sub 环境变量不能自动授予 Owner', async () => {
+    const nonInteractive=spawnSync('node',['--import','tsx','infra/scripts/owner-setup.ts'],{env:process.env,encoding:'utf8'});
+    expect(nonInteractive.status).toBe(1);
+    expect(nonInteractive.stdout).toBe('');
     vi.stubEnv('BOOTSTRAP_ADMIN_GOOGLE_SUB', 'untrusted-sub');
     await expect(activateGoogle({ sub: 'untrusted-sub', email: 'untrusted@example.invalid', email_verified: true })).rejects.toMatchObject({ code: 'INVITE_REQUIRED' });
     expect((await app.inject({ method: 'POST', url: '/auth/owner/start', headers: { origin }, payload: { credential: 'x'.repeat(80) } })).statusCode).toBe(404);

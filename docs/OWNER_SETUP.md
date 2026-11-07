@@ -7,10 +7,10 @@
 在已上线服务器的受信交互终端（/opt/fafa-one）执行：
 
 ```bash
-docker compose --env-file .env.production -f infra/docker/compose.production.yaml run --rm --no-deps -it migrate node --import tsx infra/scripts/owner-setup.ts
+docker compose --env-file .env.production -f infra/docker/compose.production.yaml run --rm --no-deps -it ops node --import tsx infra/scripts/owner-setup.ts
 ```
 
-该命令只创建一条授权哈希记录，不执行迁移，不修改现有密钥。它拒绝非交互输出，不能放进 GitHub Actions、SSM Run Command、日志采集或录屏会话；使用既有受信终端，保管一次性输出。
+该命令只创建一条授权哈希记录，不执行迁移，不修改现有密钥。工具容器使用 none 日志驱动，且拒绝非交互输出，不能放进 GitHub Actions、SSM Run Command、日志采集或录屏会话；使用既有受信终端，保管一次性输出。
 
 在 iPhone/PC 打开 https://fafa888.uk，刷新登录页，展开「首次 Owner 初始化」，输入本地产生的授权凭据，然后使用正式 Google 登录。所有凭据通过 HTTPS POST 发送，不放入 URL、截图或 localStorage；无需知道 sub。Google 页面仍由 Google 负责，不接触 Google 密码。
 

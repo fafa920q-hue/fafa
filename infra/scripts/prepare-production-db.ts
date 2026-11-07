@@ -2,14 +2,16 @@ import { randomBytes, pbkdf2Sync, createHmac, createHash } from 'node:crypto';
 import { readFile, writeFile, stat } from 'node:fs/promises';
 import postgres from 'postgres';
 import { parse } from 'dotenv';
-const admin = postgres(process.env.DATABASE_URL!, { max: 1, onnotice: () => {} });
+let connection: ReturnType<typeof postgres> | undefined;
 const path = process.env.FAFA_RUNTIME_FILE || '/config/.env.runtime';
 const role = process.env.FAFA_TEST_RUNTIME_ROLE || 'fafa_app';
-if (role !== 'fafa_app' && (!/^fafa_test_[0-9a-f]{12}$/.test(role) || !new URL(process.env.DATABASE_URL!).pathname.endsWith('_test')))
-  throw Error('测试角色仅允许隔离测试数据库');
 const ddl = (tx: any, statement: string) => tx.unsafe(statement.replaceAll('fafa_app', role));
 let created = false;
 try {
+  if (role !== 'fafa_app' && (!/^fafa_test_[0-9a-f]{12}$/.test(role) || !new URL(process.env.DATABASE_URL!).pathname.endsWith('_test')))
+  throw Error('测试角色仅允许隔离测试数据库');
+  const admin = postgres(process.env.DATABASE_URL!, { max: 1, onnotice: () => {} });
+  connection = admin;
   let config: Record<string,string> | undefined;
   try {
     if (((await stat(path)).mode & 0o777)!==0o600) throw Error('runtime config permissions');
@@ -58,4 +60,4 @@ try {
 } catch {
   console.error('数据库最小权限准备失败；未打印凭据。检查既有管理员权限、runtime 文件一致性与迁移结果，勿覆盖现有配置。');
   process.exitCode=1;
-} finally { await admin.end(); }
+} finally { await connection?.end(); }

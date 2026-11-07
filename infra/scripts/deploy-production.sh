@@ -24,7 +24,10 @@ fi
 for target in runtime web admin; do
   git archive "$deployment_sha" | docker build -f infra/docker/Dockerfile --target "$target" -t "fafa-one-$target:$deployment_sha" -
 done
-git log -p --all -- . ':!pnpm-lock.yaml' | docker run --rm -i --env-file .env.production --mount "type=bind,src=/opt/fafa-one,dst=/config,readonly" "fafa-one-runtime:$deployment_sha" node --import tsx infra/scripts/audit-production-config.ts
+env_owner="$(stat -c %u .env.production):$(stat -c %g .env.production)"
+runtime_owner="$(stat -c %u .):$(stat -c %g .)"
+if [[ -f .env.runtime ]]; then runtime_owner="$(stat -c %u .env.runtime):$(stat -c %g .env.runtime)"; fi
+git log -p --all -- . ':!pnpm-lock.yaml' | "${compose[@]}" run --rm -T --no-deps --user "$env_owner" -v /opt/fafa-one:/config:ro ops node --import tsx infra/scripts/audit-production-config.ts
 "${compose[@]}" config --quiet
 mkdir -p backups deployments
 # Record only public status and image identifiers; never serialize container Env.
@@ -32,14 +35,14 @@ docker ps --format '{{.Names}} {{.Image}} {{.Status}}' > "deployments/$deploymen
 "${compose[@]}" up -d --wait --wait-timeout 120 postgres
 backup_path="backups/pre-$deployment_sha-$(date -u +%Y%m%dT%H%M%SZ).dump.envelope"
 "${compose[@]}" exec -T postgres sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" --format=custom --no-owner' |
-  docker run --rm -i --env-file .env.production "fafa-one-runtime:$deployment_sha" node --max-old-space-size=2048 --import tsx infra/scripts/backup-envelope.ts encrypt > "$backup_path"
+  "${compose[@]}" run --rm -T --no-deps ops node --max-old-space-size=2048 --import tsx infra/scripts/backup-envelope.ts encrypt > "$backup_path"
 [[ -s "$backup_path" ]]
 chmod 600 "$backup_path"
 # Before using the backup, verify authenticated decryption and pg_restore's catalog.
-docker run --rm -i --env-file .env.production "fafa-one-runtime:$deployment_sha" node --max-old-space-size=2048 --import tsx infra/scripts/backup-envelope.ts decrypt < "$backup_path" |
+"${compose[@]}" run --rm -T --no-deps ops node --max-old-space-size=2048 --import tsx infra/scripts/backup-envelope.ts decrypt < "$backup_path" |
   "${compose[@]}" exec -T postgres pg_restore --list > /dev/null
 # Preserve the existing admin DB password and encryption key. Create a separate app identity only if absent.
-docker run --rm --user 0 --env-file .env.production --mount "type=bind,src=/opt/fafa-one,dst=/config" "fafa-one-runtime:$deployment_sha" node --import tsx infra/scripts/prepare-production-db.ts --identity-only
+"${compose[@]}" run --rm -T --no-deps --user "$runtime_owner" -v /opt/fafa-one:/config ops node --import tsx infra/scripts/prepare-production-db.ts --identity-only
 "${compose[@]}" stop api worker
 deployment_failed() {
   "${compose[@]}" stop api worker >/dev/null 2>&1 || true
@@ -47,7 +50,7 @@ deployment_failed() {
 }
 trap deployment_failed ERR
 "${compose[@]}" run --rm --no-deps migrate
-docker run --rm --user 0 --env-file .env.production --mount "type=bind,src=/opt/fafa-one,dst=/config" "fafa-one-runtime:$deployment_sha" node --import tsx infra/scripts/prepare-production-db.ts
+"${compose[@]}" run --rm -T --no-deps --user "$runtime_owner" -v /opt/fafa-one:/config ops node --import tsx infra/scripts/prepare-production-db.ts
 "${compose[@]}" up -d --no-deps --wait --wait-timeout 180 api worker web admin
 "${compose[@]}" up -d --no-deps --force-recreate proxy
 "${compose[@]}" exec -T api node --import tsx -e 'import("./infra/scripts/check-runtime-db.ts").then(m=>m.assertRuntimeDatabaseRole()).then(()=>import("./packages/db/src/index.ts")).then(m=>m.sql.end()).then(()=>console.log("runtime-role-ok"))'

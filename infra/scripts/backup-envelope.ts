@@ -1,4 +1,5 @@
 import { seal, unseal } from '../../packages/shared/src/crypto';
+async function main() {
 const mode = process.argv[2];
 if (!['encrypt','decrypt'].includes(mode)) throw Error('用法: backup-envelope encrypt|decrypt');
 const chunks: Buffer[] = [];
@@ -15,3 +16,6 @@ else {
   const output=Buffer.from(unseal(JSON.parse(input.toString('utf8'))), 'base64');
   process.stdout.write(output);
 }
+
+}
+main().catch(() => { console.error('备份认证、格式或大小校验失败；未输出明文或原始输入'); process.exitCode=1; });

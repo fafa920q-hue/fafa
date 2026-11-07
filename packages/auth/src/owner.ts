@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { sql } from '../../db/src';
 import { hash, token } from '../../shared/src/crypto';
-import { AppError } from '../../shared/src';
+import { AppError, type User } from '../../shared/src';
 export async function issueOwnerCredential() {
   return sql.begin(async (tx) => {
     await tx`select pg_advisory_xact_lock(77702)`;
@@ -32,7 +32,7 @@ export async function completeOwnerCredential(id: string, state: string, payload
   try {
     const [result] = await sql`select complete_owner_setup(${id}::uuid,${hash(state)},${payload.sub},${payload.email},${payload.name || 'Owner'}) as id`;
     const [user] = await sql`select * from users where id=${result.id}`;
-    return user;
+    return user as unknown as User;
   } catch {
     throw new AppError(403, 'OWNER_AUTHORIZATION', '初始化授权无效或已永久关闭');
   }

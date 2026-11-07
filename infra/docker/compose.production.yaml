@@ -52,6 +52,13 @@ services:
     restart: 'no'
     healthcheck: { disable: true }
     depends_on: { postgres: { condition: service_healthy } }
+  ops:
+    <<: *runtime
+    env_file: ../../.env.production
+    profiles: [tools]
+    restart: 'no'
+    logging: { driver: none }
+    healthcheck: { disable: true }
   api:
     <<: *runtime
     depends_on: { migrate: { condition: service_completed_successfully } }

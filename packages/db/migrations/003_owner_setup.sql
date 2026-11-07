@@ -70,7 +70,7 @@ BEGIN
  END IF;
  IF TG_OP='DELETE' THEN RETURN OLD; END IF;
  RETURN NEW;
-END $;
+END $$;
 CREATE TRIGGER bound_owner_protected BEFORE UPDATE OR DELETE ON users FOR EACH ROW EXECUTE FUNCTION protect_bound_owner();
 
 CREATE FUNCTION restrict_owner_role() RETURNS trigger LANGUAGE plpgsql SET search_path=pg_catalog,public AS $$

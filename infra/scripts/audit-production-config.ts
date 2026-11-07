@@ -5,12 +5,15 @@ const path=process.env.FAFA_ENV_FILE || '/config/.env.production';
 try {
   const metadata=await lstat(path);
   if (!metadata.isFile() || (metadata.mode & 0o777)!==0o600) throw Error('permissions');
-  const env=parse(await readFile(path));
-  if (env.NODE_ENV!=='production' || env.DEMO_MODE!=='false' || env.DEV_MOCK_LOGIN!=='false') throw Error('production flags');
+  const raw=parse(await readFile(path));
+  const env={...raw,...process.env} as Record<string,string>;
+  if (raw.NODE_ENV!=='production' || raw.DEMO_MODE!=='false' || raw.DEV_MOCK_LOGIN!=='false') throw Error('production flags');
   Object.assign(process.env, env);
   assertPublicUrls();
   for (const name of ['DATABASE_URL','POSTGRES_PASSWORD','ENCRYPTION_KEY','GOOGLE_CLIENT_ID','GOOGLE_CLIENT_SECRET'])
     if (!env[name]) throw Error('required configuration');
+  const database=new URL(env.DATABASE_URL);
+  if (!['postgres:','postgresql:'].includes(database.protocol) || !database.username || !database.password) throw Error('database config');
   if (Buffer.from(env.ENCRYPTION_KEY, 'base64').length!==32) throw Error('encryption key');
   let history='';
   for await (const chunk of process.stdin) {
