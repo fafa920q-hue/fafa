@@ -16,6 +16,14 @@ try {
     throw Error('production flags');
   Object.assign(process.env, env);
   assertPublicUrls();
+  if (
+    (env.PANEL_DOMAIN || 'fafa888.uk') !== 'fafa888.uk' ||
+    (env.ADMIN_DOMAIN || 'a.fafa888.uk') !== 'a.fafa888.uk' ||
+    !['', 'fafa888.uk', '.fafa888.uk'].includes(
+      (env.COOKIE_DOMAIN || '').toLowerCase(),
+    )
+  )
+    throw Error('proxy or cookie domain');
   for (const name of [
     'DATABASE_URL',
     'POSTGRES_PASSWORD',
@@ -28,7 +36,12 @@ try {
   if (
     !['postgres:', 'postgresql:'].includes(database.protocol) ||
     !database.username ||
-    !database.password
+    !database.password ||
+    decodeURIComponent(database.username) !== 'fafa' ||
+    decodeURIComponent(database.password) !== env.POSTGRES_PASSWORD ||
+    database.hostname !== 'postgres' ||
+    !['', '5432'].includes(database.port) ||
+    database.pathname !== '/fafa'
   )
     throw Error('database config');
   if (Buffer.from(env.ENCRYPTION_KEY, 'base64').length !== 32)

@@ -113,3 +113,21 @@ jobs:
       - name: Stop test services, preserve production resources
         if: always()
         run: docker compose -f infra/docker/compose.dev.yaml down
+  production-startup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '24' }
+      - name: Check deployment shell syntax
+        run: bash -n infra/scripts/deploy-production.sh infra/scripts/verify-production-startup.sh
+      - name: Verify first deployment with disposable credentials and volumes
+        run: bash infra/scripts/verify-production-startup.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: production-startup-evidence
+          path: |
+            docs/evidence/production-startup.json
+            docs/evidence/production-startup-containers.json
