@@ -30,11 +30,9 @@ test('节点批量预览、加密导入、标签编辑及启停删除', async ({
   await page
     .getByRole('button', { name: '确认授权并加密导入', exact: true })
     .click();
-  const card = page
-    .locator('.resource-card')
-    .filter({
-      has: page.getByRole('heading', { name: '日本 IEPL 测试', exact: true }),
-    });
+  const card = page.locator('.resource-card').filter({
+    has: page.getByRole('heading', { name: '日本 IEPL 测试', exact: true }),
+  });
   await expect(card).toBeVisible();
   await card.getByRole('button', { name: '停用', exact: true }).click();
   await expect(card).toContainText('已禁用');
@@ -45,14 +43,12 @@ test('节点批量预览、加密导入、标签编辑及启停删除', async ({
     .click();
   await page.getByLabel('节点名称').fill('日本 IEPL 编辑fixture');
   await page.getByRole('button', { name: '保存', exact: true }).click();
-  const edited = page
-    .locator('.resource-card')
-    .filter({
-      has: page.getByRole('heading', {
-        name: '日本 IEPL 编辑fixture',
-        exact: true,
-      }),
-    });
+  const edited = page.locator('.resource-card').filter({
+    has: page.getByRole('heading', {
+      name: '日本 IEPL 编辑fixture',
+      exact: true,
+    }),
+  });
   await expect(edited).toBeVisible();
   page.once('dialog', (dialog) => dialog.accept());
   await edited.getByRole('button', { name: '删除节点', exact: true }).click();

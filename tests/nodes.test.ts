@@ -29,7 +29,10 @@ const vmess = {
 };
 describe('SS / VMess 兼容及凭据保护', () => {
   it('支持 SS SIP002、旧版整串 Base64、URI 编码及订阅 Base64', () => {
-    const standard = 'ss://' + Buffer.from('aes-256-gcm:???').toString('base64') + '@node.example.com:8388#fixture';
+    const standard =
+      'ss://' +
+      Buffer.from('aes-256-gcm:???').toString('base64') +
+      '@node.example.com:8388#fixture';
     expect(parseSubscription(standard)[0].credential).toBe('???');
     const full =
       'ss://' +

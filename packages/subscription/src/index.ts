@@ -92,15 +92,23 @@ export function parseNodeUri(line: string): Node {
     const at = decoded.lastIndexOf('@');
     const colon = decoded.indexOf(':');
     if (at < 0 || colon < 1 || colon > at) throw Error('SS 凭据无效');
-    raw = 'ss://' + encodeURIComponent(decoded.slice(0, colon)) + ':' +
-      encodeURIComponent(decoded.slice(colon + 1, at)) + '@' + decoded.slice(at + 1) +
+    raw =
+      'ss://' +
+      encodeURIComponent(decoded.slice(0, colon)) +
+      ':' +
+      encodeURIComponent(decoded.slice(colon + 1, at)) +
+      '@' +
+      decoded.slice(at + 1) +
       (fragment ? '#' + fragment : '');
   }
   if (raw.startsWith('ss://')) {
     const at = raw.indexOf('@');
     const userinfo = raw.slice(5, at);
     if (at > 5 && !userinfo.includes(':'))
-      raw = 'ss://' + Buffer.from(b64(decodeURIComponent(userinfo))).toString('base64url') + raw.slice(at);
+      raw =
+        'ss://' +
+        Buffer.from(b64(decodeURIComponent(userinfo))).toString('base64url') +
+        raw.slice(at);
   }
   const u = new URL(raw);
   const protocol =

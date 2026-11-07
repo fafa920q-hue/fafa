@@ -8,10 +8,7 @@
     },
     "Action": {
       "type": "String",
-      "allowedValues": [
-        "check",
-        "deploy"
-      ],
+      "allowedValues": ["check", "deploy"],
       "default": "check"
     }
   },
