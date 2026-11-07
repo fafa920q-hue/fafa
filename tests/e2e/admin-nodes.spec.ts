@@ -315,7 +315,10 @@ test('Owner 订阅源真实 CRUD', async ({ page }, testInfo) => {
     ).toBeVisible();
     await page.goto(adminOrigin + '/sources');
     await page.getByRole('button', { name: '新增订阅源', exact: true }).click();
-    const create = page.getByRole('dialog', { name: '新增订阅源', exact: true });
+    const create = page.getByRole('dialog', {
+      name: '新增订阅源',
+      exact: true,
+    });
     await create.getByLabel('源名称').fill(name);
     await create.getByLabel('源类型').selectOption('OWNED_NODE');
     await create.getByLabel('自有节点配置').fill(content);
@@ -350,7 +353,9 @@ test('Owner 订阅源真实 CRUD', async ({ page }, testInfo) => {
       (item: { sourceId: string }) => item.sourceId === sourceId,
     );
     expect(node).toMatchObject({ protocol: 'ss', country: '日本' });
-    await source(name).getByRole('button', { name: '编辑', exact: true }).click();
+    await source(name)
+      .getByRole('button', { name: '编辑', exact: true })
+      .click();
     const edit = page.getByRole('dialog', { name: '编辑订阅源', exact: true });
     await expect(edit.getByLabel('自有节点配置')).toHaveCount(0);
     await expect(edit.getByLabel('第三方订阅 URL')).toHaveCount(0);

@@ -343,18 +343,46 @@ describe('真实数据库 API 闭环', () => {
   });
   it('SS 与 VMess 混合批量导入通过独立订阅兼容格式输出，公开摘要不泄露凭据', async () => {
     const vmessId = randomUUID();
-    const ss = 'ss://' + Buffer.from('aes-256-gcm:fixture-batch-secret').toString('base64url') + '@ss.example.com:8388#' + encodeURIComponent('香港 IEPL 0.5倍');
-    const vmess = 'vmess://' + Buffer.from(JSON.stringify({
-      v: '2', ps: '日本 下载专用 2x', add: 'vmess.example.com', port: '443',
-      id: vmessId, aid: '0', scy: 'auto', net: 'ws', type: 'none',
-      host: 'edge.example.com', path: '/ws', tls: 'tls', sni: 'tls.example.com',
-    })).toString('base64');
-    const input = { name: '双协议批量', kind: 'THIRD_PARTY_NODE', group: '第三方授权',
+    const ss =
+      'ss://' +
+      Buffer.from('aes-256-gcm:fixture-batch-secret').toString('base64url') +
+      '@ss.example.com:8388#' +
+      encodeURIComponent('香港 IEPL 0.5倍');
+    const vmess =
+      'vmess://' +
+      Buffer.from(
+        JSON.stringify({
+          v: '2',
+          ps: '日本 下载专用 2x',
+          add: 'vmess.example.com',
+          port: '443',
+          id: vmessId,
+          aid: '0',
+          scy: 'auto',
+          net: 'ws',
+          type: 'none',
+          host: 'edge.example.com',
+          path: '/ws',
+          tls: 'tls',
+          sni: 'tls.example.com',
+        }),
+      ).toString('base64');
+    const input = {
+      name: '双协议批量',
+      kind: 'THIRD_PARTY_NODE',
+      group: '第三方授权',
       content: Buffer.from(ss + '\n' + vmess + '\n' + ss).toString('base64'),
-      authorized: true, redistributionAuthorized: true, authorizationReference: 'fixture-authorized-provider' };
+      authorized: true,
+      redistributionAuthorized: true,
+      authorizationReference: 'fixture-authorized-provider',
+    };
     const preview = await send(0, '/api/node-import/preview', 'POST', input);
     expect(preview.statusCode, preview.body).toBe(200);
-    expect(preview.json()).toMatchObject({ valid: 2, duplicates: 1, failures: [] });
+    expect(preview.json()).toMatchObject({
+      valid: 2,
+      duplicates: 1,
+      failures: [],
+    });
     expect(preview.body).not.toContain(vmessId);
     const imported = await send(0, '/api/node-import', 'POST', input);
     expect(imported.statusCode, imported.body).toBe(200);
@@ -363,55 +391,104 @@ describe('真实数据库 API 闭环', () => {
     const metadata = await send(0, '/api/nodes');
     expect(metadata.body).not.toContain('fixture-batch-secret');
     expect(metadata.body).not.toContain(vmessId);
-    const grant = await send(0, '/api/admin/grants', 'POST', { kind: 'source', resourceId: id, userId: ids[2] });
+    const grant = await send(0, '/api/admin/grants', 'POST', {
+      kind: 'source',
+      resourceId: id,
+      userId: ids[2],
+    });
     expect(grant.statusCode).toBe(200);
-    const link = new URL((await send(2, '/api/subscription/rotate', 'POST')).json().url).pathname;
+    const link = new URL(
+      (await send(2, '/api/subscription/rotate', 'POST')).json().url,
+    ).pathname;
     const output = await app.inject(link + '?format=uri');
     expect(output.statusCode).toBe(200);
     expect(output.body).toContain('ss://');
     expect(output.body).toContain('vmess://');
     const encoded = await app.inject(link + '?format=base64');
     expect(Buffer.from(encoded.body, 'base64').toString()).toBe(output.body);
-    expect((await app.inject(link + '?format=mihomo')).body).toContain('proxies:');
-    expect((await app.inject(link + '?format=sing-box')).json().outbounds).toHaveLength(2);
+    expect((await app.inject(link + '?format=mihomo')).body).toContain(
+      'proxies:',
+    );
+    expect(
+      (await app.inject(link + '?format=sing-box')).json().outbounds,
+    ).toHaveLength(2);
     await send(0, '/api/admin/grants/source/' + id + '/' + ids[2], 'DELETE');
     expect((await app.inject(link + '?format=uri')).body).toBe('');
-    expect((await app.inject('/subscription/' + link.split('/').pop() + '?format=uri')).body).toBe('');
+    expect(
+      (
+        await app.inject(
+          '/subscription/' + link.split('/').pop() + '?format=uri',
+        )
+      ).body,
+    ).toBe('');
     await send(2, '/api/subscription', 'DELETE');
     await send(0, '/api/node_sources/' + id, 'DELETE');
   });
   it('源元数据编辑不回显凭据，远程刷新防重、失败回滚并拒绝陈旧结果', async () => {
     vi.stubEnv('DEMO_MODE', 'false');
-    const privateUrl = 'https://provider.example/subscription?token=fixture-private-url';
-    const content = 'ss://' + Buffer.from('aes-256-gcm:fixture-remote-secret').toString('base64url') + '@node.example.com:8388#' + encodeURIComponent('日本 IEPL 2倍');
+    const privateUrl =
+      'https://provider.example/subscription?token=fixture-private-url';
+    const content =
+      'ss://' +
+      Buffer.from('aes-256-gcm:fixture-remote-secret').toString('base64url') +
+      '@node.example.com:8388#' +
+      encodeURIComponent('日本 IEPL 2倍');
     try {
       const created = await send(0, '/api/node_sources', 'POST', {
-        name: '远程授权测试', kind: 'REMOTE_SUBSCRIPTION', url: privateUrl,
-        group: '提供商分组', authorized: true,
+        name: '远程授权测试',
+        kind: 'REMOTE_SUBSCRIPTION',
+        url: privateUrl,
+        group: '提供商分组',
+        authorized: true,
       });
       expect(created.statusCode, created.body).toBe(200);
       expect(created.json().credentialConfigured).toBe(true);
       expect(created.body).not.toContain(privateUrl);
       const id = created.json().id;
-      const [queued] = await sql`select * from background_jobs where source_id=${id} and data->>'status'='QUEUED'`;
+      const [queued] =
+        await sql`select * from background_jobs where source_id=${id} and data->>'status'='QUEUED'`;
       expect(queued).toBeTruthy();
-      const refreshes = await Promise.all([send(0, '/api/node_sources/' + id + '/refresh', 'POST'), send(0, '/api/node_sources/' + id + '/refresh', 'POST')]);
-      expect(refreshes.every((r) => r.statusCode === 200 && r.json().id === queued.id)).toBe(true);
-      vi.mocked(safeFetch).mockResolvedValueOnce({ status: 200, body: content });
+      const refreshes = await Promise.all([
+        send(0, '/api/node_sources/' + id + '/refresh', 'POST'),
+        send(0, '/api/node_sources/' + id + '/refresh', 'POST'),
+      ]);
+      expect(
+        refreshes.every(
+          (r) => r.statusCode === 200 && r.json().id === queued.id,
+        ),
+      ).toBe(true);
+      vi.mocked(safeFetch).mockResolvedValueOnce({
+        status: 200,
+        body: content,
+      });
       await runSubscriptionJob(queued);
       const [before] = await sql`select * from node_sources where id=${id}`;
-      const [firstNode] = await sql`select * from nodes where source_id=${id} and revoked_at is null`;
-      const updated = await send(0, '/api/node_sources/' + id, 'PATCH', { name: '已改名', group: '新版分组' });
+      const [firstNode] =
+        await sql`select * from nodes where source_id=${id} and revoked_at is null`;
+      const updated = await send(0, '/api/node_sources/' + id, 'PATCH', {
+        name: '已改名',
+        group: '新版分组',
+      });
       expect(updated.statusCode, updated.body).toBe(200);
       expect(updated.body).not.toContain('fixture-private-url');
-      expect((await send(1, '/api/node_sources/' + id, 'PATCH', { name: '越权' })).statusCode).toBe(404);
-      expect((await send(0, '/api/node_sources/' + id, 'PATCH', { url: privateUrl })).statusCode).toBe(400);
+      expect(
+        (await send(1, '/api/node_sources/' + id, 'PATCH', { name: '越权' }))
+          .statusCode,
+      ).toBe(404);
+      expect(
+        (await send(0, '/api/node_sources/' + id, 'PATCH', { url: privateUrl }))
+          .statusCode,
+      ).toBe(400);
       const [after] = await sql`select * from node_sources where id=${id}`;
       expect(after.secret).toEqual(before.secret);
       expect(after.data.nodeCount).toBe(1);
-      vi.mocked(safeFetch).mockResolvedValueOnce({ status: 200, body: 'invalid-provider-response' });
+      vi.mocked(safeFetch).mockResolvedValueOnce({
+        status: 200,
+        body: 'invalid-provider-response',
+      });
       await expect(runSubscriptionJob(queued)).rejects.toThrow();
-      const retained = await sql`select * from nodes where source_id=${id} and revoked_at is null`;
+      const retained =
+        await sql`select * from nodes where source_id=${id} and revoked_at is null`;
       expect(retained.map((node) => node.id)).toEqual([firstNode.id]);
       vi.mocked(safeFetch).mockRejectedValueOnce(new Error(privateUrl));
       await tick();
@@ -419,36 +496,86 @@ describe('真实数据库 API 闭环', () => {
       expect(failed.data.status).toBe('ERROR');
       expect(failed.data.lastSuccess).toBe(after.data.lastSuccess);
       expect(failed.data.error).toBe('刷新失败，保留最后成功版本');
-      const [failedJob] = await sql`select data from background_jobs where id=${queued.id}`;
+      const [failedJob] =
+        await sql`select data from background_jobs where id=${queued.id}`;
       expect(failedJob.data.attempt).toBe(1);
-      expect(JSON.stringify(failedJob.data)).not.toContain('fixture-private-url');
+      expect(JSON.stringify(failedJob.data)).not.toContain(
+        'fixture-private-url',
+      );
       const invalid = await send(0, '/api/node_sources/' + id, 'PUT', {
-        name: '无效替换', kind: 'OWNED_NODE', content: 'invalid-node', authorized: true,
+        name: '无效替换',
+        kind: 'OWNED_NODE',
+        content: 'invalid-node',
+        authorized: true,
       });
       expect(invalid.statusCode).toBe(400);
-      expect((await send(0, '/api/node_sources/' + id)).json().name).toBe('已改名');
+      expect((await send(0, '/api/node_sources/' + id)).json().name).toBe(
+        '已改名',
+      );
       vi.mocked(safeFetch).mockImplementationOnce(async () => {
         const replacement = await send(0, '/api/node_sources/' + id, 'PUT', {
-          name: '新连接', kind: 'REMOTE_SUBSCRIPTION', url: 'https://new-provider.example/sub?token=fixture-new',
+          name: '新连接',
+          kind: 'REMOTE_SUBSCRIPTION',
+          url: 'https://new-provider.example/sub?token=fixture-new',
           authorized: true,
         });
         expect(replacement.statusCode, replacement.body).toBe(200);
-        return { status: 200, body: 'trojan://outdated@old-node.example.com:443#old' };
+        return {
+          status: 200,
+          body: 'trojan://outdated@old-node.example.com:443#old',
+        };
       });
       expect(await runSubscriptionJob(queued)).toEqual({ superseded: true });
-      expect((await sql`select id from nodes where source_id=${id} and revoked_at is null`).map((node) => node.id)).toEqual([firstNode.id]);
-      expect((await sql`select id from background_jobs where source_id=${id} and data->>'status' in ('QUEUED','RUNNING')`).length).toBe(1);
-      expect((await send(0, '/api/node_sources/' + id + '/enabled', 'PATCH', { enabled: false })).statusCode).toBe(200);
-      expect((await send(0, '/api/node_sources/' + id + '/refresh', 'POST')).statusCode).toBe(400);
-      expect((await send(0, '/api/nodes')).json().find((node: any) => node.sourceId === id)).toMatchObject({ enabled: false, status: 'DISABLED', editable: true, latency: null, traffic: null });
-      await send(0, '/api/node_sources/' + id + '/enabled', 'PATCH', { enabled: true });
+      expect(
+        (
+          await sql`select id from nodes where source_id=${id} and revoked_at is null`
+        ).map((node) => node.id),
+      ).toEqual([firstNode.id]);
+      expect(
+        (
+          await sql`select id from background_jobs where source_id=${id} and data->>'status' in ('QUEUED','RUNNING')`
+        ).length,
+      ).toBe(1);
+      expect(
+        (
+          await send(0, '/api/node_sources/' + id + '/enabled', 'PATCH', {
+            enabled: false,
+          })
+        ).statusCode,
+      ).toBe(200);
+      expect(
+        (await send(0, '/api/node_sources/' + id + '/refresh', 'POST'))
+          .statusCode,
+      ).toBe(400);
+      expect(
+        (await send(0, '/api/nodes'))
+          .json()
+          .find((node: any) => node.sourceId === id),
+      ).toMatchObject({
+        enabled: false,
+        status: 'DISABLED',
+        editable: true,
+        latency: null,
+        traffic: null,
+      });
+      await send(0, '/api/node_sources/' + id + '/enabled', 'PATCH', {
+        enabled: true,
+      });
       vi.mocked(safeFetch).mockImplementationOnce(async () => {
-        await send(0, '/api/node_sources/' + id + '/enabled', 'PATCH', { enabled: false });
+        await send(0, '/api/node_sources/' + id + '/enabled', 'PATCH', {
+          enabled: false,
+        });
         return { status: 200, body: content };
       });
-      expect(await runSubscriptionJob({ source_id: id })).toEqual({ superseded: true });
+      expect(await runSubscriptionJob({ source_id: id })).toEqual({
+        superseded: true,
+      });
       await send(0, '/api/node_sources/' + id, 'DELETE');
-      expect((await sql`select id from background_jobs where source_id=${id} and data->>'status' in ('QUEUED','RUNNING')`).length).toBe(0);
+      expect(
+        (
+          await sql`select id from background_jobs where source_id=${id} and data->>'status' in ('QUEUED','RUNNING')`
+        ).length,
+      ).toBe(0);
     } finally {
       vi.unstubAllEnvs();
     }
@@ -969,7 +1096,12 @@ describe('真实数据库 API 闭环', () => {
     expect((await send(1, '/api/subscription/rotate', 'POST')).statusCode).toBe(
       403,
     );
-    const sourceWrite = await send(1, '/api/node_sources/' + sources[0], 'PATCH', { name: '过期会话拒绝' });
+    const sourceWrite = await send(
+      1,
+      '/api/node_sources/' + sources[0],
+      'PATCH',
+      { name: '过期会话拒绝' },
+    );
     expect(sourceWrite.statusCode).toBe(403);
     expect(sourceWrite.json().code).toBe('REAUTH_REQUIRED');
     await sql`update sessions set revoked_at=now() where owner_id=${ids[1]}`;
