@@ -471,7 +471,13 @@ test('Owner 订阅源真实 CRUD', async ({ page }, testInfo) => {
 });
 
 // 节点导入布局用例：双主题 × 缩小可视高度（430px），验证导入按钮真实可操作。
-async function importLayoutCase(page: Page, testInfo: TestInfo, width: number) {
+// 另在完整高度下断言弹窗不塌缩（iPad Safari 生产缺陷回归，见下方 iPad 用例）。
+async function importLayoutCase(
+  page: Page,
+  testInfo: TestInfo,
+  width: number,
+  fullHeight = 844,
+) {
   await page.goto(adminOrigin);
   await page.getByRole('button', { name: '管理员演示', exact: true }).click();
   await page.getByRole('heading', { name: '管理概览', exact: true }).waitFor();
@@ -482,7 +488,7 @@ async function importLayoutCase(page: Page, testInfo: TestInfo, width: number) {
     '@node.example.com:8388#' +
     encodeURIComponent('日本 IEPL 1.5倍 布局fixture');
   for (const theme of ['light', 'dark']) {
-    await page.setViewportSize({ width, height: 844 });
+    await page.setViewportSize({ width, height: fullHeight });
     const current = await page.locator('html').getAttribute('data-theme');
     if ((current || 'light') !== theme)
       await page.getByRole('button', { name: '切换主题', exact: true }).click();
@@ -503,6 +509,19 @@ async function importLayoutCase(page: Page, testInfo: TestInfo, width: number) {
       name: '批量导入节点',
       exact: true,
     });
+    // iPad Safari 生产缺陷回归：弹窗内容区不得塌缩为仅标题行。
+    // 弹窗与内容区高度必须远大于标题行（塌缩时仅约 100px），
+    // 表单与提交按钮在完整高度下即可见。
+    const dialogBox = await dialog.boundingBox();
+    expect(dialogBox).not.toBeNull();
+    expect(dialogBox!.height).toBeGreaterThan(300);
+    const contentBox = await dialog.locator('.dialog-content').boundingBox();
+    expect(contentBox).not.toBeNull();
+    expect(contentBox!.height).toBeGreaterThan(300);
+    await expect(dialog.getByLabel('节点配置（敏感）')).toBeVisible();
+    await expect(
+      dialog.getByRole('button', { name: '预览并验证', exact: true }),
+    ).toBeVisible();
     await dialog
       .getByLabel('节点批次名称')
       .fill('布局fixture-' + width + '-' + theme);
@@ -625,4 +644,22 @@ test.describe('节点导入 1440px 桌面宽度', () => {
   }, testInfo) => {
     await importLayoutCase(page, testInfo, 1440);
   });
+});
+
+// iPad Safari 生产缺陷回归（2026-11-07）：批量导入弹窗在 iPad 真机 Safari
+// 上塌缩为仅标题行，表单与提交按钮不可见。本地 Playwright WebKit 复现
+// 未重现该塌缩（与真机 Safari 存在引擎差异），本用例锁定 iPad 视口下
+// 弹窗的正确几何，防止回归；最终验收仍以真机 iPad Safari 为准。
+test.describe('节点导入 iPad 视口', () => {
+  for (const [width, height] of [
+    [1180, 820],
+    [820, 1180],
+  ] as const) {
+    test(
+      '节点导入在 iPad ' + width + 'x' + height + ' 下表单可见可提交',
+      async ({ page }, testInfo) => {
+        await importLayoutCase(page, testInfo, width, height);
+      },
+    );
+  }
 });
