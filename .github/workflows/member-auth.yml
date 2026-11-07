@@ -46,6 +46,8 @@ jobs:
       - name: Verify independent files and formatting
         run: pnpm exec tsx infra/scripts/check-member-isolation.ts --format
       - run: pnpm lint && pnpm typecheck
+      - name: Read-only integration preview against the observed Muse branch
+        run: pnpm exec tsx infra/scripts/member-integration-preview.ts --artifact
       - name: Unit, real PostgreSQL and authentication security tests
         run: pnpm test:member
       - name: Existing API, Google and unique Owner regression
@@ -62,4 +64,5 @@ jobs:
           name: member-auth-test-evidence
           path: |
             docs/evidence/playwright.json
+            docs/evidence/member-integration-preview.json
             test-results/

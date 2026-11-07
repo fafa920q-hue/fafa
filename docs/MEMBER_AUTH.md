@@ -50,3 +50,5 @@ API使用固定HTTPS目的地址、禁止重定向、8秒超时，只检查状�
 pnpm test:member只允许本机_test连接，创建并最终删除它自己的随机测试库；拒绝远端或生产目标。浏览器夹具仅连接本机开发库，创建并软删除自己的随机Member，不修改seed Owner。请查本分支完整SHA的实际CI结论，不引用PR#2的成功结果。
 
 真实邮件收件、生产Google新绑定、真机Safari以及生产数据库迁移尚未执行。本地Shell在启动前受bwrap权限限制，因此本会话的实际执行证据仅来自GitHub Actions。
+
+真实邮件的最少持有人配置、只读检查及单封测试见 [MEMBER_MAIL_ACCEPTANCE.md](MEMBER_MAIL_ACCEPTANCE.md)。与Muse的只读冲突预览及整合规则见 [MEMBER_INTEGRATION_REVIEW.md](MEMBER_INTEGRATION_REVIEW.md)。
