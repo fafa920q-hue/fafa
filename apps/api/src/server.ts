@@ -277,18 +277,22 @@ export async function buildApp() {
       return setSession(reply, u as User);
     },
   );
-  const startGoogle = async (
-    reply: any,
-    credential?: string,
-    memberLink?: string,
-  ) => {
+  // Google 登录来源与绑定一并保留：普通登录按 app 回前台/后台，
+  // Member 绑定按 memberLink 回 /member/account，Owner 初始化按
+  // ownerCredential 走原流程；三者不得互相冒充（整合 PR #4 + PR #2）。
+  type GoogleStartOptions = {
+    app?: 'web' | 'admin';
+    ownerCredential?: string;
+    memberLink?: string;
+  };
+  const startGoogle = async (reply: any, options: GoogleStartOptions = {}) => {
     if (!process.env.GOOGLE_CLIENT_ID)
       throw new AppError(503, 'GOOGLE_UNCONFIGURED', 'Google 登录尚未配置');
     const state = token(),
       nonce = token(),
       verifier = token();
-    const ownerCredential = credential
-      ? await beginOwnerCredential(credential, state)
+    const ownerCredential = options.ownerCredential
+      ? await beginOwnerCredential(options.ownerCredential, state)
       : undefined;
     const flow = {
       state,
@@ -296,7 +300,8 @@ export async function buildApp() {
       verifier,
       at: Date.now(),
       ownerCredential,
-      memberLink,
+      app: options.app ?? 'web',
+      memberLink: options.memberLink,
     };
     reply.setCookie(
       'fafa_oidc',
@@ -321,9 +326,12 @@ export async function buildApp() {
       prompt: 'select_account',
     });
   };
-  app.get('/auth/google', async (_req, reply) =>
-    reply.redirect(await startGoogle(reply)),
-  );
+  app.get('/auth/google', async (req, reply) => {
+    const { app } = z
+      .object({ app: z.enum(['web', 'admin']).optional() })
+      .parse(req.query);
+    return reply.redirect(await startGoogle(reply, { app: app ?? 'web' }));
+  });
   app.post(
     '/auth/owner/start',
     { config: { rateLimit: { max: 5, timeWindow: '15 minutes' } } },
@@ -331,10 +339,18 @@ export async function buildApp() {
       if (!(await ownerSetupAvailable())) throw notFound();
       if (!origins.includes(req.headers.origin || ''))
         throw new AppError(403, 'ORIGIN', '来源不允许');
-      const { credential } = z
-        .object({ credential: z.string().min(70).max(100) })
+      const { credential, app } = z
+        .object({
+          credential: z.string().min(70).max(100),
+          app: z.enum(['web', 'admin']).optional(),
+        })
         .parse(req.body);
-      return { url: await startGoogle(reply, credential) };
+      return {
+        url: await startGoogle(reply, {
+          ownerCredential: credential,
+          app: app ?? 'web',
+        }),
+      };
     },
   );
   app.get('/auth/google/callback', async (req, reply) => {
@@ -391,9 +407,8 @@ export async function buildApp() {
         ? await completeOwnerCredential(flow.ownerCredential, flow.state, p)
         : await activateGoogle(p);
     await setSession(reply, user);
-    return reply.redirect(
-      flow.memberLink ? origins[0] + '/member/account' : origins[0],
-    );
+    if (flow.memberLink) return reply.redirect(origins[0] + '/member/account');
+    return reply.redirect(flow.app === 'admin' ? origins[1] : origins[0]);
   });
   app.get('/api/me', async (req) => ({
     user: {
@@ -747,7 +762,7 @@ export async function buildApp() {
   await registerMemberAuth(app, {
     origins,
     setSession,
-    startGoogleLink: (reply, id) => startGoogle(reply, undefined, id),
+    startGoogleLink: (reply, id) => startGoogle(reply, { memberLink: id }),
   });
   await registerNodes(app);
   await registerAdmin(app);
