@@ -40,7 +40,7 @@ for target in runtime web admin; do
   git archive "$IMAGE_TAG" | docker build -f infra/docker/Dockerfile --target "$target" -t "fafa-one-$target:$IMAGE_TAG" -
 done
 "${compose[@]}" config --quiet
-"${compose[@]}" config --format json | node --input-type=module -e '
+"${compose[@]}" --profile tools config --format json | node --input-type=module -e '
 let input=""; for await (const chunk of process.stdin) input+=chunk;
 const config=JSON.parse(input);
 for(const name of ["api","worker","postgres"]) {
