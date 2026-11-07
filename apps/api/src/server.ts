@@ -387,17 +387,25 @@ export async function buildApp() {
     await setSession(reply, user);
     return reply.redirect(flow.app === 'admin' ? origins[1] : origins[0]);
   });
-  app.get('/api/me', async (req) => ({
-    user: {
-      id: req.actor.id,
-      name: req.actor.name,
-      email: req.actor.email,
-      role: req.actor.role,
-      disabled: req.actor.disabled,
-    },
-    csrf: req.actor.csrf,
-    demo: process.env.DEMO_MODE === 'true',
-  }));
+  app.get('/api/me', async (req) => {
+    const [flag] =
+      await sql`select server_connect_enabled,codex_tasks_enabled from users where id=${req.actor.id}`;
+    return {
+      user: {
+        id: req.actor.id,
+        name: req.actor.name,
+        email: req.actor.email,
+        role: req.actor.role,
+        disabled: req.actor.disabled,
+        serverConnectEnabled:
+          isAdmin(req.actor.role) || flag?.server_connect_enabled === true,
+        codexTasksEnabled:
+          isAdmin(req.actor.role) || flag?.codex_tasks_enabled === true,
+      },
+      csrf: req.actor.csrf,
+      demo: process.env.DEMO_MODE === 'true',
+    };
+  });
   app.post('/api/logout', async (req, reply) => {
     await sql`update sessions set revoked_at=now() where id=${req.actor.session_id}`;
     reply.clearCookie('fafa_session', { path: '/', ...sharedCookieDomain() });
