@@ -26,7 +26,7 @@ import {
 } from 'lucide-react';
 import type { User } from '../../shared/src';
 import './style.css';
-import { backendUrl } from './endpoints';
+import { backendUrl, loginApp } from './endpoints';
 export type Row = { id: string; [key: string]: any };
 type Session = { user: User; csrf: string; demo: boolean };
 const Context = createContext<{
@@ -134,6 +134,7 @@ function Login({ onLogin }: { onLogin: (s: Session) => void }) {
   const [config, setConfig] = useState<any>();
   const [ownerCredential, setOwnerCredential] = useState('');
   const [error, setError] = useState('');
+  const app = loginApp(window.location.hostname, window.location.port);
   useEffect(() => {
     api('/auth/config')
       .then(setConfig)
@@ -156,7 +157,7 @@ function Login({ onLogin }: { onLogin: (s: Session) => void }) {
         </p>
         <a
           className="button primary"
-          href={backendUrl('/auth/google')}
+          href={backendUrl('/auth/google?app=' + app)}
           aria-disabled={!config?.google}
           onClick={(e) => {
             if (!config?.google) e.preventDefault();
@@ -164,6 +165,15 @@ function Login({ onLogin }: { onLogin: (s: Session) => void }) {
         >
           G · 使用 Google 登录
         </a>
+        {app === 'web' && (
+          <p className="muted">
+            <a href="/member/login">用户名 / 邮箱登录</a>
+            {' · '}
+            <a href="/member/register">注册新账户</a>
+            {' · '}
+            <a href="/member/forgot">忘记密码</a>
+          </p>
+        )}
         {!config?.google && (
           <p className="muted">Google 登录未配置 · 仅受邀账号可激活</p>
         )}
@@ -179,7 +189,7 @@ function Login({ onLogin }: { onLogin: (s: Session) => void }) {
                   const result = await api<{ url: string }>(
                     '/auth/owner/start',
                     'POST',
-                    { credential },
+                    { credential, app },
                   );
                   window.location.assign(result.url);
                 } catch (error) {
