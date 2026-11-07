@@ -232,7 +232,13 @@ export async function registerAdmin(app: FastifyInstance) {
         limit: z.coerce.number().int().min(1).max(500).default(200),
       })
       .parse(req.query);
-    return sql`select r.id,r.user_id,r.kind,r.resource_id,r.status,r.reason,r.expires_at,r.granted_at,r.created_at,u.email,u.name from auto_grant_records r join users u on u.id=r.user_id where (${q.userId}::uuid is null or r.user_id=${q.userId}) and (${q.status}::text is null or r.status=${q.status}) and (${q.kind}::text is null or r.kind=${q.kind}) order by r.created_at desc limit ${q.limit}`;
+    // postgres 模板参数不接受 undefined：未传的过滤条件统一转为 null，
+    // 使 `null::uuid is null` / `null::text is null` 成立，跳过该过滤项。
+    // 直接传 undefined 不仅通不过类型检查，运行时也会被 postgres 拒绝。
+    const userId = q.userId ?? null;
+    const status = q.status ?? null;
+    const kind = q.kind ?? null;
+    return sql`select r.id,r.user_id,r.kind,r.resource_id,r.status,r.reason,r.expires_at,r.granted_at,r.created_at,u.email,u.name from auto_grant_records r join users u on u.id=r.user_id where (${userId}::uuid is null or r.user_id=${userId}) and (${status}::text is null or r.status=${status}) and (${kind}::text is null or r.kind=${kind}) order by r.created_at desc limit ${q.limit}`;
   });
   app.post('/api/admin/auto-grant/backfill', async (req) => {
     if (req.actor.role !== 'Owner')
