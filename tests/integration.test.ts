@@ -303,6 +303,60 @@ describe('真实数据库 API 闭环', () => {
     await send(1, '/api/subscription/profile', 'PUT', { country: '' });
     await send(0, '/api/node_sources/' + id, 'DELETE');
   });
+  it('源停用时启用节点返回 409 SOURCE_DISABLED', async () => {
+    const raw =
+      'ss://' +
+      Buffer.from('aes-256-gcm:fictional-fixture-password').toString(
+        'base64url',
+      ) +
+      '@node.example.com:8388#' +
+      encodeURIComponent('409 回归 fixture');
+    const imported = await send(0, '/api/node-import', 'POST', {
+      name: '409 回归 fixture',
+      group: '',
+      kind: 'THIRD_PARTY_NODE',
+      content: raw,
+      authorized: true,
+      redistributionAuthorized: true,
+      authorizationReference: '虚构提供商授权 fixture',
+    });
+    expect(imported.statusCode, imported.body).toBe(200);
+    const id = imported.json().sourceId;
+    const node = (await send(0, '/api/nodes'))
+      .json()
+      .find((n: any) => n.sourceId === id);
+    expect(
+      (
+        await send(0, '/api/node_sources/' + id + '/enabled', 'PATCH', {
+          enabled: false,
+        })
+      ).statusCode,
+    ).toBe(200);
+    const blocked = await send(0, '/api/nodes/' + node.id, 'PATCH', {
+      enabled: true,
+    });
+    expect(blocked.statusCode).toBe(409);
+    expect(blocked.json().code).toBe('SOURCE_DISABLED');
+    expect(
+      (
+        await send(0, '/api/nodes/' + node.id, 'PATCH', { enabled: false })
+      ).statusCode,
+    ).toBe(200);
+    expect(
+      (
+        await send(0, '/api/node_sources/' + id + '/enabled', 'PATCH', {
+          enabled: true,
+        })
+      ).statusCode,
+    ).toBe(200);
+    expect(
+      (
+        await send(0, '/api/nodes/' + node.id, 'PATCH', { enabled: true })
+      ).statusCode,
+    ).toBe(200);
+    await send(0, '/api/nodes/' + node.id, 'DELETE');
+    await send(0, '/api/node_sources/' + id, 'DELETE');
+  });
   it('自有订阅创建、持久化、密钥不同节点保留', async () => {
     const r = await send(1, '/api/node_sources', 'POST', {
       name: '真实配置测试',
