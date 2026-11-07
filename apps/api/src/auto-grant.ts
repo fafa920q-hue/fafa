@@ -4,17 +4,16 @@ import { AppError } from '../../../packages/shared/src';
 import { token, hash } from '../../../packages/shared/src/crypto';
 
 // 新用户前三天自动授权：共享逻辑（管理后台接口与注册资格判断共用）。
-// 授权本身复用 node_group_grants / server_access_grants / subscription_tokens，
+// 授权本身复用 node_group_grants / subscription_tokens；服务器一步只打开
+// 用户“连接自己的服务器”功能资格（users.server_connect_enabled），不授予
+// 任何指定服务器行访问，不写 server_access_grants，没有体验服务器。
 // auto_grant_records 只记成功 / 待分配 / 失败轨迹，不构成第二套权限系统。
-// 体验服务器只授予管理员在策略中指定的那一个服务器，绝不自动授予其他服务器；
-// 交互式终端保持关闭（SSH_INTERACTIVE_ENABLED=false），自动授权永不批准写终端。
 
 export const AUTO_GRANT_POLICY_KEYS = [
   'auto_grant_enabled',
   'auto_grant_window_start',
   'auto_grant_window_end',
   'auto_grant_node_source_id',
-  'auto_grant_server_id',
   'auto_grant_node_limit',
   'auto_grant_trial_valid_days',
 ] as const;
@@ -25,7 +24,6 @@ export const autoGrantPolicySchema = z
     windowStart: z.string().datetime(),
     windowEnd: z.string().datetime(),
     nodeSourceId: z.uuid().nullable(),
-    serverId: z.uuid().nullable(),
     nodeLimit: z.number().int().min(0).max(5000).nullable(),
     trialValidDays: z.number().int().min(1).max(30),
   })
@@ -52,7 +50,6 @@ export async function readAutoGrantPolicy(): Promise<AutoGrantPolicy> {
     windowEnd: String(map.get('auto_grant_window_end') ?? WINDOW_END_DEFAULT),
     nodeSourceId:
       (map.get('auto_grant_node_source_id') as string | null) ?? null,
-    serverId: (map.get('auto_grant_server_id') as string | null) ?? null,
     nodeLimit: (map.get('auto_grant_node_limit') as number | null) ?? null,
     trialValidDays: Number(map.get('auto_grant_trial_valid_days') ?? 3),
   };
@@ -133,36 +130,15 @@ async function grantNode(userId: string, policy: AutoGrantPolicy) {
   return { kind: 'node', status: 'GRANTED' as GrantStatus };
 }
 
+// 服务器一步：打开用户“连接自己的服务器”功能资格（BYOC + BYOS）。
+// 不授予任何指定服务器行访问，不写 server_access_grants，没有体验服务器，
+// 不提供平台算力或共享 SSH 账号。用户随后只能添加并连接自己的服务器。
 async function grantServer(userId: string, policy: AutoGrantPolicy) {
-  if (!policy.serverId) {
-    await record(
-      userId,
-      'server',
-      ZERO_UUID,
-      'PENDING',
-      'SERVER_NOT_CONFIGURED',
-      null,
-    );
-    return { kind: 'server', status: 'PENDING' as GrantStatus };
-  }
-  const [server] =
-    await sql`select id,owner_id from server_connections where id=${policy.serverId} and revoked_at is null`;
-  if (!server) {
-    await record(
-      userId,
-      'server',
-      policy.serverId,
-      'FAILED',
-      'SERVER_NOT_FOUND',
-      null,
-    );
-    return { kind: 'server', status: 'FAILED' as GrantStatus };
-  }
-  await sql`insert into server_access_grants(owner_id,server_id,user_id,data) values(${server.owner_id},${policy.serverId},${userId},${sql.json({ scope: 'USE', autoGranted: true })}) on conflict do nothing`;
+  await sql`update users set server_connect_enabled=true,updated_at=now() where id=${userId}`;
   await record(
     userId,
     'server',
-    policy.serverId,
+    ZERO_UUID,
     'GRANTED',
     null,
     trialExpiry(policy),
