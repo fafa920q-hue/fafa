@@ -8,9 +8,9 @@
 
 账户专用CI在独立checkout中执行：
 
-~~~bash
+```bash
 pnpm exec tsx infra/scripts/member-integration-preview.ts --artifact
-~~~
+```
 
 脚本读取本次checkout已取得的origin/feat/fafa-one-control-panel，用git merge-tree构造Git对象预览，输出双方完整SHA、共同基线、是否干净合并及冲突文件名。不会checkout目标、合并工作区、更新任何ref、推送、部署或访问数据库。报告为docs/evidence/member-integration-preview.json，列在账户CI artifact中。
 
@@ -25,13 +25,13 @@ pnpm exec tsx infra/scripts/member-integration-preview.ts --artifact
 
 不能机械选择任一侧，或把绑定ID当作app传入。整合时改用有名称的选项对象，例如：
 
-~~~ts
+```ts
 type GoogleStartOptions = {
   app?: 'web' | 'admin';
   ownerCredential?: string;
   memberLink?: string;
 };
-~~~
+```
 
 统一签名startGoogle(reply, options)，在服务端生成sealed flow时同时保留app、memberLink、ownerCredential、state、nonce、verifier和时间。普通Google登录按经过枚举验证的app返回前台/后台；Member绑定成功固定回前台/member/account，并撤销原会话、创建新会话。Owner初始化只保留原机制，现有生产Owner不重新初始化。
 
@@ -39,17 +39,17 @@ type GoogleStartOptions = {
 
 ## 文件及集成方式
 
-|范围|处理要求|
-|---|---|
-|core.tsx、style.css、admin-nodes.spec.ts|保留Muse稳定版本，本分支不直接编辑|
-|Muse endpoints/loginApp及登录返回测试|完整保留，与账户新入口共存|
-|server.ts|人工审阅上述有名选项整合，补充双来源与Member绑定的联合回归|
-|新member API、页面、密码/邮件模块|保留本分支实现和安全测试|
-|web/admin main.tsx|保留双方已有路由，增添独立/member入口和后台注册策略，不改变视觉系统|
-|005迁移和运行时授权|确认Muse没有占用005；冲突则由集成人员重编号、同步迁移清单和升级测试，不改已应用迁移内容|
-|生产Compose邮件变量|先审查独立compose.member-auth.yaml，再纳入原受保护发布机制；不直接裸compose up|
-|现有登录卡片快捷入口|待Muse稳定后由集成人员加入普通账户链接，本分支不改共享core.tsx|
-|原CI与生产部署工作流|保持人工审批及原安全检查，不为账户功能绕过|
+| 范围                                     | 处理要求                                                                                |
+| ---------------------------------------- | --------------------------------------------------------------------------------------- |
+| core.tsx、style.css、admin-nodes.spec.ts | 保留Muse稳定版本，本分支不直接编辑                                                      |
+| Muse endpoints/loginApp及登录返回测试    | 完整保留，与账户新入口共存                                                              |
+| server.ts                                | 人工审阅上述有名选项整合，补充双来源与Member绑定的联合回归                              |
+| 新member API、页面、密码/邮件模块        | 保留本分支实现和安全测试                                                                |
+| web/admin main.tsx                       | 保留双方已有路由，增添独立/member入口和后台注册策略，不改变视觉系统                     |
+| 005迁移和运行时授权                      | 确认Muse没有占用005；冲突则由集成人员重编号、同步迁移清单和升级测试，不改已应用迁移内容 |
+| 生产Compose邮件变量                      | 先审查独立compose.member-auth.yaml，再纳入原受保护发布机制；不直接裸compose up          |
+| 现有登录卡片快捷入口                     | 待Muse稳定后由集成人员加入普通账户链接，本分支不改共享core.tsx                          |
+| 原CI与生产部署工作流                     | 保持人工审批及原安全检查，不为账户功能绕过                                              |
 
 check-member-isolation.ts以原确认基线检查账户自身改动，故正式整合Muse后必须由集成人员审阅并更新隔离检查的比较基线，避免把继承的Muse修改误判为账户改写。更新前应保留双方原SHA和冲突解决记录。
 
