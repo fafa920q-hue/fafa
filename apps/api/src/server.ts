@@ -271,7 +271,11 @@ export async function buildApp() {
       return setSession(reply, u as User);
     },
   );
-  const startGoogle = async (reply: any, credential?: string) => {
+  const startGoogle = async (
+    reply: any,
+    credential?: string,
+    app: 'web' | 'admin' = 'web',
+  ) => {
     if (!process.env.GOOGLE_CLIENT_ID)
       throw new AppError(503, 'GOOGLE_UNCONFIGURED', 'Google 登录尚未配置');
     const state = token(),
@@ -280,7 +284,14 @@ export async function buildApp() {
     const ownerCredential = credential
       ? await beginOwnerCredential(credential, state)
       : undefined;
-    const flow = { state, nonce, verifier, at: Date.now(), ownerCredential };
+    const flow = {
+      state,
+      nonce,
+      verifier,
+      at: Date.now(),
+      ownerCredential,
+      app,
+    };
     reply.setCookie(
       'fafa_oidc',
       Buffer.from(JSON.stringify(seal(JSON.stringify(flow)))).toString(
@@ -304,9 +315,12 @@ export async function buildApp() {
       prompt: 'select_account',
     });
   };
-  app.get('/auth/google', async (_req, reply) =>
-    reply.redirect(await startGoogle(reply)),
-  );
+  app.get('/auth/google', async (req, reply) => {
+    const { app } = z
+      .object({ app: z.enum(['web', 'admin']).optional() })
+      .parse(req.query);
+    return reply.redirect(await startGoogle(reply, undefined, app ?? 'web'));
+  });
   app.post(
     '/auth/owner/start',
     { config: { rateLimit: { max: 5, timeWindow: '15 minutes' } } },
@@ -314,10 +328,13 @@ export async function buildApp() {
       if (!(await ownerSetupAvailable())) throw notFound();
       if (!origins.includes(req.headers.origin || ''))
         throw new AppError(403, 'ORIGIN', '来源不允许');
-      const { credential } = z
-        .object({ credential: z.string().min(70).max(100) })
+      const { credential, app } = z
+        .object({
+          credential: z.string().min(70).max(100),
+          app: z.enum(['web', 'admin']).optional(),
+        })
         .parse(req.body);
-      return { url: await startGoogle(reply, credential) };
+      return { url: await startGoogle(reply, credential, app ?? 'web') };
     },
   );
   app.get('/auth/google/callback', async (req, reply) => {
@@ -368,7 +385,7 @@ export async function buildApp() {
       ? await completeOwnerCredential(flow.ownerCredential, flow.state, p)
       : await activateGoogle(p);
     await setSession(reply, user);
-    return reply.redirect(origins[0]);
+    return reply.redirect(flow.app === 'admin' ? origins[1] : origins[0]);
   });
   app.get('/api/me', async (req) => ({
     user: {
