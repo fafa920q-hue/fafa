@@ -120,7 +120,11 @@ export async function buildApp() {
     process.env.ADMIN_ORIGIN || 'http://localhost:5174',
   ];
   await app.register(cookie);
-  await app.register(cors, { origin: origins, credentials: true });
+  await app.register(cors, {
+    origin: origins,
+    credentials: true,
+    methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  });
   await app.register(helmet, {
     contentSecurityPolicy: {
       directives: { defaultSrc: ["'none'"], frameAncestors: ["'none'"] },

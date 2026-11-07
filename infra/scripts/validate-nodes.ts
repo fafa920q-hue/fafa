@@ -15,6 +15,7 @@ for (const node of result.nodes) {
 console.log(
   JSON.stringify(
     {
+      total: result.total,
       valid: result.nodes.length,
       duplicates: result.duplicates,
       failures: result.failures,

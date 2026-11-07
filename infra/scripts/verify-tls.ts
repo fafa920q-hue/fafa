@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { mkdtemp, writeFile, readFile, rm, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -17,6 +17,30 @@ const domains = ['fafa888.uk', 'a.fafa888.uk'];
 const port = 443;
 const network = process.env.FAFA_COMPOSE_NETWORK || 'fafa-one-dev_default';
 let created = false;
+
+let networkEvents = 0;
+let lastNetworkEvent = Date.now();
+let monitorFailed = false;
+const networkMonitor = spawn('ip', ['monitor', 'link', 'address', 'route'], {
+  stdio: ['ignore', 'pipe', 'pipe'],
+});
+networkMonitor.stdout.on('data', (chunk: Buffer) => {
+  networkEvents += chunk.toString().split('\n').filter(Boolean).length;
+  lastNetworkEvent = Date.now();
+});
+networkMonitor.on('error', () => { monitorFailed = true; });
+networkMonitor.on('exit', () => { monitorFailed = true; });
+async function waitForNetworkQuiet() {
+  const deadline = Date.now() + 15000;
+  while (Date.now() - lastNetworkEvent < 3000) {
+    assert(!monitorFailed, 'CI network monitor unavailable');
+    assert(Date.now() < deadline, 'CI Docker network did not settle');
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  assert(!monitorFailed, 'CI network monitor unavailable');
+  return { eventsObserved: networkEvents, quietWindowMs: 3000 };
+}
+
 function docker(args: string[]) {
   return execFileSync('docker', args, {
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -152,6 +176,10 @@ try {
   assert(!adminApi.body.includes('<!doctype html>'));
   // Real browser requests cross from the independent Admin build to the main API.
   // Only these isolated test containers see loopback domain mappings; no DNS changes.
+  // Docker veth/address transitions can abort Chromium requests with ERR_NETWORK_CHANGED.
+  // Wait on actual netlink notifications before launching; do not retry failed assertions.
+  const networkReadiness = await waitForNetworkQuiet();
+  const eventsBeforeBrowser = networkEvents;
   const browser = await chromium.launch({
     args: [
       '--no-proxy-server',
@@ -161,6 +189,7 @@ try {
   const context = await browser.newContext({ ignoreHTTPSErrors: true });
   const page = await context.newPage();
   const diagnostics = await createTlsDiagnostics(page, context);
+  diagnostics.add('network-fixture-ready', networkReadiness);
   for (const path of ['/api/me', '/api/admin/users']) {
     const probe = await request(domains[0], path, true, 'OPTIONS', {
       Origin: 'https://a.fafa888.uk',
@@ -203,18 +232,7 @@ try {
       .waitFor();
     const result = await page.evaluate(async () => {
       const base = 'https://fafa888.uk';
-      const probe = async (
-        stage: string,
-        url: string,
-        options?: RequestInit,
-      ) => {
-        try {
-          return await fetch(url, options);
-        } catch {
-          throw new Error('BROWSER_FETCH_FAILED:' + stage);
-        }
-      };
-      const me = await probe('me', base + '/api/me', {
+      const me = await fetch(base + '/api/me', {
         credentials: 'include',
       });
       const session = await me.json();
@@ -222,12 +240,10 @@ try {
         'content-type': 'application/json',
         'x-csrf-token': session.csrf,
       };
-      const allowed = await probe('admin-users', base + '/api/admin/users', {
+      const allowed = await fetch(base + '/api/admin/users', {
         credentials: 'include',
       });
-      const denied = await probe(
-        'csrf-negative',
-        base + '/api/location_presets',
+      const denied = await fetch(base + '/api/location_presets',
         {
           method: 'POST',
           credentials: 'include',
@@ -235,7 +251,7 @@ try {
           body: JSON.stringify({ name: 'denied', latitude: 1, longitude: 2 }),
         },
       );
-      const source = await probe('source-create', base + '/api/node_sources', {
+      const source = await fetch(base + '/api/node_sources', {
         method: 'POST',
         credentials: 'include',
         headers,
@@ -246,9 +262,16 @@ try {
           authorized: true,
         }),
       });
-      const rotated = await probe(
-        'subscription-rotate',
-        base + '/api/subscription/rotate',
+      const createdSource = await source.json();
+      const patched = await fetch(base + '/api/node_sources/' + createdSource.id, {
+        method: 'PATCH', credentials: 'include', headers,
+        body: JSON.stringify({ name: 'TLS fixture edited' }),
+      });
+      const replaced = await fetch(base + '/api/node_sources/' + createdSource.id, {
+        method: 'PUT', credentials: 'include', headers,
+        body: JSON.stringify({ name: 'TLS fixture edited', kind: 'OWNED_NODE', content: 'trojan://fixture@node.example.com:443#TLS', authorized: true }),
+      });
+      const rotated = await fetch(base + '/api/subscription/rotate',
         {
           method: 'POST',
           credentials: 'include',
@@ -287,6 +310,9 @@ try {
         admin: allowed.status,
         csrfRejected: denied.status,
         source: source.status,
+        sourceId: createdSource.id,
+        patched: patched.status,
+        replaced: replaced.status,
         rotated: rotated.status,
         subscription: subscription.url,
         ws,
@@ -296,6 +322,8 @@ try {
     assert.equal(result.admin, 200);
     assert.equal(result.csrfRejected, 403);
     assert.equal(result.source, 200);
+    assert.equal(result.patched, 200);
+    assert.equal(result.replaced, 200);
     assert.equal(result.rotated, 200);
     assert.equal(result.ws.opened, true);
     assert.equal(result.ws.code, 1008);
@@ -311,6 +339,15 @@ try {
       '/subscription/' + downloadUrl.pathname.split('/').pop(),
     );
     assert.equal(legacy.status, 200);
+    const removed = await page.evaluate(async (id) => {
+      const base = 'https://fafa888.uk';
+      const me = await (await fetch(base + '/api/me', { credentials: 'include' })).json();
+      const response = await fetch(base + '/api/node_sources/' + id, {
+        method: 'DELETE', credentials: 'include', headers: { 'x-csrf-token': me.csrf },
+      });
+      return response.status;
+    }, result.sourceId);
+    assert.equal(removed, 200);
     await page.goto('https://fafa888.uk/servers');
     await page
       .getByRole('heading', { name: '我的服务器', exact: true })
@@ -324,6 +361,9 @@ try {
       primarySession: result.me,
       adminAuthorized: result.admin,
       csrfRejected: result.csrfRejected,
+      crossOriginPatch: result.patched,
+      crossOriginPut: result.replaced,
+      crossOriginDelete: removed,
       subscriptionDownload: download.status,
       legacySubscription: legacy.status,
       wssUpgrade: result.ws.opened,
@@ -332,6 +372,7 @@ try {
     };
   } finally {
     await mkdir('docs/evidence', { recursive: true });
+    diagnostics.add('network-fixture-end', { eventsAfterBrowserStart: networkEvents - eventsBeforeBrowser });
     const evidence = await diagnostics.snapshot();
     console.log('TLS_BROWSER_DIAGNOSTICS=' + JSON.stringify(evidence));
     await writeFile(
@@ -374,6 +415,7 @@ try {
     'Caddy HTTPS、证书验证、双域名路径代理、管理端跨源会话、订阅下载与 WSS 与 API 错误安全检查通过',
   );
 } finally {
+  networkMonitor.kill();
   if (created) docker(['rm', '--force', '--volumes', container]);
   await rm(temporary, { recursive: true, force: true });
 }

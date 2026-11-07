@@ -113,6 +113,24 @@ describe('真实数据库 API 闭环', () => {
         })
       ).statusCode,
     ).toBe(200);
+    for (const method of ['GET', 'POST', 'PUT', 'PATCH', 'DELETE']) {
+      const allowed = await app.inject({
+        method: 'OPTIONS', url: '/api/node_sources',
+        headers: {
+          origin: adminOrigin, 'access-control-request-method': method,
+          'access-control-request-headers': 'content-type,x-csrf-token',
+        },
+      });
+      expect(allowed.statusCode).toBe(204);
+      expect(allowed.headers['access-control-allow-origin']).toBe(adminOrigin);
+      expect(allowed.headers['access-control-allow-credentials']).toBe('true');
+      expect(String(allowed.headers['access-control-allow-methods']).split(',').map((value) => value.trim())).toContain(method);
+      const blocked = await app.inject({
+        method: 'OPTIONS', url: '/api/node_sources',
+        headers: { origin: 'https://evil.invalid', 'access-control-request-method': method },
+      });
+      expect(blocked.headers['access-control-allow-origin']).toBeUndefined();
+    }
     const evil = await send(
       1,
       '/api/location_presets',

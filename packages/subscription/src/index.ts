@@ -429,7 +429,12 @@ export function parseBatch(input: string) {
     }
   });
   const nodes = deduplicate(accepted);
-  return { nodes, failures, duplicates: accepted.length - nodes.length, total: entries.length };
+  return {
+    nodes,
+    failures,
+    duplicates: accepted.length - nodes.length,
+    total: entries.length,
+  };
 }
 export function nodeMetadata(node: Node, country = '未标注') {
   return {

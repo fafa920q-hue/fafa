@@ -286,10 +286,24 @@ export function NodeManager({
           <div className="callout">
             <p>原始条目 {preview.result.total}</p>
             <div role="group" aria-label="预览地区统计">
-              地区：{Object.entries(preview.result.countries || {}).map(([name, count]) => <span key={name}>{name} {String(count)} </span>)}
+              地区：
+              {Object.entries(preview.result.countries || {}).map(
+                ([name, count]) => (
+                  <span key={name}>
+                    {name} {String(count)}{' '}
+                  </span>
+                ),
+              )}
             </div>
             <div role="group" aria-label="预览协议统计">
-              协议：{Object.entries(preview.result.protocols || {}).map(([name, count]) => <span key={name}>{name} {String(count)} </span>)}
+              协议：
+              {Object.entries(preview.result.protocols || {}).map(
+                ([name, count]) => (
+                  <span key={name}>
+                    {name} {String(count)}{' '}
+                  </span>
+                ),
+              )}
             </div>
             <p>
               有效 {preview.result.valid} · 重复 {preview.result.duplicates} ·
@@ -341,10 +355,21 @@ export function NodeManager({
           },
           { name: 'country', label: '国家 / 地区', value: edit?.country },
           { name: 'group', label: '分组', value: edit?.group },
-          { name: 'tags', label: '标签（每行一个）', type: 'textarea', value: (edit?.tags || []).join('\n') },
+          {
+            name: 'tags',
+            label: '标签（每行一个）',
+            type: 'textarea',
+            value: (edit?.tags || []).join('\n'),
+          },
         ]}
         onSubmit={async (data) => {
-          await request('/api/nodes/' + edit!.id, 'PATCH', { ...data, tags: String(data.tags || '').split(/\r?\n/).map((tag) => tag.trim()).filter(Boolean) });
+          await request('/api/nodes/' + edit!.id, 'PATCH', {
+            ...data,
+            tags: String(data.tags || '')
+              .split(/\r?\n/)
+              .map((tag) => tag.trim())
+              .filter(Boolean),
+          });
           reload();
         }}
       />

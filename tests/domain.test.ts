@@ -7,7 +7,11 @@ import {
   googleRedirectUri,
   publicOrigin,
 } from '../packages/auth/src/urls';
-import { safeEndpoint, errorCategory, corsHeaders } from '../infra/scripts/tls-diagnostics';
+import {
+  safeEndpoint,
+  errorCategory,
+  corsHeaders,
+} from '../infra/scripts/tls-diagnostics';
 afterEach(() => vi.unstubAllEnvs());
 describe('双域名契约', () => {
   it('用户端使用相对路径；管理端只拼接 Origin，拒绝重复前缀', () => {
@@ -78,16 +82,33 @@ describe('TLS 诊断脱敏', () => {
   it('不保存 URL 凭据、查询参数、订阅路径或错误原文', () => {
     const secret = 'synthetic-private-value';
     const values = [
-      safeEndpoint('https://user:' + secret + '@fafa888.uk/api/me?token=' + secret),
+      safeEndpoint(
+        'https://user:' + secret + '@fafa888.uk/api/me?token=' + secret,
+      ),
       safeEndpoint('https://fafa888.uk/api/subscription/download/' + secret),
       safeEndpoint('https://untrusted.example/private?token=' + secret),
       errorCategory('net::ERR_HTTP2_PROTOCOL_ERROR token=' + secret),
-      corsHeaders({ 'Access-Control-Allow-Origin': 'https://a.fafa888.uk', 'Access-Control-Allow-Credentials': 'true', 'set-cookie': secret, authorization: secret }),
+      corsHeaders({
+        'Access-Control-Allow-Origin': 'https://a.fafa888.uk',
+        'Access-Control-Allow-Credentials': 'true',
+        'set-cookie': secret,
+        authorization: secret,
+      }),
     ];
     expect(JSON.stringify(values)).not.toContain(secret);
-    expect(values[0]).toEqual({ origin: 'https://fafa888.uk', path: '/api/me' });
-    expect(values[1]).toEqual({ origin: 'https://fafa888.uk', path: 'REDACTED_PATH' });
-    expect(values[3]).toMatchObject({ networkCode: 'net::ERR_HTTP2_PROTOCOL_ERROR' });
-    expect(corsHeaders({ 'access-control-allow-origin': '*' }).allowOrigin).toBe('INVALID_URL');
+    expect(values[0]).toEqual({
+      origin: 'https://fafa888.uk',
+      path: '/api/me',
+    });
+    expect(values[1]).toEqual({
+      origin: 'https://fafa888.uk',
+      path: 'REDACTED_PATH',
+    });
+    expect(values[3]).toMatchObject({
+      networkCode: 'net::ERR_HTTP2_PROTOCOL_ERROR',
+    });
+    expect(
+      corsHeaders({ 'access-control-allow-origin': '*' }).allowOrigin,
+    ).toBe('INVALID_URL');
   });
 });
