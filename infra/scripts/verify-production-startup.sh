@@ -94,7 +94,7 @@ assert "Forbidden published" not in diagnostic
 PY
 "${compose[@]}" up -d --no-deps --wait --wait-timeout 180 api
 python3 infra/deploy/check_container_ports.py "${compose[@]}"
-"${compose[@]}" exec -T api node --input-type=module <<'JS'
+"${compose[@]}" exec -T api node --import tsx --input-type=module <<'JS'
 import assert from 'node:assert/strict';
 assert.equal(new URL(process.env.DATABASE_URL).username, 'fafa_app');
 assert.equal(process.env.POSTGRES_PASSWORD, undefined);
