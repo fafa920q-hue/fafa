@@ -1,0 +1,47 @@
+name: PR8 read-only public and deployment capability observation
+on:
+  push:
+    branches: [codex/pr8-public-observation]
+permissions: { contents: read, actions: read, deployments: read }
+jobs:
+  observe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with: { persist-credentials: false }
+      - name: Read non-secret deployment capability flags and public member state
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEPLOY_ENABLED: ${{ vars.FAFA_DEPLOY_ENABLED == 'true' }}
+          ROLE_PRESENT: ${{ vars.AWS_ROLE_ARN != '' }}
+          INSTANCE_PRESENT: ${{ vars.AWS_INSTANCE_ID != '' }}
+          REGION_MATCHES: ${{ vars.AWS_REGION == 'us-east-2' }}
+        run: python3 infra/scripts/pr8-public-capabilities.py
+      - name: Observe current HTTPS and DNS using existing read-only probe
+        run: python3 infra/deploy/public_probe.py
+      - uses: actions/setup-node@v4
+        with: { node-version: '24' }
+      - run: npm install -g pnpm@11.25.0
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium webkit
+      - name: Capture real public login pages, no login or account mutation
+        run: pnpm exec tsx infra/scripts/verify-production.ts
+      - name: Label the probe commit separately from the unknown production SHA
+        if: always()
+        run: |
+          node --input-type=module <<'JS'
+          import {existsSync,readFileSync,writeFileSync} from 'node:fs';
+          const file='docs/evidence/production/public-checks.json';
+          if(existsSync(file)){
+            const data=JSON.parse(readFileSync(file,'utf8'));
+            data.observerCommit=data.commit; delete data.commit;
+            data.productionSha='NOT_READ';
+            writeFileSync(file,JSON.stringify(data,null,2)+'\n');
+          }
+          JS
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pr8-read-only-public-evidence
+          path: docs/evidence/production/
