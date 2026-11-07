@@ -26,6 +26,8 @@ const actions = events.filter((e) => e.type === 'after').map((e) => {
     failed: !!e.error,
   };
 });
+const messageTypes = ['intercepts pointer events', 'element is not stable', 'element is not visible', 'element was detached', 'scrolling into view', 'done scrolling', 'performing click action', 'click action done'];
+console.log('WLOC_ACTIONABILITY=' + JSON.stringify(messageTypes.map((message) => ({ message, count: events.filter((e) => e.type === 'log' && String(e.message).includes(message)).length }))));
 console.log('WLOC_TRACE_SUMMARY=' + JSON.stringify({ actions }));
 const md = readFileSync(join(dir, 'error-context.md'), 'utf8');
 console.log('WLOC_VISIBLE_CONTROLS=' + JSON.stringify(md.split('\n').filter((s) => /切换主题|应用坐标|保存到设备/.test(s)).map((s) => s.slice(0, 160))));
