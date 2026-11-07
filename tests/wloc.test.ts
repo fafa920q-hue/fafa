@@ -176,7 +176,15 @@ describe('bounded map provider operations', () => {
 });
 
 it('blocks literal private/loopback/metadata targets before any TLS connection', async () => {
-  for (const host of ['127.0.0.1', '169.254.169.254', '192.168.1.2', '[::1]', '[::ffff:127.0.0.1]']) {
-    await expect(mapFetch('https://' + host + '/')).rejects.toMatchObject({ code: 'SSRF_BLOCKED' });
+  for (const host of [
+    '127.0.0.1',
+    '169.254.169.254',
+    '192.168.1.2',
+    '[::1]',
+    '[::ffff:127.0.0.1]',
+  ]) {
+    await expect(mapFetch('https://' + host + '/')).rejects.toMatchObject({
+      code: 'SSRF_BLOCKED',
+    });
   }
 });
