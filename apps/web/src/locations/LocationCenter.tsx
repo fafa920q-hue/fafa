@@ -66,10 +66,11 @@ export function LocationCenter({
   const [clearOpen, setClearOpen] = useState(false);
   const [deviceStatus, setDeviceStatus] = useState('尚未查询设备配置');
   function select(next: Point, known = true) {
-    setPoint(next);
+    const clean = coordinate(next.latitude, next.longitude);
+    setPoint(clean);
     setDraft({
-      latitude: String(next.latitude),
-      longitude: String(next.longitude),
+      latitude: String(clean.latitude),
+      longitude: String(clean.longitude),
     });
     setSystem('WGS84');
     setConfirmed(known);
@@ -469,7 +470,8 @@ export function LocationCenter({
               void action('收藏', async () => {
                 await request('/api/location_presets', 'POST', {
                   name: name.trim(),
-                  ...point,
+                  latitude: point.latitude,
+                  longitude: point.longitude,
                   coordinateSystem: 'WGS84',
                   country: '',
                 });
