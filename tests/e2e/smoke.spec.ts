@@ -160,3 +160,17 @@ test('API 断网错误与重试状态', async ({ page }) => {
     page.getByRole('button', { name: '重试', exact: true }),
   ).toBeVisible();
 });
+test('Google 登录链接按入口区分来源；普通成员登录管理后台被拒绝', async ({
+  page,
+}) => {
+  await page.goto('/');
+  await expect(
+    page.getByRole('link', { name: '使用 Google 登录' }),
+  ).toHaveAttribute('href', '/auth/google?app=web');
+  await page.goto('http://localhost:5174/');
+  await expect(
+    page.getByRole('link', { name: '使用 Google 登录' }),
+  ).toHaveAttribute('href', '/auth/google?app=admin');
+  await page.getByRole('button', { name: '成员演示', exact: true }).click();
+  await expect(page.getByText('需要管理员权限')).toBeVisible();
+});
