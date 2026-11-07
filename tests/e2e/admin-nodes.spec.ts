@@ -557,14 +557,13 @@ for (const width of [375, 390, 430, 768, 1440]) {
         ).toBeVisible();
         if (theme === 'dark') {
           // Synthetic CI data and emulated viewports only; no real iPhone claim.
-          await page.screenshot({
+          await preview.screenshot({
             path:
               'docs/screenshots/admin-import-layout-' +
               testInfo.project.name +
               '-' +
               width +
               '.png',
-            fullPage: true,
           });
         }
         await preview
