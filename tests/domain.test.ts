@@ -16,8 +16,26 @@ import {
 afterEach(() => {
   vi.unstubAllEnvs();
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 describe('双域名契约', () => {
+  it('网络停滞会结束加载并提示确认结果，避免无限等待或盲目重复提交', async () => {
+    vi.useFakeTimers();
+    const transport = vi.fn<typeof fetch>((_url, init) =>
+      new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener(
+          'abort',
+          () => reject(new DOMException('Aborted', 'AbortError')),
+          { once: true },
+        );
+      }),
+    );
+    vi.stubGlobal('fetch', transport);
+    const pending = expect(api('/api/me')).rejects.toThrow('请求超时');
+    await vi.advanceTimersByTimeAsync(15000);
+    await pending;
+  });
+
   it('读取请求携带会话但不额外触发 CSRF 预检，写入仍携带 CSRF', async () => {
     const transport = vi.fn<typeof fetch>(async () => new Response('{}'));
     vi.stubGlobal('fetch', transport);

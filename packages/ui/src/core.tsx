@@ -46,18 +46,29 @@ export async function api<T = any>(
   csrf?: string,
 ): Promise<T> {
   const unsafe = !['GET', 'HEAD', 'OPTIONS'].includes(method.toUpperCase());
-  const response = await fetch(backendUrl(path), {
-    method,
-    credentials: 'include',
-    headers: {
-      ...(body ? { 'Content-Type': 'application/json' } : {}),
-      ...(csrf && unsafe ? { 'x-csrf-token': csrf } : {}),
-    },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  const data = await response.json();
-  if (!response.ok) throw new Error(data.message || '请求失败，请稍后重试');
-  return data;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000);
+  try {
+    const response = await fetch(backendUrl(path), {
+      method,
+      credentials: 'include',
+      signal: controller.signal,
+      headers: {
+        ...(body ? { 'Content-Type': 'application/json' } : {}),
+        ...(csrf && unsafe ? { 'x-csrf-token': csrf } : {}),
+      },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message || '请求失败，请稍后重试');
+    return data;
+  } catch (error) {
+    if (controller.signal.aborted)
+      throw new Error('请求超时，请刷新确认操作结果后再重试');
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 export function Provider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>();
