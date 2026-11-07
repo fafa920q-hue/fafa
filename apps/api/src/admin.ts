@@ -2,6 +2,11 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { sql, audit } from '../../../packages/db/src';
 import { AppError, notFound } from '../../../packages/shared/src';
+import {
+  readAutoGrantPolicy,
+  autoGrantPolicySchema,
+  backfillAutoGrants,
+} from './auto-grant';
 export async function registerAdmin(app: FastifyInstance) {
   app.get('/api/admin/users', async () =>
     (
@@ -180,5 +185,68 @@ export async function registerAdmin(app: FastifyInstance) {
     await sql`update background_jobs set data=data || ${sql.json({ status: 'QUEUED', attempt: 0, nextRun: new Date().toISOString() })} where id=${id} and data->>'status'='FAILED'`;
     await audit(req.actor.id, 'job.retried', id);
     return { ok: true };
+  });
+  // 新用户前三天自动授权策略（管理后台配置、记录与补处理）。
+  // 授权本身复用 node_group_grants / server_access_grants / subscription_tokens。
+  app.get('/api/admin/auto-grant/policy', async () => readAutoGrantPolicy());
+  app.patch('/api/admin/auto-grant/policy', async (req) => {
+    if (req.actor.role !== 'Owner')
+      throw new AppError(403, 'OWNER_REQUIRED', '仅 Owner 可修改自动授权策略');
+    const policy = autoGrantPolicySchema.parse(req.body);
+    if (policy.nodeSourceId) {
+      const [source] =
+        await sql`select id from node_sources where id=${policy.nodeSourceId} and owner_id=${req.actor.id} and revoked_at is null`;
+      if (!source)
+        throw new AppError(
+          400,
+          'NODE_SOURCE_NOT_FOUND',
+          '指定的免费节点组不存在或不属于当前管理员',
+        );
+    }
+    if (policy.serverId) {
+      const [server] =
+        await sql`select id from server_connections where id=${policy.serverId} and owner_id=${req.actor.id} and revoked_at is null`;
+      if (!server)
+        throw new AppError(
+          400,
+          'SERVER_NOT_FOUND',
+          '指定的体验服务器不存在或不属于当前管理员',
+        );
+    }
+    await sql.begin(async (tx) => {
+      for (const [key, value] of [
+        ['auto_grant_enabled', policy.enabled],
+        ['auto_grant_window_start', policy.windowStart],
+        ['auto_grant_window_end', policy.windowEnd],
+        ['auto_grant_node_source_id', policy.nodeSourceId],
+        ['auto_grant_server_id', policy.serverId],
+        ['auto_grant_node_limit', policy.nodeLimit],
+        ['auto_grant_trial_valid_days', policy.trialValidDays],
+      ] as const) {
+        await tx`insert into settings(key,value) values(${key},${tx.json(value)}) on conflict (key) do update set value=excluded.value,updated_at=now()`;
+      }
+    });
+    await audit(req.actor.id, 'auto_grant.policy.updated');
+    return { ok: true, policy };
+  });
+  app.get('/api/admin/auto-grant/records', async (req) => {
+    const q = z
+      .object({
+        userId: z.uuid().optional(),
+        status: z.enum(['GRANTED', 'PENDING', 'FAILED']).optional(),
+        kind: z.enum(['node', 'server', 'token']).optional(),
+        limit: z.coerce.number().int().min(1).max(500).default(200),
+      })
+      .parse(req.query);
+    return sql`select r.id,r.user_id,r.kind,r.resource_id,r.status,r.reason,r.expires_at,r.granted_at,r.created_at,u.email,u.name from auto_grant_records r join users u on u.id=r.user_id where (${q.userId}::uuid is null or r.user_id=${q.userId}) and (${q.status}::text is null or r.status=${q.status}) and (${q.kind}::text is null or r.kind=${q.kind}) order by r.created_at desc limit ${q.limit}`;
+  });
+  app.post('/api/admin/auto-grant/backfill', async (req) => {
+    if (req.actor.role !== 'Owner')
+      throw new AppError(
+        403,
+        'OWNER_REQUIRED',
+        '仅 Owner 可执行自动授权补处理',
+      );
+    return backfillAutoGrants(req.actor.id);
   });
 }
