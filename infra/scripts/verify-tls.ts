@@ -6,6 +6,7 @@ import https from 'node:https';
 import { randomUUID } from 'node:crypto';
 import assert from 'node:assert/strict';
 import { chromium } from '@playwright/test';
+import { createTlsDiagnostics, corsHeaders, errorCategory } from './tls-diagnostics';
 const temporary = await mkdtemp(join(tmpdir(), 'fafa-tls-'));
 const container = 'fafa-tls-test-' + randomUUID().slice(0, 8);
 const domains = ['fafa888.uk', 'a.fafa888.uk'];
@@ -57,7 +58,13 @@ try {
     }
   }
   assert(ca, 'Caddy 未生成测试 CA');
-  async function request(domain: string, path: string, trusted = true) {
+  async function request(
+    domain: string,
+    path: string,
+    trusted = true,
+    method = 'GET',
+    extraHeaders: Record<string, string> = {},
+  ) {
     return new Promise<{
       status: number;
       headers: Record<string, unknown>;
@@ -70,7 +77,8 @@ try {
           port,
           servername: domain,
           path,
-          headers: { Host: domain + ':' + port },
+          method,
+          headers: { Host: domain + ':' + port, ...extraHeaders },
           ...(trusted ? { ca } : {}),
           rejectUnauthorized: true,
           timeout: 5000,
@@ -148,13 +156,27 @@ try {
   });
   const context = await browser.newContext({ ignoreHTTPSErrors: true });
   const page = await context.newPage();
+  const diagnostics = await createTlsDiagnostics(page, context);
+  for (const path of ['/api/me', '/api/admin/users']) {
+    const probe = await request(domains[0], path, true, 'OPTIONS', {
+      Origin: 'https://a.fafa888.uk',
+      'Access-Control-Request-Method': 'GET',
+      'Access-Control-Request-Headers': 'x-csrf-token',
+    });
+    const headers = corsHeaders(probe.headers as Record<string, string>);
+    diagnostics.add('node-preflight', { path, status: probe.status, ...headers });
+    assert.equal(probe.status, 204);
+    assert.equal(headers.allowOrigin, 'https://a.fafa888.uk');
+    assert.equal(headers.allowCredentials, true);
+    assert.equal(headers.allowsCsrfHeader, true);
+  }
   const browserErrors: string[] = [];
-  page.on('pageerror', (error) => browserErrors.push(error.message));
+  page.on('pageerror', (error) => browserErrors.push(JSON.stringify(errorCategory(error.message))));
   page.on('console', (message) => {
     if (
       /Content Security Policy|Mixed Content|CORS policy/i.test(message.text())
     )
-      browserErrors.push(message.text());
+      browserErrors.push(JSON.stringify(errorCategory(message.text())));
   });
   let browserEvidence: Record<string, unknown>;
   try {
@@ -171,22 +193,26 @@ try {
       .waitFor();
     const result = await page.evaluate(async () => {
       const base = 'https://fafa888.uk';
-      const me = await fetch(base + '/api/me', { credentials: 'include' });
+      const probe = async (stage: string, url: string, options?: RequestInit) => {
+        try { return await fetch(url, options); }
+        catch { throw new Error('BROWSER_FETCH_FAILED:' + stage); }
+      };
+      const me = await probe('me', base + '/api/me', { credentials: 'include' });
       const session = await me.json();
       const headers = {
         'content-type': 'application/json',
         'x-csrf-token': session.csrf,
       };
-      const allowed = await fetch(base + '/api/admin/users', {
+      const allowed = await probe('admin-users', base + '/api/admin/users', {
         credentials: 'include',
       });
-      const denied = await fetch(base + '/api/location_presets', {
+      const denied = await probe('csrf-negative', base + '/api/location_presets', {
         method: 'POST',
         credentials: 'include',
         headers: { ...headers, 'x-csrf-token': 'wrong' },
         body: JSON.stringify({ name: 'denied', latitude: 1, longitude: 2 }),
       });
-      const source = await fetch(base + '/api/node_sources', {
+      const source = await probe('source-create', base + '/api/node_sources', {
         method: 'POST',
         credentials: 'include',
         headers,
@@ -197,7 +223,7 @@ try {
           authorized: true,
         }),
       });
-      const rotated = await fetch(base + '/api/subscription/rotate', {
+      const rotated = await probe('subscription-rotate', base + '/api/subscription/rotate', {
         method: 'POST',
         credentials: 'include',
         headers: { 'x-csrf-token': session.csrf },
@@ -278,6 +304,8 @@ try {
       corsCspMixedContentErrors: browserErrors,
     };
   } finally {
+    await mkdir('docs/evidence', { recursive: true });
+    await writeFile('docs/evidence/tls-browser-diagnostics.json', JSON.stringify(await diagnostics.snapshot(), null, 2) + '\n');
     await context.close();
     await browser.close();
   }
