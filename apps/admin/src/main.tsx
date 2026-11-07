@@ -195,6 +195,11 @@ function UserManagement() {
                             ) +
                             ' GiB（未执行）'}
                       </small>
+                      <small>
+                        服务器连接：
+                        {u.serverConnectEnabled ? '已开通' : '未开通'} · Codex
+                        任务：{u.codexTasksEnabled ? '已开通' : '未开通'}
+                      </small>
                     </td>
                     <td>
                       <div className="actions">
@@ -367,11 +372,25 @@ function UserManagement() {
               { label: '禁用', value: 'false' },
             ],
           },
+          {
+            name: 'serverConnectEnabled',
+            label: '服务器连接功能（连接自己的服务器）',
+            type: 'checkbox',
+            value: String(action?.user.serverConnectEnabled ?? false),
+          },
+          {
+            name: 'codexTasksEnabled',
+            label: 'Codex 任务功能',
+            type: 'checkbox',
+            value: String(action?.user.codexTasksEnabled ?? false),
+          },
         ]}
         onSubmit={async (d) => {
           await request('/api/admin/users/' + action!.user.id, 'PATCH', {
             nodeLimit: d.nodeLimit,
             subscriptionEnabled: d.enabled === 'true',
+            serverConnectEnabled: d.serverConnectEnabled,
+            codexTasksEnabled: d.codexTasksEnabled,
             trafficLimitBytes:
               d.trafficPolicy === 'configured'
                 ? Math.round(d.trafficLimitGiB * 1073741824)
@@ -621,10 +640,20 @@ function ResourceAdmin({
     </>
   );
 }
+function toLocalInput(iso: string) {
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
 function SystemSettings() {
-  const { request, toast } = useApp();
+  const { request, toast, session } = useApp();
   const config = useData<any>('/api/admin/settings');
+  const policy = useData<any>('/api/admin/auto-grant/policy');
+  const records = useData<any[]>('/api/admin/auto-grant/records');
+  const sources = useData<Row[]>('/api/admin/sources');
   const [edit, setEdit] = useState(false);
+  const [policyEdit, setPolicyEdit] = useState(false);
+  const isOwner = session.user.role === 'Owner';
   return (
     <>
       <PageTitle
@@ -660,6 +689,91 @@ function SystemSettings() {
           <button className="section-space" onClick={() => setEdit(true)}>
             调整席位上限
           </button>
+        </Card>
+        <Card
+          title="新用户自动授权策略"
+          description="活动 2026-11-07 21:33 至 2026-11-10 21:33（UTC+8）。服务器一步只开“连接自己的服务器”资格，不授予任何服务器，不提供平台算力。"
+          icon={Settings}
+        >
+          <div className="detail-grid">
+            <div>
+              <small>策略开关</small>
+              <p>{policy.data?.enabled ? '已开启' : '未开启'}</p>
+            </div>
+            <div>
+              <small>活动开始</small>
+              <p>{policy.data?.windowStart || '—'}</p>
+            </div>
+            <div>
+              <small>活动结束</small>
+              <p>{policy.data?.windowEnd || '—'}</p>
+            </div>
+            <div>
+              <small>免费节点组</small>
+              <p>
+                {sources.data?.find((s) => s.id === policy.data?.nodeSourceId)
+                  ?.data?.name || '未指定（待分配）'}
+              </p>
+            </div>
+            <div>
+              <small>节点上限</small>
+              <p>{policy.data?.nodeLimit ?? '默认'}</p>
+            </div>
+            <div>
+              <small>体验有效期</small>
+              <p>{policy.data?.trialValidDays ?? 3} 天</p>
+            </div>
+          </div>
+          {isOwner && (
+            <div className="section-space">
+              <button onClick={() => setPolicyEdit(true)}>调整策略</button>{' '}
+              <button
+                onClick={async () => {
+                  const r = await request(
+                    '/api/admin/auto-grant/backfill',
+                    'POST',
+                    {},
+                  );
+                  records.refresh();
+                  toast(
+                    `补处理完成：扫描 ${r.scanned} 人，授权 ${r.granted} 项，待分配 ${r.pending} 项，失败 ${r.failed} 项`,
+                  );
+                }}
+              >
+                执行补处理
+              </button>
+            </div>
+          )}
+          <div className="section-space">
+            <small>授权记录（最新 20 条）</small>
+            {records.data?.slice(0, 20).map((r: any) => (
+              <p key={r.id}>
+                {r.email} ·{' '}
+                {r.kind === 'node'
+                  ? '节点'
+                  : r.kind === 'server'
+                    ? '服务器连接资格'
+                    : '订阅 Token'}{' '}
+                ·{' '}
+                {r.status === 'GRANTED'
+                  ? '已授权'
+                  : r.status === 'PENDING'
+                    ? '待分配'
+                    : '失败'}
+                {r.reason ? ` · ${r.reason}` : ''}
+                {r.expires_at
+                  ? ` · 到期 ${new Date(r.expires_at).toLocaleString('zh-CN')}`
+                  : ''}
+              </p>
+            ))}
+            {records.data?.length === 0 && <p>暂无记录</p>}
+          </div>
+          <p>
+            <small>
+              单用户手动授权 / 撤销：在「节点源 / 分配」页操作节点授权，在「用户
+              / 邀请」页开关服务器连接与 Codex 任务功能。
+            </small>
+          </p>
         </Card>
         <Card
           title="加密备份 / 恢复"
@@ -699,6 +813,80 @@ function SystemSettings() {
           await request('/api/admin/settings', 'PATCH', d);
           config.refresh();
           toast('席位上限已更新');
+        }}
+      />
+      <FormDialog
+        open={policyEdit}
+        onClose={() => setPolicyEdit(false)}
+        title="新用户自动授权策略"
+        notice="时间按本机时区输入，保存时转为 UTC。服务器一步只开“连接自己的服务器”资格，不授予任何服务器。"
+        fields={[
+          {
+            name: 'enabled',
+            label: '开启自动授权',
+            type: 'checkbox',
+            value: String(policy.data?.enabled ?? false),
+          },
+          {
+            name: 'windowStart',
+            label: '活动开始',
+            type: 'datetime-local',
+            value: policy.data?.windowStart
+              ? toLocalInput(policy.data.windowStart)
+              : '',
+            required: true,
+          },
+          {
+            name: 'windowEnd',
+            label: '活动结束',
+            type: 'datetime-local',
+            value: policy.data?.windowEnd
+              ? toLocalInput(policy.data.windowEnd)
+              : '',
+            required: true,
+          },
+          {
+            name: 'nodeSourceId',
+            label: '免费节点组',
+            value: policy.data?.nodeSourceId || '',
+            options: [
+              { label: '不指定（待分配）', value: '' },
+              ...(sources.data || []).map((s) => ({
+                label: s.data?.name || s.id,
+                value: s.id,
+              })),
+            ],
+          },
+          {
+            name: 'nodeLimit',
+            label: '新用户节点上限',
+            type: 'number',
+            value: String(policy.data?.nodeLimit ?? 500),
+            min: 0,
+            max: 5000,
+            required: true,
+          },
+          {
+            name: 'trialValidDays',
+            label: '体验有效期（天）',
+            type: 'number',
+            value: String(policy.data?.trialValidDays ?? 3),
+            min: 1,
+            max: 30,
+            required: true,
+          },
+        ]}
+        onSubmit={async (d) => {
+          await request('/api/admin/auto-grant/policy', 'PATCH', {
+            enabled: !!d.enabled,
+            windowStart: new Date(String(d.windowStart)).toISOString(),
+            windowEnd: new Date(String(d.windowEnd)).toISOString(),
+            nodeSourceId: d.nodeSourceId ? String(d.nodeSourceId) : null,
+            nodeLimit: Number(d.nodeLimit),
+            trialValidDays: Number(d.trialValidDays),
+          });
+          policy.refresh();
+          toast('自动授权策略已更新');
         }}
       />
     </>
