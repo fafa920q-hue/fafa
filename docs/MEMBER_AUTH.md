@@ -2,6 +2,15 @@
 
 本分支从7ee1c7b97d6abfd95bf261b99b8242c5aeae203c开始，只开发普通账户认证。未改写 Muse 的 core.tsx、style.css、admin-nodes.spec.ts、原 CI 或部署工作流；不触发 AWS 发布，不操作线上数据库。既有 Google Owner 必须保留，不重复初始化。
 
+## PR #8 当前整合与生产配置
+
+本次整合保留Muse的Google来源跳转、Member安全绑定及现有登录卡片的普通账户入口。
+生产Compose现只向API显式传递MAIL_PROVIDER、MAIL_API_KEY、MAIL_FROM，并完整继承既有运行时环境；
+Worker不接收邮件密钥。不需要在受保护部署脚本外裸启动覆盖Compose。
+现有.env.production和全部Google、数据库、加密密钥保持原值；持有人仅在受信秘密渠道补充邮件变量。
+005迁移和fafa_app最小表权限、默认关闭注册、API可读取邮件配置均由隔离Production Startup验证；
+真实投递和邮箱激活仍需持有人验收。下文“未改共享文件/等待整合”等为早期独立开发记录。
+
 ## 使用入口
 
 - 前台 /member/register、/member/login、/member/verify、/member/resend、/member/forgot、/member/reset。

@@ -67,6 +67,8 @@ jobs:
       - run: pnpm exec playwright install --with-deps chromium firefox webkit
       - name: Member browser interactions
         run: pnpm exec playwright test tests/e2e/member-auth.spec.ts --project=chromium --project=webkit --project=iphone
+      - name: WLOC iPhone and WebKit viewport regression before full matrix
+        run: pnpm exec playwright test tests/e2e/wloc.spec.ts --project=iphone --project=webkit --grep='WLOC responsive' --max-failures=1
       - name: Check disk before browser matrix
         run: df -h
       - name: Complete browser matrix preserving existing UI

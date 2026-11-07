@@ -125,7 +125,8 @@ test('map selection, conversion, link parsing, real private favorite API and dir
   await page.screenshot({
     path:
       'docs/screenshots/wloc-protocol-fixture-' + info.project.name + '.png',
-    fullPage: true,
+    fullPage: false,
+    scale: 'css',
     animations: 'disabled',
   });
   page.once('dialog', (d) => d.accept());
@@ -178,43 +179,68 @@ test('search and module failures remain failures, no fake saved status', async (
     page.getByRole('alert').filter({ hasText: '地点搜索服务暂不可用' }).first(),
   ).toBeVisible();
 });
-test('375/390/430/768/1440px light and dark layouts keep real controls usable', async ({
-  page,
-}, info) => {
-  await login(page);
-  for (const width of [375, 390, 430, 768, 1440]) {
+for (const width of [375, 390, 430, 768, 1440]) {
+  test(`WLOC responsive ${width}px light/dark keeps real controls usable`, async ({
+    page,
+  }, info) => {
     await page.setViewportSize({ width, height: 900 });
-    expect(
-      await page.evaluate(
-        () => document.documentElement.scrollWidth <= innerWidth,
-      ),
-      'layout ' + width,
-    ).toBe(true);
-    await page.getByLabel('纬度', { exact: true }).fill('48.85');
-    await page.getByLabel('经度', { exact: true }).fill('2.35');
-    await page.getByRole('button', { name: '应用坐标', exact: true }).click();
-    await expect(
-      page.getByRole('button', { name: '保存到设备', exact: true }),
-    ).toBeEnabled();
-    await page.getByRole('button', { name: '切换主题' }).click();
-    expect(
-      await page.evaluate(
-        () => document.documentElement.scrollWidth <= innerWidth,
-      ),
-    ).toBe(true);
-    await page.screenshot({
-      path:
-        'docs/screenshots/wloc-' +
-        width +
-        '-dark-' +
-        info.project.name +
-        '.png',
-      fullPage: true,
-      animations: 'disabled',
-    });
-    await page.getByRole('button', { name: '切换主题' }).click();
-  }
-});
+    await login(page);
+    for (const theme of ['light', 'dark']) {
+      await test.step(`${width}px ${theme} layout and interactions`, async () => {
+        await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
+        expect(
+          await page.evaluate(
+            () => document.documentElement.scrollWidth <= innerWidth,
+          ),
+          `horizontal overflow at ${width}px ${theme}`,
+        ).toBe(true);
+        await page.getByLabel('纬度', { exact: true }).fill('48.85');
+        await page.getByLabel('经度', { exact: true }).fill('2.35');
+        await page
+          .getByRole('button', { name: '应用坐标', exact: true })
+          .click();
+        await expect(page.getByTestId('selected-coordinate')).toContainText(
+          '48.850000, 2.350000',
+        );
+        const save = page.getByRole('button', {
+          name: '保存到设备',
+          exact: true,
+        });
+        await expect(save).toBeEnabled();
+        await save.scrollIntoViewIfNeeded();
+        await expect(save).toBeInViewport();
+        await expect
+          .poll(() =>
+            save.evaluate((button) => {
+              const rect = button.getBoundingClientRect();
+              const hit = document.elementFromPoint(
+                rect.left + rect.width / 2,
+                rect.top + rect.height / 2,
+              );
+              return hit === button || (hit !== null && button.contains(hit));
+            }),
+          )
+          .toBe(true);
+        const path = info.outputPath(`wloc-${width}-${theme}.png`);
+        await page.screenshot({
+          path,
+          fullPage: false,
+          scale: 'css',
+          animations: 'disabled',
+        });
+        await info.attach(`WLOC ${width}px ${theme} browser simulation`, {
+          path,
+          contentType: 'image/png',
+        });
+        await page.getByRole('button', { name: '切换主题' }).click();
+        await expect(page.locator('html')).toHaveAttribute(
+          'data-theme',
+          theme === 'light' ? 'dark' : 'light',
+        );
+      });
+    }
+  });
+}
 test('Viewer cannot create platform favorites or write other users data', async ({
   page,
 }) => {

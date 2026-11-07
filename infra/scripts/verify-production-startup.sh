@@ -30,6 +30,8 @@ const fields = {
   GOOGLE_CLIENT_ID: 'ci-startup.apps.googleusercontent.com',
   GOOGLE_CLIENT_SECRET: randomBytes(24).toString('base64url'),
   COOKIE_DOMAIN: '', POSTGRES_PASSWORD: password,
+  MAIL_PROVIDER: 'resend', MAIL_API_KEY: randomBytes(24).toString('base64url'),
+  MAIL_FROM: 'ci-mail@example.invalid',
   DATABASE_URL: 'postgres://fafa:' + password + '@postgres:5432/fafa',
   ENCRYPTION_KEY: randomBytes(32).toString('base64'), IMAGE_TAG: process.env.IMAGE_TAG,
 };
@@ -50,6 +52,11 @@ for(const name of ["api","worker"]) {
   const env=config.services[name].environment;
   if(env.POSTGRES_PASSWORD || env.DATABASE_URL) throw Error("Unexpected privileged runtime credential");
 }
+const apiEnv=config.services.api.environment;
+if(apiEnv.MAIL_PROVIDER!=="resend" || !apiEnv.MAIL_API_KEY || apiEnv.MAIL_FROM!=="ci-mail@example.invalid")
+  throw Error("API mail environment was not forwarded");
+for(const key of ["MAIL_PROVIDER","MAIL_API_KEY","MAIL_FROM"])
+  if(config.services.worker.environment[key]!==undefined) throw Error("Mail environment leaked into worker");
 if(config.services.ops.logging.driver!=="none") throw Error("Ops logging enabled");
 console.log("First-deployment compose contract passed with no runtime file.");'
 owner="$(id -u):$(id -g)"
@@ -96,6 +103,21 @@ assert.equal((await fetch('http://127.0.0.1:4000/api/me')).status, 401);
 const config = await (await fetch('http://127.0.0.1:4000/auth/config')).json();
 assert.equal(config.mock, false); assert.equal(config.demo, false);
 assert.equal(config.google, true); assert.equal(config.ownerSetup, false);
+const member = await (await fetch('http://127.0.0.1:4000/auth/member/config')).json();
+assert.equal(member.registrationOpen, false);
+assert.equal(member.mailConfigured, true);
+const { sql } = await import('./packages/db/src/index.ts');
+for (const table of ['member_credentials','member_registrations','member_action_tokens','member_auth_buckets','member_google_links']) {
+  for (const privilege of ['SELECT','INSERT','UPDATE']) {
+    const [grant] = await sql.unsafe('SELECT has_table_privilege(current_user,$1,$2) AS allowed', [table,privilege]);
+    assert.equal(grant.allowed, true);
+  }
+  for (const privilege of ['DELETE','TRUNCATE']) {
+    const [grant] = await sql.unsafe('SELECT has_table_privilege(current_user,$1,$2) AS allowed', [table,privilege]);
+    assert.equal(grant.allowed, false);
+  }
+}
+await sql.end();
 assert.equal((await fetch('http://127.0.0.1:4000/auth/dev', {
   method: 'POST', headers: { origin: 'https://fafa888.uk', 'content-type':'application/json' },
   body: JSON.stringify({ profile: 'owner' })
@@ -121,8 +143,8 @@ restored="$("${compose[@]}" exec -T postgres psql -U fafa -d fafa_restore_ci -X 
 "${compose[@]}" up -d --no-deps --wait --wait-timeout 120 postgres
 persisted="$("${compose[@]}" exec -T postgres psql -U fafa -d fafa -X -Atc "SELECT count(*) FROM users WHERE email='startup-fixture@example.invalid'")"
 [[ "$persisted" == 1 ]]
-migration_count="$("${compose[@]}" exec -T postgres psql -U fafa -d fafa -X -Atc "SELECT count(*) FROM migrations WHERE name IN ('001_initial.sql','002_limits.sql','003_owner_setup.sql','004_traffic_policy.sql')")"
-[[ "$migration_count" == 4 ]]
+migration_count="$("${compose[@]}" exec -T postgres psql -U fafa -d fafa -X -Atc "SELECT count(*) FROM migrations WHERE name IN ('001_initial.sql','002_limits.sql','003_owner_setup.sql','004_traffic_policy.sql','005_member_auth.sql')")"
+[[ "$migration_count" == 5 ]]
 mkdir -p docs/evidence
 "${compose[@]}" ps --all --format json > docs/evidence/production-startup-containers.json
 node --input-type=module <<'JS'
@@ -133,7 +155,9 @@ writeFileSync('docs/evidence/production-startup.json', JSON.stringify({
   missingRuntimeFileAccepted: true, runtimeFileMode600: true,
   actualPortBindingsChecked: true, stoppedApiDistinguishedFromPortPublishing: true,
   privilegedDatabasePasswordExcluded: true, runtimeRole: 'fafa_app',
-  encryptedPreMigrationBackupVerified: true, migrationsApplied: ['001','002','003','004'],
+  encryptedPreMigrationBackupVerified: true, migrationsApplied: ['001','002','003','004','005'],
+  memberRuntimeGrantsVerified: true, mailEnvironmentApiOnlyVerified: true,
+  mailConfiguredWhileRegistrationRemainsClosed: true, realMailDelivery: 'NOT_TESTED',
   restoreToSeparateDatabase: true, postgresRestartPersistence: true,
   demoLoginDisabled: true, apiReady: true, independentWebAndAdmin: true,
   publicHttps: 'NOT_TESTED', googleLogin: 'NOT_TESTED', ownerBinding: 'NOT_PERFORMED'
