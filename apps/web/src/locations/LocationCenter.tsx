@@ -183,7 +183,10 @@ export function LocationCenter({
             <select
               aria-label="输入坐标系"
               value={system}
-              onChange={(e) => setSystem(e.target.value as typeof system)}
+              onChange={(e) => {
+                setSystem(e.target.value as typeof system);
+                setConfirmed(false);
+              }}
             >
               {systems.map((s) => (
                 <option key={s}>{s}</option>
