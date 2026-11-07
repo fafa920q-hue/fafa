@@ -26,7 +26,7 @@ jobs:
     environment:
       name: production
       url: https://fafa888.uk
-    permissions: { contents: read, deployments: read, id-token: write }
+    permissions: { contents: read, actions: read, deployments: read, id-token: write }
     steps:
       - uses: actions/checkout@v4
         with: { persist-credentials: false }
