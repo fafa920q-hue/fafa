@@ -191,6 +191,8 @@ try {
     ],
   });
   const context = await browser.newContext({ ignoreHTTPSErrors: true });
+  context.setDefaultTimeout(15000);
+  context.setDefaultNavigationTimeout(20000);
   const page = await context.newPage();
   const diagnostics = await createTlsDiagnostics(page, context);
   diagnostics.add('network-fixture-ready', networkReadiness);
@@ -212,6 +214,9 @@ try {
     assert.equal(headers.allowsCsrfHeader, true);
   }
   const browserErrors: string[] = [];
+  page.on('console', (message) => {
+    if (/^TLS_STAGE:[a-z-]+:[0-9]{3}$/.test(message.text())) console.log(message.text());
+  });
   page.on('pageerror', (error) =>
     browserErrors.push(JSON.stringify(errorCategory(error.message))),
   );
@@ -238,24 +243,29 @@ try {
       const base = 'https://fafa888.uk';
       const me = await fetch(base + '/api/me', {
         credentials: 'include',
+        signal: AbortSignal.timeout(10000),
       });
       const session = await me.json();
+      console.info('TLS_STAGE:me:' + me.status);
       const headers = {
         'content-type': 'application/json',
         'x-csrf-token': session.csrf,
       };
       const allowed = await fetch(base + '/api/admin/users', {
         credentials: 'include',
+        signal: AbortSignal.timeout(10000),
       });
       const denied = await fetch(base + '/api/location_presets', {
         method: 'POST',
         credentials: 'include',
+        signal: AbortSignal.timeout(10000),
         headers: { ...headers, 'x-csrf-token': 'wrong' },
         body: JSON.stringify({ name: 'denied', latitude: 1, longitude: 2 }),
       });
       const source = await fetch(base + '/api/node_sources', {
         method: 'POST',
         credentials: 'include',
+        signal: AbortSignal.timeout(10000),
         headers,
         body: JSON.stringify({
           name: 'TLS fixture',
@@ -264,12 +274,14 @@ try {
           authorized: true,
         }),
       });
+      console.info('TLS_STAGE:source-create:' + source.status);
       const createdSource = await source.json();
       const patched = await fetch(
         base + '/api/node_sources/' + createdSource.id,
         {
           method: 'PATCH',
           credentials: 'include',
+        signal: AbortSignal.timeout(10000),
           headers,
           body: JSON.stringify({ name: 'TLS fixture edited' }),
         },
@@ -279,6 +291,7 @@ try {
         {
           method: 'PUT',
           credentials: 'include',
+        signal: AbortSignal.timeout(10000),
           headers,
           body: JSON.stringify({
             name: 'TLS fixture edited',
@@ -291,8 +304,10 @@ try {
       const rotated = await fetch(base + '/api/subscription/rotate', {
         method: 'POST',
         credentials: 'include',
+        signal: AbortSignal.timeout(10000),
         headers: { 'x-csrf-token': session.csrf },
       });
+      console.info('TLS_STAGE:subscription-rotate:' + rotated.status);
       const subscription = await rotated.json();
       const ws = await new Promise<{ opened: boolean; code: number }>(
         (resolve, reject) => {
@@ -362,6 +377,7 @@ try {
       const response = await fetch(base + '/api/node_sources/' + id, {
         method: 'DELETE',
         credentials: 'include',
+        signal: AbortSignal.timeout(10000),
         headers: { 'x-csrf-token': me.csrf },
       });
       return response.status;
@@ -391,6 +407,12 @@ try {
     };
   } finally {
     await mkdir('docs/evidence', { recursive: true });
+    try {
+      const health = await request(domains[0], '/api/ready');
+      diagnostics.add('node-api-after-browser', { status: health.status, tls: health.protocol });
+    } catch (error) {
+      diagnostics.add('node-api-after-browser', errorCategory(String(error)));
+    }
     diagnostics.add('network-fixture-end', {
       eventsAfterBrowserStart: networkEvents - eventsBeforeBrowser,
     });

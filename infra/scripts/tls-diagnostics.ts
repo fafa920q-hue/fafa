@@ -181,7 +181,10 @@ export async function createTlsDiagnostics(
   return {
     add,
     async snapshot() {
-      await Promise.allSettled(pending);
+      const collectionComplete = await Promise.race([
+        Promise.allSettled(pending).then(() => true),
+        new Promise<false>((resolve) => setTimeout(() => resolve(false), 2000)),
+      ]);
       const cookies = await context.cookies('https://fafa888.uk');
       const session = cookies.find((cookie) => cookie.name === 'fafa_session');
       return {
@@ -204,6 +207,7 @@ export async function createTlsDiagnostics(
               sameSite: session.sameSite,
             }
           : { present: false },
+        collectionComplete,
         events,
       };
     },
