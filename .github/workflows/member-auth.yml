@@ -38,6 +38,12 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Free disk space for browser matrix
+        run: |
+          df -h
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/boost || true
+          sudo apt-get clean || true
+          df -h
       - uses: actions/setup-node@v4
         with: { node-version: '24' }
       - run: npm install -g pnpm@11.25.0
@@ -61,6 +67,8 @@ jobs:
       - run: pnpm exec playwright install --with-deps chromium firefox webkit
       - name: Member browser interactions
         run: pnpm exec playwright test tests/e2e/member-auth.spec.ts --project=chromium --project=webkit --project=iphone
+      - name: Check disk before browser matrix
+        run: df -h
       - name: Complete browser matrix preserving existing UI
         run: pnpm test:e2e
       - uses: actions/upload-artifact@v4
