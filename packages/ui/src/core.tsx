@@ -477,7 +477,7 @@ export function Card({
 }) {
   const { session } = useApp();
   return (
-    <section className={`glass card ${className}`}>
+    <section className={`glass card ${className}`} aria-label={title}>
       <div className="card-heading">
         {Icon && (
           <span className="card-icon">
@@ -536,6 +536,7 @@ export function Dialog({
   return (
     <dialog
       ref={ref}
+      aria-label={title}
       onCancel={onClose}
       onClick={(e) => {
         if (e.target === ref.current) onClose();
@@ -577,6 +578,7 @@ export function FormDialog({
   fields,
   onSubmit,
   notice,
+  submitLabel = '保存',
 }: {
   open: boolean;
   onClose: () => void;
@@ -584,6 +586,7 @@ export function FormDialog({
   fields: Field[];
   onSubmit: (data: any) => Promise<void>;
   notice?: string;
+  submitLabel?: string;
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -650,7 +653,8 @@ export function FormDialog({
                   <input
                     name={f.name}
                     type={f.type || 'text'}
-                    defaultValue={f.value}
+                    defaultValue={f.type === 'checkbox' ? undefined : f.value}
+                    defaultChecked={f.type === 'checkbox' ? String(f.value) === 'true' : undefined}
                     required={f.required}
                     placeholder={f.placeholder}
                     min={f.min}
@@ -675,7 +679,7 @@ export function FormDialog({
               取消
             </button>
             <button className="primary" disabled={busy}>
-              {busy ? <LoaderCircle className="spin" size={16} /> : null}保存
+              {busy ? <LoaderCircle className="spin" size={16} /> : null}{submitLabel}
             </button>
           </div>
         </form>

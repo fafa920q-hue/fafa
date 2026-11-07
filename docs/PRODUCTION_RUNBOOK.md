@@ -26,13 +26,15 @@ GitHub production Environment 必须有人工 required reviewers 且禁止管理
 
 随后建立/复用独立 fafa_app 账号，已有 runtime 凭据必须验证一致，不重设其密码；原 PG 管理密码和加密主密钥不变。应用容器只接收 app URL 及所需业务配置，不接收 PG 管理密码。API/Worker 在启动时验证最小角色和权限；迁移与本地 Owner 工具使用原管理连接。新的 .env.runtime 是独立角色配置，并非覆盖 .env.production。
 
-迁移执行003_owner_setup，最后收紧授权、启动服务和代理，验证内部 ready、Worker heartbeat、端口未发布、重启策略及日志轮换。记录 deployments/SHA-services.json、SHA-migrations.txt、SHA-owner.json；不转储 Docker Env。完整备份保留在 backups/，不上传 CI。
+迁移按序执行到004_traffic_policy（只新增可空流量策略字段，不更改已有 Owner 绑定），最后收紧授权、启动服务和代理，验证内部 ready、Worker heartbeat、端口未发布、重启策略及日志轮换。记录 deployments/SHA-services.json、SHA-migrations.txt、SHA-owner.json；不转储 Docker Env。完整备份保留在 backups/，不上传 CI。
 
 失败时保留数据、配置、备份及镜像，API/Worker停止以避免权限回退。不要盲目回退到忽略新节点启停/共享权限的旧代码。先检查迁移兼容性，再切回已经验证的兼容镜像；数据库只恢复到新空库，绝不覆盖生产卷。信封备份须先完整通过 GCM 认证，再用原 pg_restore --single-transaction 恢复新空库；现有 age 备份/恢复工具继续可用。
 
 ## 发布后的人工最小步骤
 
-通过受信服务器交互终端执行 [OWNER_SETUP.md](OWNER_SETUP.md) 中的一条命令，然后在手机正式网站输入一次性授权凭据并登录自己的 Google 账户。此步骤不能由 CI 的假身份替代。
+Owner 已经绑定的生产实例直接保留现有身份，不重复初始化。尚未绑定时，通过受信服务器交互终端执行 [OWNER_SETUP.md](OWNER_SETUP.md) 中的一条命令，然后在手机正式网站输入一次性授权凭据并登录自己的 Google 账户。此步骤不能由 CI 的假身份替代。
+
+节点管理更新的真实后端/浏览器测试使用 CI 独立数据库及合成节点，不能作为生产节点在线或 Owner 私有页面验收。发布获批准的 SHA 后，由现有 Owner 检查后台「节点源 / 分配」的创建入口、授权撤销与独立订阅；没有节点流量回传时，流量额度显示未生效。
 
 第三方节点先在提供商轮换，再经 [NODE_IMPORT.md](NODE_IMPORT.md) 的 HTTPS 表单输入；明确授权依据后导入。没有新凭据时不导入。使用自己的 Shadowrocket/v2rayN 实机验证，记录导入数量、地区及失败，不上传敏感二维码或订阅 Token 截图。
 

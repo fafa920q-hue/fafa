@@ -7,9 +7,7 @@ test('节点批量预览、加密导入、标签编辑及启停删除', async ({
     page.getByRole('heading', { name: '欢迎使用 FAFA ONE 控制面板 👋' }),
   ).toBeVisible();
   await page.goto('/subscriptions');
-  await page
-    .getByRole('button', { name: '批量预览 / 导入节点', exact: true })
-    .click();
+  await page.getByRole('button', { name: '批量导入', exact: true }).click();
   await page.getByLabel('节点批次名称').fill(batch);
   await page
     .getByLabel('节点配置（敏感）')
@@ -20,7 +18,7 @@ test('节点批量预览、加密导入、标签编辑及启停删除', async ({
         encodeURIComponent('日本 IEPL 测试'),
     );
   await page.getByLabel('我有权使用并聚合这些节点').check();
-  await page.getByRole('button', { name: '保存', exact: true }).click();
+  await page.getByRole('button', { name: '预览并验证', exact: true }).click();
   await expect(
     page.getByText('有效 1 · 重复 0 · 解析失败 0 · 所有有效节点待验证'),
   ).toBeVisible();

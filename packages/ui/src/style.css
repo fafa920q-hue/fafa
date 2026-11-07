@@ -1959,3 +1959,21 @@ td .actions {
     min-height: 226px;
   }
 }
+
+.source-create-actions {
+  margin-bottom: 0;
+  justify-content: flex-end;
+}
+@media (max-width: 600px) {
+  .page-title:has(.source-create-actions) {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .source-create-actions {
+    justify-content: flex-start;
+  }
+  .source-create-actions button {
+    min-height: 44px;
+    flex: 1 1 auto;
+  }
+}

@@ -6,7 +6,7 @@ export async function registerAdmin(app: FastifyInstance) {
   app.get(
     '/api/admin/users',
     async () =>
-      sql`select id,name,email,role,disabled,node_limit,subscription_enabled,created_at from users where deleted_at is null order by created_at`,
+      (await sql`select id,name,email,role,disabled,node_limit,subscription_enabled,traffic_limit_bytes,created_at from users where deleted_at is null order by created_at`).map((user) => ({ ...user, trafficLimitBytes: user.traffic_limit_bytes === null ? null : Number(user.traffic_limit_bytes), trafficUsageBytes: null, trafficMeteringStatus: 'UNAVAILABLE', trafficQuotaEnforcement: 'NOT_ACTIVE' })),
   );
   app.get(
     '/api/admin/invitations',
@@ -48,6 +48,7 @@ export async function registerAdmin(app: FastifyInstance) {
         revokeSessions: z.boolean().optional(),
         nodeLimit: z.number().int().min(0).max(5000).optional(),
         subscriptionEnabled: z.boolean().optional(),
+        trafficLimitBytes: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).nullable().optional(),
       })
       .parse(req.body);
     const [u] = await sql`select * from users where id=${id}`;
@@ -60,7 +61,7 @@ export async function registerAdmin(app: FastifyInstance) {
     )
       throw new AppError(403, 'OWNER_PROTECTED', '不允许修改此账户或角色');
     await sql.begin(async (tx) => {
-      await tx`update users set disabled=${d.disabled ?? u.disabled},role=${d.role ?? u.role},node_limit=${d.nodeLimit ?? u.node_limit},subscription_enabled=${d.subscriptionEnabled ?? u.subscription_enabled},updated_at=now() where id=${id}`;
+      await tx`update users set disabled=${d.disabled ?? u.disabled},role=${d.role ?? u.role},node_limit=${d.nodeLimit ?? u.node_limit},subscription_enabled=${d.subscriptionEnabled ?? u.subscription_enabled},traffic_limit_bytes=${d.trafficLimitBytes === undefined ? u.traffic_limit_bytes : d.trafficLimitBytes},updated_at=now() where id=${id}`;
       if (d.disabled || d.revokeSessions || d.role)
         await tx`update sessions set revoked_at=now() where owner_id=${id}`;
     });
@@ -80,6 +81,11 @@ export async function registerAdmin(app: FastifyInstance) {
         : sql`select id,owner_id,data,created_at from ${sql(table)} where revoked_at is null order by created_at desc limit 200`,
     );
   }
+  app.get('/api/admin/grants', async (req) => {
+    const sources = await sql`select g.id,g.source_id as "resourceId",g.user_id as "userId" from node_group_grants g join node_sources s on s.id=g.source_id where s.owner_id=${req.actor.id} and s.revoked_at is null and g.revoked_at is null`;
+    const servers = await sql`select g.id,g.server_id as "resourceId",g.user_id as "userId" from server_access_grants g join server_connections s on s.id=g.server_id where s.owner_id=${req.actor.id} and s.revoked_at is null and g.revoked_at is null`;
+    return [...sources.map((grant) => ({ ...grant, kind: 'source' })), ...servers.map((grant) => ({ ...grant, kind: 'server' }))];
+  });
   app.post('/api/admin/grants', async (req) => {
     const { kind, resourceId, userId } = z
       .object({
@@ -92,10 +98,12 @@ export async function registerAdmin(app: FastifyInstance) {
     const [r] =
       await sql`select id,data from ${sql(table)} where id=${resourceId} and owner_id=${req.actor.id} and revoked_at is null`;
     if (!r) throw notFound();
+    const [user] = await sql`select id from users where id=${userId} and not disabled and deleted_at is null`;
+    if (!user) throw notFound();
     if (
       kind === 'source' &&
       r.data.kind !== 'OWNED_NODE' &&
-      (r.data.redistributionAuthorized !== true ||
+      (r.data.authorized !== true || r.data.redistributionAuthorized !== true ||
         !r.data.authorizationReference?.trim())
     )
       throw new AppError(

@@ -121,6 +121,8 @@ restored="$("${compose[@]}" exec -T postgres psql -U fafa -d fafa_restore_ci -X 
 "${compose[@]}" up -d --no-deps --wait --wait-timeout 120 postgres
 persisted="$("${compose[@]}" exec -T postgres psql -U fafa -d fafa -X -Atc "SELECT count(*) FROM users WHERE email='startup-fixture@example.invalid'")"
 [[ "$persisted" == 1 ]]
+migration_count="$("${compose[@]}" exec -T postgres psql -U fafa -d fafa -X -Atc "SELECT count(*) FROM migrations WHERE name IN ('001_initial.sql','002_limits.sql','003_owner_setup.sql','004_traffic_policy.sql')")"
+[[ "$migration_count" == 4 ]]
 mkdir -p docs/evidence
 "${compose[@]}" ps --all --format json > docs/evidence/production-startup-containers.json
 node --input-type=module <<'JS'
@@ -131,7 +133,7 @@ writeFileSync('docs/evidence/production-startup.json', JSON.stringify({
   missingRuntimeFileAccepted: true, runtimeFileMode600: true,
   actualPortBindingsChecked: true, stoppedApiDistinguishedFromPortPublishing: true,
   privilegedDatabasePasswordExcluded: true, runtimeRole: 'fafa_app',
-  encryptedPreMigrationBackupVerified: true, migrationsApplied: ['001','002','003'],
+  encryptedPreMigrationBackupVerified: true, migrationsApplied: ['001','002','003','004'],
   restoreToSeparateDatabase: true, postgresRestartPersistence: true,
   demoLoginDisabled: true, apiReady: true, independentWebAndAdmin: true,
   publicHttps: 'NOT_TESTED', googleLogin: 'NOT_TESTED', ownerBinding: 'NOT_PERFORMED'

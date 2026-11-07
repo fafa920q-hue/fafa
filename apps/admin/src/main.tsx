@@ -28,6 +28,7 @@ import {
   type Row,
 } from '../../../packages/ui/src/core';
 import { isAdmin } from '../../../packages/shared/src';
+import { SubscriptionWorkspace } from '../../../packages/ui/src/subscriptions';
 const nav = [
   { to: '/', label: '概览', icon: LayoutDashboard },
   { to: '/users', label: '用户 / 邀请', icon: Users },
@@ -54,7 +55,7 @@ function Admin() {
       <Routes>
         <Route path="/" element={<Overview />} />
         <Route path="/users" element={<UserManagement />} />
-        <Route path="/sources" element={<ResourceAdmin kind="sources" />} />
+        <Route path="/sources" element={<SourcesAdmin />} />
         <Route path="/servers" element={<ResourceAdmin kind="servers" />} />
         <Route path="/ai" element={<ResourceAdmin kind="ai" />} />
         <Route path="/jobs" element={<ResourceAdmin kind="jobs" />} />
@@ -180,6 +181,8 @@ function UserManagement() {
                     <td>{u.role}</td>
                     <td>
                       <Badge>{u.disabled ? '已禁用' : '已激活'}</Badge>
+                      <small>节点上限：{u.node_limit} · 订阅{u.subscription_enabled ? '启用' : '停用'}</small>
+                      <small>流量未计量 · {u.trafficLimitBytes == null ? '未设流量政策' : '流量政策 ' + (u.trafficLimitBytes / 1073741824).toLocaleString('zh-CN') + ' GiB（未执行）'}</small>
                     </td>
                     <td>
                       <div className="actions">
@@ -306,6 +309,7 @@ function UserManagement() {
         open={action?.type === 'quota'}
         onClose={() => setAction(undefined)}
         title="节点额度与订阅权限"
+        notice="节点数与订阅启停立即生效；流量限额仅保存政策，当前未接入真实计量或数据面强制限流。流量使用量不可用。"
         fields={[
           {
             name: 'nodeLimit',
@@ -315,6 +319,25 @@ function UserManagement() {
             min: 0,
             max: 5000,
             required: true,
+          },
+          {
+            name: 'trafficPolicy',
+            label: '流量限额政策（未执行）',
+            value: action?.user.trafficLimitBytes == null ? 'unlimited' : 'configured',
+            options: [
+              { label: '不设限额', value: 'unlimited' },
+              { label: '保存指定限额（尚未执行）', value: 'configured' },
+            ],
+          },
+          {
+            name: 'trafficLimitGiB',
+            label: '流量政策额度（GiB）',
+            type: 'number',
+            value: String(action?.user.trafficLimitBytes == null ? 1 : action.user.trafficLimitBytes / 1073741824),
+            min: 0,
+            max: 8388607,
+            step: 'any',
+            help: '仅当选择指定限额时保存。已用流量未知，限额尚未强制执行。',
           },
           {
             name: 'enabled',
@@ -330,6 +353,7 @@ function UserManagement() {
           await request('/api/admin/users/' + action!.user.id, 'PATCH', {
             nodeLimit: d.nodeLimit,
             subscriptionEnabled: d.enabled === 'true',
+            trafficLimitBytes: d.trafficPolicy === 'configured' ? Math.round(d.trafficLimitGiB * 1073741824) : null,
           });
           users.refresh();
           toast('节点额度与订阅权限已保存');
@@ -356,14 +380,24 @@ function UserManagement() {
     </>
   );
 }
+function SourcesAdmin() {
+  const [version, setVersion] = useState(0);
+  return <div className="stack">
+    <SubscriptionWorkspace admin onChanged={() => setVersion((value) => value + 1)} />
+    <ResourceAdmin key={version} kind="sources" embedded />
+  </div>;
+}
 function ResourceAdmin({
   kind,
+  embedded = false,
 }: {
   kind: 'sources' | 'servers' | 'ai' | 'jobs' | 'audit';
+  embedded?: boolean;
 }) {
-  const { request, toast } = useApp();
+  const { request, toast, session } = useApp();
   const data = useData<Row[]>('/api/admin/' + kind);
   const users = useData<Row[]>('/api/admin/users');
+  const grants = useData<Row[]>('/api/admin/grants');
   const [grant, setGrant] = useState<Row>();
   const labels = {
     sources: '节点源与订阅分配',
@@ -374,7 +408,7 @@ function ResourceAdmin({
   };
   return (
     <>
-      <PageTitle
+      {!embedded && <PageTitle
         title={labels[kind]}
         description={
           kind === 'audit'
@@ -387,8 +421,10 @@ function ResourceAdmin({
             刷新
           </button>
         }
-      />
-      <Card title={labels[kind]}>
+      />}
+      <Card title={embedded ? '节点源授权分配' : labels[kind]} description={embedded ? '平台自有资源可以分配给用户；其他用户个人源只显示摘要，不允许越权编辑。' : undefined}
+        action={embedded && <button aria-label="刷新授权摘要" onClick={() => { data.refresh(); grants.refresh(); users.refresh(); }}><RefreshCw size={15} />刷新</button>}>
+        {kind === 'sources' && <DataState error={grants.error} loading={false} onRetry={grants.refresh} />}
         <DataState
           error={data.error}
           loading={!data.data}
@@ -402,7 +438,7 @@ function ResourceAdmin({
                   {r.data?.name || r.action || r.data?.type || '后台任务'}
                 </h3>
                 <Badge>
-                  {r.data?.demo ? '演示数据' : r.data?.status || '记录'}
+                  {r.data?.demo ? '演示数据' : kind === 'sources' && r.data?.status === 'READY' ? '已解析 · 待实测' : r.data?.status || '记录'}
                 </Badge>
               </div>
               <div className="resource-meta">
@@ -430,7 +466,12 @@ function ResourceAdmin({
                 <span>{new Date(r.created_at).toLocaleString('zh-CN')}</span>
               </div>
               {['sources', 'servers'].includes(kind) && (
-                <button onClick={() => setGrant(r)}>分配 / 撤销授权</button>
+                <>
+                  <p>已授权：{r.owner_id !== session.user.id ? '个人授权不可见' : grants.data?.filter((g) => g.resourceId === r.id && g.kind === (kind === 'sources' ? 'source' : 'server')).map((g) => users.data?.find((u) => u.id === g.userId)?.name || g.userId).join('、') || '暂无授权'}</p>
+                  {r.owner_id === session.user.id
+                    ? <button onClick={() => setGrant(r)}>分配 / 撤销授权</button>
+                    : <p className="muted">个人资源 · 仅拥有者可管理</p>}
+                </>
               )}
               {kind === 'jobs' && r.data.status === 'FAILED' && (
                 <button
@@ -494,6 +535,7 @@ function ResourceAdmin({
               resourceId: grant!.id,
               userId: d.userId,
             });
+          grants.refresh();
           toast('资源授权已更新');
         }}
       />

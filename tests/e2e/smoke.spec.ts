@@ -99,7 +99,7 @@ test('手机与桌面各宽度无横向溢出、暗色及键盘导航', async ({
 test('Viewer 只读、空状态与 API 强制隔离', async ({ page }) => {
   await login(page, '访客演示');
   await page.goto('/subscriptions');
-  await expect(page.getByRole('button', { name: '添加订阅源' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '新增订阅源' })).toHaveCount(0);
   await expect(
     page.getByRole('heading', { name: '暂无匹配的订阅源' }),
   ).toBeVisible();

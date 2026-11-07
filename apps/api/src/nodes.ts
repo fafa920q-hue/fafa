@@ -17,10 +17,11 @@ const batchSchema = z.object({
   redistributionAuthorized: z.boolean().default(false),
   authorizationReference: z.string().max(200).default(''),
 });
-function summary(row: any) {
+function summary(row: any, actorId: string) {
   return {
     id: row.id,
     sourceId: row.source_id,
+    sourceKind: row.source_data?.kind,
     ownerId: row.owner_id,
     name: row.data.name,
     protocol: row.data.protocol,
@@ -29,8 +30,10 @@ function summary(row: any) {
       row.data.group || row.source_data?.group || row.source_data?.kind || '',
     tags: row.data.tags || [],
     aliases: row.data.aliases || [],
-    enabled: row.data.enabled !== false,
-    status: row.data.enabled === false ? 'DISABLED' : 'PENDING_VERIFICATION',
+    editable: row.owner_id === actorId,
+    shared: row.owner_id !== actorId,
+    enabled: row.data.enabled !== false && row.source_data?.enabled !== false,
+    status: row.data.enabled === false || row.source_data?.enabled === false ? 'DISABLED' : row.source_data?.expiresAt && new Date(row.source_data.expiresAt) <= new Date() ? 'EXPIRED' : 'PENDING_VERIFICATION',
     latency: null,
     traffic: null,
   };
@@ -104,8 +107,8 @@ export async function registerNodes(app: FastifyInstance) {
   });
   app.get('/api/nodes', async (req) => {
     const rows =
-      await sql`select n.*,s.data as source_data from nodes n join node_sources s on s.id=n.source_id join users u on u.id=s.owner_id where n.revoked_at is null and s.revoked_at is null and not u.disabled and u.deleted_at is null and (s.owner_id=${req.actor.id} or ((s.data->>'kind'='OWNED_NODE' or s.data->>'redistributionAuthorized'='true') and exists(select 1 from node_group_grants g where g.source_id=s.id and g.user_id=${req.actor.id} and g.revoked_at is null))) order by n.created_at limit 5000`;
-    return rows.map(summary);
+      await sql`select n.*,s.data as source_data from nodes n join node_sources s on s.id=n.source_id join users u on u.id=s.owner_id where n.revoked_at is null and s.revoked_at is null and not u.disabled and u.deleted_at is null and (s.owner_id=${req.actor.id} or ((s.data->>'kind'='OWNED_NODE' or (s.data->>'authorized'='true' and s.data->>'redistributionAuthorized'='true' and length(trim(coalesce(s.data->>'authorizationReference','')))>0)) and exists(select 1 from node_group_grants g where g.source_id=s.id and g.user_id=${req.actor.id} and g.revoked_at is null))) order by n.created_at limit 5000`;
+    return rows.map((row) => summary(row, req.actor.id));
   });
   app.patch('/api/nodes/:id', async (req) => {
     const { id } = z.object({ id: z.uuid() }).parse(req.params);
@@ -119,7 +122,12 @@ export async function registerNodes(app: FastifyInstance) {
       .parse(req.body);
     const node = await own('nodes', id, req.actor.id);
     if (!node) throw notFound();
-    await sql`update nodes set data=data || ${sql.json({ ...changes, overrides: { ...(node.data.overrides || {}), ...changes } })},updated_at=now() where id=${id} and owner_id=${req.actor.id}`;
+    await sql.begin(async (tx) => {
+      await tx`select id from node_sources where id=${node.source_id} for update`;
+      const [current] = await tx`select * from nodes where id=${id} and owner_id=${req.actor.id} and revoked_at is null for update`;
+      if (!current) throw notFound();
+      await tx`update nodes set data=data || ${tx.json({ ...changes, overrides: { ...(current.data.overrides || {}), ...changes } })},updated_at=now() where id=${id}`;
+    });
     await audit(req.actor.id, 'node.updated', id, req.id);
     return { ok: true };
   });
@@ -144,7 +152,7 @@ export async function registerNodes(app: FastifyInstance) {
     if (parsed.nodes.length !== 1 || parsed.failures.length)
       throw new AppError(400, 'NODE_INVALID', '请提供一个有效节点配置');
     const fresh = parsed.nodes[0] as Node;
-    await sql`update nodes set secret=${sql.json(seal(JSON.stringify(fresh)))},data=${sql.json({ ...node.data, ...nodeMetadata(fresh), group: node.data.group || '' })},updated_at=now() where id=${id} and owner_id=${req.actor.id}`;
+    await sql`update nodes set secret=${sql.json(seal(JSON.stringify(fresh)))},data=${sql.json({ ...node.data, ...nodeMetadata(fresh), ...(node.data.overrides || {}), enabled: node.data.enabled !== false, group: node.data.group || '' })},updated_at=now() where id=${id} and owner_id=${req.actor.id}`;
     await audit(req.actor.id, 'node.configuration_updated', id, req.id);
     return { ok: true };
   });
@@ -154,7 +162,8 @@ export async function registerNodes(app: FastifyInstance) {
     if (!node) throw notFound();
     await sql.begin(async (tx) => {
       await tx`select id from node_sources where id=${node.source_id} for update`;
-      await tx`update nodes set revoked_at=now(),updated_at=now(),data=data || '{"userDeleted":true}'::jsonb where id=${id} and owner_id=${req.actor.id}`;
+      const deleted = await tx`update nodes set revoked_at=now(),updated_at=now(),data=data || '{"userDeleted":true}'::jsonb where id=${id} and owner_id=${req.actor.id} and revoked_at is null returning id`;
+      if (!deleted.length) throw notFound();
       const [count] =
         await tx`select count(*)::int as total from nodes where source_id=${node.source_id} and revoked_at is null`;
       await tx`update node_sources set data=data || ${tx.json({ nodeCount: count.total })},updated_at=now() where id=${node.source_id}`;
