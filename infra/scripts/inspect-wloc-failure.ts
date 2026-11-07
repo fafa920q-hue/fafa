@@ -34,10 +34,11 @@ console.log('WLOC_VISIBLE_CONTROLS=' + JSON.stringify(md.split('\n').filter((s) 
 const frames = events.filter((e) => e.type === 'screencast-frame');
 const last = frames.at(-1);
 if (last) {
-  const entry = 'resources/' + (last.sha256 || last.sha1);
-  if (!entries.includes(entry) || !/^resources\/[a-zA-Z0-9@._-]+\.(jpeg|png)$/.test(entry)) throw Error('Unexpected screenshot resource ' + JSON.stringify({ keys: Object.keys(last), name: last.sha256 || last.sha1, match: entries.includes(entry) }));
+  const file = String(last.file || last.sha256 || last.sha1 || '');
+  const entry = file.startsWith('resources/') ? file : 'resources/' + file;
+  if (!entries.includes(entry) || !/^resources\/[a-zA-Z0-9@._-]+\.(jpeg|png)$/.test(entry)) throw Error('Unexpected screenshot resource ' + JSON.stringify({ keys: Object.keys(last), name: file, match: entries.includes(entry) }));
   const data = execFileSync('unzip', ['-p', zip, entry], { maxBuffer: 4 * 1024 * 1024 });
   console.log('WLOC_SCREENSHOT_JSON=' + JSON.stringify({ mime: entry.endsWith('.png') ? 'image/png' : 'image/jpeg', width: last.width, height: last.height, base64: data.toString('base64') }));
 }
 const shots = readdirSync(join(root, 'docs/screenshots')).filter((s) => /^wloc-\d+-dark-iphone\.png$/.test(s));
-console.log('WLOC_ORIGINAL_PNG_SIZES=' + JSON.stringify(shots.map((path) => ({ path, bytes: statSync(join(root, 'docs/screenshots', path)).size }))));
+console.log('WLOC_ORIGINAL_PNG_SIZES=' + JSON.stringify(shots.map((path) => (() => { const data = readFileSync(join(root, 'docs/screenshots', path)); return { path, bytes: statSync(join(root, 'docs/screenshots', path)).size, width: data.readUInt32BE(16), height: data.readUInt32BE(20) }; })())));

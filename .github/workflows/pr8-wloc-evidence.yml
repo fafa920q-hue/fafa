@@ -22,6 +22,8 @@ jobs:
         with: { node-version: '24' }
       - run: npm install -g pnpm@11.25.0
       - run: pnpm install --frozen-lockfile
+      - name: Format candidate files without changing the baseline test
+        run: node infra/scripts/format-pr8-candidate.cjs
       - uses: actions/download-artifact@v4
         with:
           name: member-auth-test-evidence
@@ -32,9 +34,16 @@ jobs:
         run: pnpm exec tsx infra/scripts/inspect-wloc-failure.ts "$RUNNER_TEMP/wloc-pr8-failure"
       - run: pnpm exec tsx infra/scripts/init-env.ts
       - run: pnpm db:migrate && pnpm db:seed
-      - run: pnpm exec playwright install --with-deps webkit
+      - id: browsers
+        run: pnpm exec playwright install --with-deps webkit
       - name: Reproduce unchanged original five-viewport iPhone case
         run: /usr/bin/time -v -o /tmp/wloc-original-resource.txt pnpm exec playwright test tests/e2e/wloc.spec.ts --project=iphone --grep=375/390/430/768/1440px --trace=on
+      - name: Verify corrected iPhone and WebKit matrix twice
+        if: ${{ !cancelled() && steps.browsers.outcome == 'success' }}
+        run: |
+          cp docs/evidence/playwright.json "$RUNNER_TEMP/wloc-original-report.json"
+          cp "$RUNNER_TEMP/pr8-wloc-fixed.spec.ts" tests/e2e/wloc.spec.ts
+          pnpm exec playwright test tests/e2e/wloc.spec.ts --project=iphone --project=webkit --grep='WLOC responsive' --repeat-each=2 --max-failures=1
       - name: Retain resource measurements
         if: always()
         run: test ! -f /tmp/wloc-original-resource.txt || cat /tmp/wloc-original-resource.txt
@@ -45,3 +54,4 @@ jobs:
           path: |
             test-results/
             docs/evidence/playwright.json
+            ${{ runner.temp }}/wloc-original-report.json
