@@ -29,6 +29,7 @@ import {
 } from '../../../packages/ui/src/core';
 import { isAdmin } from '../../../packages/shared/src';
 import { SubscriptionWorkspace } from '../../../packages/ui/src/subscriptions';
+import { MemberRegistrationPolicy } from './pages/MemberRegistrationPolicy';
 const nav = [
   { to: '/', label: '概览', icon: LayoutDashboard },
   { to: '/users', label: '用户 / 邀请', icon: Users },
@@ -38,6 +39,7 @@ const nav = [
   { to: '/jobs', label: '任务队列', icon: ListTodo },
   { to: '/audit', label: '安全审计', icon: ShieldCheck },
   { to: '/settings', label: '系统设置 / 备份', icon: Settings },
+  { to: '/member-registration', label: '普通账户注册', icon: Users },
 ];
 function Admin() {
   const { session } = useApp();
@@ -61,6 +63,10 @@ function Admin() {
         <Route path="/jobs" element={<ResourceAdmin kind="jobs" />} />
         <Route path="/audit" element={<ResourceAdmin kind="audit" />} />
         <Route path="/settings" element={<SystemSettings />} />
+        <Route
+          path="/member-registration"
+          element={<MemberRegistrationPolicy />}
+        />
         <Route path="*" element={<Empty title="页面不存在" />} />
       </Routes>
     </Shell>
@@ -145,7 +151,7 @@ function UserManagement() {
     <>
       <PageTitle
         title="用户与邀请"
-        description="仅受邀的已验证 Google 账号可以激活；禁用与角色变更会撤销会话。"
+        description="普通账户须验证邮箱；Google 登录继续保留邀请及注册策略。禁用与角色变更会撤销会话。"
         action={
           <button className="primary" onClick={() => setInvite(true)}>
             <Plus size={16} />

@@ -165,6 +165,15 @@ function Login({ onLogin }: { onLogin: (s: Session) => void }) {
         >
           G · 使用 Google 登录
         </a>
+        {app === 'web' && (
+          <p className="muted">
+            <a href="/member/login">用户名 / 邮箱登录</a>
+            {' · '}
+            <a href="/member/register">注册新账户</a>
+            {' · '}
+            <a href="/member/forgot">忘记密码</a>
+          </p>
+        )}
         {!config?.google && (
           <p className="muted">Google 登录未配置 · 仅受邀账号可激活</p>
         )}
