@@ -24,9 +24,9 @@
 
 代码检出已审核的账户分支提交后执行：
 
-~~~bash
+```bash
 pnpm exec tsx infra/scripts/member-mail-acceptance.ts --check
-~~~
+```
 
 返回configuration=VALID仅表示本地配置形状符合要求，provider仍为NOT_TESTED。缺少变量或错误URL返回非零，不打印值。
 
@@ -34,20 +34,20 @@ pnpm exec tsx infra/scripts/member-mail-acceptance.ts --check
 
 仅当账户持有人明确同意向自己的邮箱发测试邮件时，在同一秘密执行环境设置MAIL_ACCEPTANCE_CONFIRM=send-to-owned-mailbox，然后执行：
 
-~~~bash
+```bash
 pnpm exec tsx infra/scripts/member-mail-acceptance.ts --send
-~~~
+```
 
 不能把密钥或收件地址放在命令参数、命令历史、工作流输入或日志。普通push/PR CI不调用--send，也不读取真实邮件秘密。本仓库本轮没有启用自动真实发信工作流；如之后接入GitHub Actions，应单独审查环境保护、固定SHA、发信目标与批准人，不复用生产AWS权限。
 
 工具最多发一封不含登录权限的纯文本邮件，使用固定Resend HTTPS地址、标准TLS验证、8秒超时、禁止重定向及单次请求幂等键。[发送接口](https://resend.com/docs/api-reference/emails/send-email)与[幂等语义](https://resend.com/docs/dashboard/emails/idempotency-keys)。
 
-|工具状态|含义|下一步|
-|---|---|---|
-|NOT_TESTED|尚未发起请求|不能标记发信成功|
-|ACCEPTED|提供商接受请求|持有人核对相同reference的邮件，查看投递状态|
-|REJECTED|提供商拒绝，含脱敏HTTP状态码|持有人在提供商控制台核验权限、域名、额度；不重复盲试|
-|NETWORK_ERROR|网络/超时|检查受控执行器出网与提供商状态，不关闭TLS验证|
+| 工具状态      | 含义                         | 下一步                                               |
+| ------------- | ---------------------------- | ---------------------------------------------------- |
+| NOT_TESTED    | 尚未发起请求                 | 不能标记发信成功                                     |
+| ACCEPTED      | 提供商接受请求               | 持有人核对相同reference的邮件，查看投递状态          |
+| REJECTED      | 提供商拒绝，含脱敏HTTP状态码 | 持有人在提供商控制台核验权限、域名、额度；不重复盲试 |
+| NETWORK_ERROR | 网络/超时                    | 检查受控执行器出网与提供商状态，不关闭TLS验证        |
 
 报告只含状态、时间无关核对编号、是否需要人工收件以及productionChanged=false；不含地址、Key、提供商正文、Cookie或Token。即使ACCEPTED，inbox也保持REQUIRES_ACCOUNT_HOLDER，accountFlow始终NOT_TESTED。投递成功不保证进入主收件箱，仍以持有人实际收到为准。
 

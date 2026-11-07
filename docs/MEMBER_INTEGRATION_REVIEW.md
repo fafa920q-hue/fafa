@@ -62,3 +62,5 @@ check-member-isolation.ts以原确认基线检查账户自身改动，故正式�
 5. 人工审查整合提交，明确新的40位SHA生产批准；此后才可调用原发布入口。
 
 本轮预览和CI不构成生产发布授权，没有操作AWS、生产数据库、密钥或Owner。不能将单独账户分支的全绿结果当作尚未产生的整合提交全绿。
+
+PR存在合并冲突时GitHub不会触发pull_request工作流（[官方说明](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#pull_request)）。因此账户分支的push CI独立执行完整浏览器矩阵、Docker HTTPS、Production Startup、部署工具与Windows检查，不等待Muse，也不改用具有更高风险的pull_request_target。测试明确检出本分支SHA；这仍不是整合提交的验证或生产授权。
