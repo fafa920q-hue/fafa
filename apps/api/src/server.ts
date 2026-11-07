@@ -463,6 +463,18 @@ export async function buildApp() {
         ? await own(table, z.uuid().parse(id), req.actor.id)
         : null;
       if (id && !existing) throw notFound();
+      // BYOC + BYOS：新增自己的服务器需要“服务器连接功能”资格
+      // （自动授权或管理员开通；管理员不受限；既有用户默认已开通）。
+      if (table === 'server_connections' && !id && !isAdmin(req.actor.role)) {
+        const [flag] =
+          await sql`select server_connect_enabled from users where id=${req.actor.id}`;
+        if (!flag?.server_connect_enabled)
+          throw new AppError(
+            403,
+            'SERVER_CONNECT_DISABLED',
+            '请联系管理员开通服务器连接功能',
+          );
+      }
       if (table === 'node_sources') {
         if (data.kind === 'REMOTE_SUBSCRIPTION') {
           if (data.content)
