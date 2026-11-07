@@ -34,8 +34,8 @@ console.log('WLOC_VISIBLE_CONTROLS=' + JSON.stringify(md.split('\n').filter((s) 
 const frames = events.filter((e) => e.type === 'screencast-frame');
 const last = frames.at(-1);
 if (last) {
-  const entry = 'resources/' + last.sha1;
-  if (!entries.includes(entry) || !/^resources\/[a-zA-Z0-9@._-]+\.(jpeg|png)$/.test(entry)) throw Error('Unexpected screenshot resource ' + JSON.stringify({ name: last.sha1, match: entries.includes(entry) }));
+  const entry = 'resources/' + (last.sha256 || last.sha1);
+  if (!entries.includes(entry) || !/^resources\/[a-zA-Z0-9@._-]+\.(jpeg|png)$/.test(entry)) throw Error('Unexpected screenshot resource ' + JSON.stringify({ keys: Object.keys(last), name: last.sha256 || last.sha1, match: entries.includes(entry) }));
   const data = execFileSync('unzip', ['-p', zip, entry], { maxBuffer: 4 * 1024 * 1024 });
   console.log('WLOC_SCREENSHOT_JSON=' + JSON.stringify({ mime: entry.endsWith('.png') ? 'image/png' : 'image/jpeg', width: last.width, height: last.height, base64: data.toString('base64') }));
 }
