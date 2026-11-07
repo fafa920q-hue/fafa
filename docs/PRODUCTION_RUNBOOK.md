@@ -49,3 +49,5 @@ GitHub production Environment 必须有人工 required reviewers 且禁止管理
 首次无 .env.runtime / .deployed-sha 的控制台执行步骤见 [AWS_CONSOLE_HANDOFF.md](AWS_CONSOLE_HANDOFF.md)。发布前的 Cookie/代理域名及管理员数据库连接一致性检查会失败关闭，不重设既有密码。CI production-startup 使用一次性凭据/卷验证首次启动、迁移前备份、恢复新库及PG重启持久化，不访问AWS。
 
 授权 root/SSM 调用发布脚本时，Git 操作以现有仓库属主执行，复用该用户已配置的 Deploy Key；不添加全局 safe.directory 或复制私钥。SSM 固定文档的初始 Git 操作采用相同规则。若已安装旧文档，管理员必须审核文档版本及客户端固定版本后再授权，不擅自改写云端文档。
+
+内部端口使用容器 inspect 的 HostConfig.PortBindings 和 NetworkSettings.Ports 校验，不以 compose port 的 :0 或服务状态提示判断。仅 EXPOSE/null/空列表允许；任何真实宿主机端口绑定（包括127.0.0.1和IPv6）均拒绝。停止/缺失服务、检查失败或未解析的发布请求单独报错并触发现有失败恢复。若旧检查在迁移后误拦截，保留现有数据库、备份、.env.runtime和密钥，更新获批准提交后重跑同一发布入口；迁移幂等、已有运行时凭据复用，不删除数据卷。

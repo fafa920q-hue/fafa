@@ -62,11 +62,9 @@ trap deployment_failed ERR
 "${compose[@]}" up -d --no-deps --force-recreate proxy
 "${compose[@]}" exec -T api node --import tsx -e 'import("./infra/scripts/check-runtime-db.ts").then(m=>m.assertRuntimeDatabaseRole()).then(()=>import("./packages/db/src/index.ts")).then(m=>m.sql.end()).then(()=>console.log("runtime-role-ok"))'
 "${compose[@]}" exec -T api node -e 'fetch("http://127.0.0.1:4000/ready").then(r=>{if(!r.ok)process.exit(1)})'
-if [[ -n "$("${compose[@]}" port api 4000 2>/dev/null || true)" || -n "$("${compose[@]}" port postgres 5432 2>/dev/null || true)" ]]; then
-  printf '%s\n' 'Forbidden published database/API port' >&2
-  deployment_failed
-  exit 1
-fi
+# Inspect actual container metadata; compose port may return misleading ':0'.
+# Nonzero status triggers the existing ERR trap and preserves safe recovery.
+python3 infra/deploy/check_container_ports.py "${compose[@]}"
 "${compose[@]}" ps --all --format json > "deployments/$deployment_sha-services.json"
 "${compose[@]}" exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -X -Atc "select name from migrations order by name"' > "deployments/$deployment_sha-migrations.txt"
 "${compose[@]}" exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -X -At' < infra/deploy/status.sql > "deployments/$deployment_sha-owner.json"

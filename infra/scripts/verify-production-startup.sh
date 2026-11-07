@@ -72,6 +72,21 @@ before="$RUNNER_TEMP/fafa-before-migration.envelope"
 "${compose[@]}" run --rm -T --no-deps migrate
 "${ops[@]}" --user "$owner" -v "$PWD:/config" ops node --import tsx infra/scripts/prepare-production-db.ts
 "${compose[@]}" up -d --no-deps --wait --wait-timeout 180 api worker web admin
+python3 infra/deploy/check_container_ports.py "${compose[@]}"
+"${compose[@]}" stop api
+if python3 infra/deploy/check_container_ports.py "${compose[@]}" > "$RUNNER_TEMP/fafa-port-check.stdout" 2> "$RUNNER_TEMP/fafa-port-check.stderr"; then
+  printf '%s\n' 'Stopped API was incorrectly accepted.' >&2
+  exit 1
+fi
+python3 - "$RUNNER_TEMP/fafa-port-check.stderr" <<'PY'
+import pathlib
+import sys
+diagnostic = pathlib.Path(sys.argv[1]).read_text()
+assert "SERVICE_NOT_RUNNING: api" in diagnostic
+assert "Forbidden published" not in diagnostic
+PY
+"${compose[@]}" up -d --no-deps --wait --wait-timeout 180 api
+python3 infra/deploy/check_container_ports.py "${compose[@]}"
 "${compose[@]}" exec -T api node --input-type=module <<'JS'
 import assert from 'node:assert/strict';
 assert.equal(new URL(process.env.DATABASE_URL).username, 'fafa_app');
@@ -114,6 +129,7 @@ writeFileSync('docs/evidence/production-startup.json', JSON.stringify({
   verifiedAt: new Date().toISOString(), commit: process.env.IMAGE_TAG,
   scope: 'Disposable GitHub-hosted Compose stack, no AWS access, proxy not started',
   missingRuntimeFileAccepted: true, runtimeFileMode600: true,
+  actualPortBindingsChecked: true, stoppedApiDistinguishedFromPortPublishing: true,
   privilegedDatabasePasswordExcluded: true, runtimeRole: 'fafa_app',
   encryptedPreMigrationBackupVerified: true, migrationsApplied: ['001','002','003'],
   restoreToSeparateDatabase: true, postgresRestartPersistence: true,
