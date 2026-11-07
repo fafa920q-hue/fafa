@@ -84,11 +84,11 @@ describe('WLOC independent coordinates and map links', () => {
     expect(
       parseMapLink('https://map.baidu.com/?location=48.85,2.35', 'WGS84'),
     ).toMatchObject({ latitude: 48.85, longitude: 2.35 });
-    expect(() =>
-      parseMapLink(
-        'https://api.map.baidu.com/marker?location=39.9,116.4&coord_type=unknown',
-      ),
-    ).toThrow('不支持');
+    for (const type of ['unknown', 'constructor', '__proto__']) {
+      const url =
+        'https://map.baidu.com/?location=39.9,116.4&coord_type=' + type;
+      expect(() => parseMapLink(url)).toThrow('不支持');
+    }
     const mc = parseMapLink(
       'https://api.map.baidu.com/marker?location=4825907,12958160&coord_type=bd09mc',
     );

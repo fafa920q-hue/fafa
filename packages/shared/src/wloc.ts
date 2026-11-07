@@ -165,7 +165,8 @@ export function parseMapLink(
         bd09ll: 'BD09',
         bd09mc: 'BD09MC',
       };
-      if (!declared[type]) throw Error('不支持此百度坐标系，请核对链接参数');
+      if (!Object.hasOwn(declared, type))
+        throw Error('不支持此百度坐标系，请核对链接参数');
       system = declared[type];
     } else if (
       numbers &&
