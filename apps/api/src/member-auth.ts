@@ -44,7 +44,11 @@ export async function registerMemberAuth(
   app: FastifyInstance,
   options: {
     origins: string[];
-    setSession: (reply: FastifyReply, user: User, expectedPasswordHash?: string) => Promise<unknown>;
+    setSession: (
+      reply: FastifyReply,
+      user: User,
+      expectedPasswordHash?: string,
+    ) => Promise<unknown>;
     startGoogleLink: (reply: FastifyReply, id: string) => Promise<string>;
   },
 ) {

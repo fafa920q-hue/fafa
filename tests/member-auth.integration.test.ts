@@ -422,7 +422,9 @@ describe('普通账户真实数据库和 API 安全边界', () => {
       ).statusCode,
     ).toBe(200);
     expect(await authenticate(account.session.raw)).toBeNull();
-    await expect(createSession(staleProof.user, staleProof.passwordHash)).rejects.toMatchObject({ code: 'LOGIN_INVALID' });
+    await expect(
+      createSession(staleProof.user, staleProof.passwordHash),
+    ).rejects.toMatchObject({ code: 'LOGIN_INVALID' });
     expect(
       (
         await publicPost('/auth/member/login', {

@@ -87,10 +87,13 @@ export async function createSession(user: User, expectedPasswordHash?: string) {
   const raw = token();
   const csrf = token();
   await sql.begin(async (tx) => {
-    const [current] = await tx`select id from users where id=${user.id} and role=${user.role} and not disabled and deleted_at is null for update`;
-    if (!current) throw new AppError(401, 'LOGIN_INVALID', '账户状态已变化，请重新登录');
+    const [current] =
+      await tx`select id from users where id=${user.id} and role=${user.role} and not disabled and deleted_at is null for update`;
+    if (!current)
+      throw new AppError(401, 'LOGIN_INVALID', '账户状态已变化，请重新登录');
     if (expectedPasswordHash) {
-      const [credential] = await tx`select password_hash from member_credentials where user_id=${user.id} for update`;
+      const [credential] =
+        await tx`select password_hash from member_credentials where user_id=${user.id} for update`;
       if (!credential || credential.password_hash !== expectedPasswordHash)
         throw new AppError(401, 'LOGIN_INVALID', '密码已变化，请重新登录');
     }
