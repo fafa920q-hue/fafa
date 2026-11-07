@@ -72,6 +72,33 @@ describe('WLOC independent coordinates and map links', () => {
       parseMapLink('https://www.google.com/maps/place/X/@1,2,3z'),
     ).toThrow('长链接');
   });
+  it('handles declared Baidu coordinate aliases and rejects ambiguous overseas links', () => {
+    expect(
+      parseMapLink(
+        'https://api.map.baidu.com/marker?location=48.85,2.35&coord_type=wgs84ll',
+      ),
+    ).toMatchObject({ latitude: 48.85, longitude: 2.35 });
+    expect(() =>
+      parseMapLink('https://map.baidu.com/?location=48.85,2.35'),
+    ).toThrow('坐标系');
+    expect(
+      parseMapLink('https://map.baidu.com/?location=48.85,2.35', 'WGS84'),
+    ).toMatchObject({ latitude: 48.85, longitude: 2.35 });
+    expect(() =>
+      parseMapLink(
+        'https://api.map.baidu.com/marker?location=39.9,116.4&coord_type=unknown',
+      ),
+    ).toThrow('不支持');
+    const mc = parseMapLink(
+      'https://api.map.baidu.com/marker?location=4825907,12958160&coord_type=bd09mc',
+    );
+    expect(mc.sourceSystem).toBe('BD09MC');
+    expect(mc.latitude).toBeGreaterThan(39);
+    expect(mc.latitude).toBeLessThan(40);
+    expect(mc.longitude).toBeGreaterThan(116);
+    expect(mc.longitude).toBeLessThan(117);
+    expect(() => mapUrl('https://%%/')).toThrow('地图链接格式无效');
+  });
   it('rejects lookalike hosts, credentials, ports, local addresses and javascript', () => {
     for (const url of [
       'https://maps.apple.com.evil.invalid/?ll=1,2',

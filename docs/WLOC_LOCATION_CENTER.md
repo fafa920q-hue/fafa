@@ -42,6 +42,9 @@ Amap p 为 ID,纬度,经度；Baidu location 按 coord_type 或 BD-09，支持 B
 Google 采用精确 pin !3d/!4d 或数值 query/q，不把视窗 @ 中心冒充 POI。
 中国及邻近区域 Apple/Google 的坐标系不明确，必须手选，不能猜测转换。
 不支持的短链/无坐标页面明确失败，要求复制含坐标长链或手动输入。
+百度显式 coord_type 支持 WGS84/GCJ02/BD09LL/BD09MC 及对应经纬度别名，未知类型拒绝解析。
+海外百度链接未声明坐标系时须手动确认，避免把官方所述海外 WGS84 自动当成 BD-09。
+参考：[百度坐标系说明](https://lbsyun.baidu.com/skins/MySkin/resources/iframs/coordinate.html)。
 
 收藏通过现有 /api/location_presets 真实持久化，按 owner_id 隔离、保留 CSRF/Origin。
 新收藏保存 coordinateSystem=WGS84；旧记录原样保留，选择后须明确坐标系并应用才能写入设备。

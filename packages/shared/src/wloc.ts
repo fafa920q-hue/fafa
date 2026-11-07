@@ -53,7 +53,12 @@ export function fromWgs84(
 export function mapUrl(raw: string) {
   const match = raw.trim().match(/https:\/\/[^\s<>"']+/);
   if (!match) throw Error('请提供HTTPS地图链接');
-  const url = new URL(match[0]);
+  let url: URL;
+  try {
+    url = new URL(match[0]);
+  } catch {
+    throw Error('地图链接格式无效');
+  }
   const host = url.hostname.toLowerCase();
   const allowed = [
     'maps.apple.com',
@@ -149,9 +154,33 @@ export function parseMapLink(
       numbers = [Number(mc[2]), Number(mc[1])];
       system = 'BD09MC';
     }
-    const type = url.searchParams.get('coord_type');
-    if (type === 'wgs84') system = 'WGS84';
-    if (type === 'gcj02') system = 'GCJ02';
+    const type = url.searchParams.get('coord_type')?.toLowerCase();
+    if (type) {
+      const declared: Record<string, CoordinateSystem> = {
+        wgs84: 'WGS84',
+        wgs84ll: 'WGS84',
+        gcj02: 'GCJ02',
+        gcj02ll: 'GCJ02',
+        bd09: 'BD09',
+        bd09ll: 'BD09',
+        bd09mc: 'BD09MC',
+      };
+      if (!declared[type]) throw Error('不支持此百度坐标系，请核对链接参数');
+      system = declared[type];
+    } else if (
+      numbers &&
+      system === 'BD09' &&
+      requested === 'AUTO' &&
+      (numbers[1] < 72 ||
+        numbers[1] > 138 ||
+        numbers[0] < 0.8 ||
+        numbers[0] > 56)
+    ) {
+      throw new MapLinkError(
+        'COORDINATE_SYSTEM_REQUIRED',
+        '海外百度地图坐标系可能不同，请明确选择WGS84或BD-09后重试',
+      );
+    }
   } else {
     source = 'GOOGLE';
     const pin = url.pathname.match(/!3d(-?\d+(?:\.\d+)?)!4d(-?\d+(?:\.\d+)?)/);
