@@ -267,7 +267,7 @@ export function NodeManager({
           );
           if (
             mode === 'single' &&
-            (result.valid !== 1 || result.failures.length)
+            (result.total !== 1 || result.valid !== 1 || result.failures.length)
           )
             throw new Error(
               '新增节点仅接受一个有效配置；多个节点请使用批量导入。',
@@ -284,6 +284,13 @@ export function NodeManager({
       >
         {preview && (
           <div className="callout">
+            <p>原始条目 {preview.result.total}</p>
+            <div role="group" aria-label="预览地区统计">
+              地区：{Object.entries(preview.result.countries || {}).map(([name, count]) => <span key={name}>{name} {String(count)} </span>)}
+            </div>
+            <div role="group" aria-label="预览协议统计">
+              协议：{Object.entries(preview.result.protocols || {}).map(([name, count]) => <span key={name}>{name} {String(count)} </span>)}
+            </div>
             <p>
               有效 {preview.result.valid} · 重复 {preview.result.duplicates} ·
               解析失败 {preview.result.failures.length} · 所有有效节点待验证
@@ -334,9 +341,10 @@ export function NodeManager({
           },
           { name: 'country', label: '国家 / 地区', value: edit?.country },
           { name: 'group', label: '分组', value: edit?.group },
+          { name: 'tags', label: '标签（每行一个）', type: 'textarea', value: (edit?.tags || []).join('\n') },
         ]}
         onSubmit={async (data) => {
-          await request('/api/nodes/' + edit!.id, 'PATCH', data);
+          await request('/api/nodes/' + edit!.id, 'PATCH', { ...data, tags: String(data.tags || '').split(/\r?\n/).map((tag) => tag.trim()).filter(Boolean) });
           reload();
         }}
       />

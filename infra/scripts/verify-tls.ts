@@ -6,7 +6,11 @@ import https from 'node:https';
 import { randomUUID } from 'node:crypto';
 import assert from 'node:assert/strict';
 import { chromium } from '@playwright/test';
-import { createTlsDiagnostics, corsHeaders, errorCategory } from './tls-diagnostics';
+import {
+  createTlsDiagnostics,
+  corsHeaders,
+  errorCategory,
+} from './tls-diagnostics';
 const temporary = await mkdtemp(join(tmpdir(), 'fafa-tls-'));
 const container = 'fafa-tls-test-' + randomUUID().slice(0, 8);
 const domains = ['fafa888.uk', 'a.fafa888.uk'];
@@ -164,14 +168,20 @@ try {
       'Access-Control-Request-Headers': 'x-csrf-token',
     });
     const headers = corsHeaders(probe.headers as Record<string, string>);
-    diagnostics.add('node-preflight', { path, status: probe.status, ...headers });
+    diagnostics.add('node-preflight', {
+      path,
+      status: probe.status,
+      ...headers,
+    });
     assert.equal(probe.status, 204);
     assert.equal(headers.allowOrigin, 'https://a.fafa888.uk');
     assert.equal(headers.allowCredentials, true);
     assert.equal(headers.allowsCsrfHeader, true);
   }
   const browserErrors: string[] = [];
-  page.on('pageerror', (error) => browserErrors.push(JSON.stringify(errorCategory(error.message))));
+  page.on('pageerror', (error) =>
+    browserErrors.push(JSON.stringify(errorCategory(error.message))),
+  );
   page.on('console', (message) => {
     if (
       /Content Security Policy|Mixed Content|CORS policy/i.test(message.text())
@@ -193,11 +203,20 @@ try {
       .waitFor();
     const result = await page.evaluate(async () => {
       const base = 'https://fafa888.uk';
-      const probe = async (stage: string, url: string, options?: RequestInit) => {
-        try { return await fetch(url, options); }
-        catch { throw new Error('BROWSER_FETCH_FAILED:' + stage); }
+      const probe = async (
+        stage: string,
+        url: string,
+        options?: RequestInit,
+      ) => {
+        try {
+          return await fetch(url, options);
+        } catch {
+          throw new Error('BROWSER_FETCH_FAILED:' + stage);
+        }
       };
-      const me = await probe('me', base + '/api/me', { credentials: 'include' });
+      const me = await probe('me', base + '/api/me', {
+        credentials: 'include',
+      });
       const session = await me.json();
       const headers = {
         'content-type': 'application/json',
@@ -206,12 +225,16 @@ try {
       const allowed = await probe('admin-users', base + '/api/admin/users', {
         credentials: 'include',
       });
-      const denied = await probe('csrf-negative', base + '/api/location_presets', {
-        method: 'POST',
-        credentials: 'include',
-        headers: { ...headers, 'x-csrf-token': 'wrong' },
-        body: JSON.stringify({ name: 'denied', latitude: 1, longitude: 2 }),
-      });
+      const denied = await probe(
+        'csrf-negative',
+        base + '/api/location_presets',
+        {
+          method: 'POST',
+          credentials: 'include',
+          headers: { ...headers, 'x-csrf-token': 'wrong' },
+          body: JSON.stringify({ name: 'denied', latitude: 1, longitude: 2 }),
+        },
+      );
       const source = await probe('source-create', base + '/api/node_sources', {
         method: 'POST',
         credentials: 'include',
@@ -223,11 +246,15 @@ try {
           authorized: true,
         }),
       });
-      const rotated = await probe('subscription-rotate', base + '/api/subscription/rotate', {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'x-csrf-token': session.csrf },
-      });
+      const rotated = await probe(
+        'subscription-rotate',
+        base + '/api/subscription/rotate',
+        {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'x-csrf-token': session.csrf },
+        },
+      );
       const subscription = await rotated.json();
       const ws = await new Promise<{ opened: boolean; code: number }>(
         (resolve, reject) => {
@@ -305,7 +332,12 @@ try {
     };
   } finally {
     await mkdir('docs/evidence', { recursive: true });
-    await writeFile('docs/evidence/tls-browser-diagnostics.json', JSON.stringify(await diagnostics.snapshot(), null, 2) + '\n');
+    const evidence = await diagnostics.snapshot();
+    console.log('TLS_BROWSER_DIAGNOSTICS=' + JSON.stringify(evidence));
+    await writeFile(
+      'docs/evidence/tls-browser-diagnostics.json',
+      JSON.stringify(evidence, null, 2) + '\n',
+    );
     await context.close();
     await browser.close();
   }

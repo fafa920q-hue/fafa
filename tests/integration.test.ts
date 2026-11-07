@@ -219,7 +219,10 @@ describe('真实数据库 API 闭环', () => {
     const preview = await send(0, '/api/node-import/preview', 'POST', input);
     expect(preview.statusCode).toBe(200);
     expect(preview.json()).toMatchObject({
+      total: 3,
       valid: 1,
+      countries: { 香港: 1 },
+      protocols: { ss: 1 },
       duplicates: 1,
       failures: [{ line: 3, code: 'PARSE_FAILED' }],
     });

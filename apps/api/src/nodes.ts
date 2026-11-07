@@ -44,6 +44,21 @@ function summary(row: any, actorId: string) {
     traffic: null,
   };
 }
+function importSummary(result: ReturnType<typeof parseBatch>) {
+  const counts = (values: string[]) => {
+    const summary: Record<string, number> = {};
+    for (const value of values) summary[value] = (summary[value] || 0) + 1;
+    return summary;
+  };
+  return {
+    total: result.total,
+    valid: result.nodes.length,
+    duplicates: result.duplicates,
+    failures: result.failures,
+    countries: counts(result.nodes.map((node) => node.country || '未标注')),
+    protocols: counts(result.nodes.map((node) => node.protocol)),
+  };
+}
 export async function registerNodes(app: FastifyInstance) {
   const importBatch = (data: z.infer<typeof batchSchema>, admin: boolean) => {
     if (
@@ -71,9 +86,7 @@ export async function registerNodes(app: FastifyInstance) {
     const data = batchSchema.parse(req.body);
     const result = importBatch(data, isAdmin(req.actor.role));
     return {
-      valid: result.nodes.length,
-      duplicates: result.duplicates,
-      failures: result.failures,
+      ...importSummary(result),
       nodes: result.nodes.map((node) => nodeMetadata(node)),
     };
   });
@@ -107,8 +120,7 @@ export async function registerNodes(app: FastifyInstance) {
     return {
       sourceId: source.id,
       imported: result.nodes.length,
-      duplicates: result.duplicates,
-      failures: result.failures,
+      ...importSummary(result),
     };
   });
   app.get('/api/nodes', async (req) => {
@@ -124,6 +136,7 @@ export async function registerNodes(app: FastifyInstance) {
         country: z.string().max(32).optional(),
         group: z.string().max(80).optional(),
         enabled: z.boolean().optional(),
+        tags: z.array(z.string().min(1).max(200)).max(100).optional(),
       })
       .parse(req.body);
     const node = await own('nodes', id, req.actor.id);

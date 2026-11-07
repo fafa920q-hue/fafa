@@ -343,6 +343,10 @@ export function labelsForName(name: string) {
     ['印度', /印度|india|🇮🇳/i],
     ['荷兰', /荷兰|荷蘭|netherlands|🇳🇱/i],
     ['爱尔兰', /爱尔兰|愛爾蘭|ireland|🇮🇪/i],
+    ['阿根廷', /阿根廷|argentina|🇦🇷/i],
+    ['俄罗斯', /俄罗斯|俄羅斯|russia|🇷🇺/i],
+    ['土耳其', /土耳其|turkey|türkiye|🇹🇷/i],
+    ['乌克兰', /乌克兰|烏克蘭|ukraine|🇺🇦/i],
   ];
   const flag = name.match(/[\u{1F1E6}-\u{1F1FF}]{2}/u)?.[0];
   const iso = flag
@@ -425,7 +429,7 @@ export function parseBatch(input: string) {
     }
   });
   const nodes = deduplicate(accepted);
-  return { nodes, failures, duplicates: accepted.length - nodes.length };
+  return { nodes, failures, duplicates: accepted.length - nodes.length, total: entries.length };
 }
 export function nodeMetadata(node: Node, country = '未标注') {
   return {

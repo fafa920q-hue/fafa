@@ -157,6 +157,7 @@ export function SubscriptionWorkspace({
               </button>
               <button onClick={() => setImportMode('batch')}>批量导入</button>
               <button onClick={() => setEdit(null)}>新增订阅源</button>
+              <button aria-label="刷新节点与订阅源" onClick={reloadSources}><RefreshCw size={16} />刷新</button>
             </div>
           )
         }

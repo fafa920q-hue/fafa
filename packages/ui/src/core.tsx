@@ -589,12 +589,15 @@ export function FormDialog({
   submitLabel?: string;
 }) {
   const [busy, setBusy] = useState(false);
+  const submitting = useRef(false);
   const [error, setError] = useState('');
   useEffect(() => {
     if (open) setError('');
   }, [open]);
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (submitting.current) return;
+    submitting.current = true;
     const form = new FormData(e.currentTarget);
     const data: Record<string, unknown> = {};
     fields.forEach((f) => {
@@ -611,6 +614,7 @@ export function FormDialog({
     } catch (e) {
       setError((e as Error).message);
     } finally {
+      submitting.current = false;
       setBusy(false);
     }
   }

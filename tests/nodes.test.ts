@@ -4,6 +4,7 @@ import {
   parseSubscription,
   exportSubscription,
   identity,
+  labelsForName,
 } from '../packages/subscription/src';
 const password = 'fictional:fixture+password';
 const name = '🇭🇰 香港 IEPL 0.5倍 下载专用';
@@ -80,6 +81,7 @@ describe('SS / VMess 兼容及凭据保护', () => {
         ss.replace(':8388#', ':8389#') +
         '\nss://invalid-sensitive-fixture',
     );
+    expect(result.total).toBe(4);
     expect(result.nodes).toHaveLength(2);
     expect(result.duplicates).toBe(1);
     expect(result.nodes[0].aliases).toContain('香港 IEPL 备用');
@@ -99,4 +101,23 @@ describe('SS / VMess 兼容及凭据保护', () => {
       parseBatch(ss.replace('#', '?plugin=unsupported#')).failures,
     ).toHaveLength(1);
   });
+  it('46 条合成 SS/VMess 输入准确统计原始条目、重复和失败，不代表真实清单', () => {
+    const entries = [
+      ...Array.from({ length: 34 }, (_, index) => ss.replace(':8388#', ':' + (10000 + index) + '#')),
+      ...Array.from({ length: 12 }, (_, index) => 'vmess://' + Buffer.from(JSON.stringify({
+        ...vmess, port: String(20000 + index), net: index % 2 ? 'ws' : 'tcp',
+        path: index % 2 ? vmess.path : '', host: index % 2 ? vmess.host : '',
+      })).toString('base64')),
+    ];
+    const result = parseBatch([...entries, entries[0], 'invalid-synthetic-node'].join('\n'));
+    expect(result.total).toBe(48);
+    expect(result.nodes).toHaveLength(46);
+    expect(result.nodes.filter((node) => node.protocol === 'ss')).toHaveLength(34);
+    expect(result.nodes.filter((node) => node.protocol === 'vmess')).toHaveLength(12);
+    expect(result.duplicates).toBe(1);
+    expect(result.failures).toEqual([{ line: 48, code: 'PARSE_FAILED' }]);
+    for (const region of ['阿根廷', '俄罗斯', '土耳其', '乌克兰'])
+      expect(labelsForName(region + ' IEPL 2倍 下载专用').country).toBe(region);
+  });
+
 });

@@ -98,7 +98,10 @@ jobs:
           < infra/reverse-proxy/Caddyfile > /tmp/fafa-caddy-adapt.json
       - run: pnpm exec playwright install --with-deps chromium
       - name: Verify Caddy HTTPS and API boundaries
-        run: pnpm verify:tls
+        run: |
+          for repetition in 1 2 3; do
+            pnpm verify:tls
+          done
       - name: Retain service health evidence
         if: always()
         run: |

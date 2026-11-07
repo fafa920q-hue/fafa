@@ -1,6 +1,6 @@
 # us-east-2 首次生产发布：最少控制台步骤
 
-目标仅为 3.19.237.155、/opt/fafa-one、fafa888.uk 与 a.fafa888.uk。服务器当前源码由用户报告为 43bb8a1，生产容器未启动，.env.runtime 和 .deployed-sha 不存在属于首次发布的正常前提。不要手工生成或复制这两个文件，不覆盖 .env.production，不重新安装 Docker、磁盘、Swap 或 Deploy Key。
+目标仅为 3.19.237.155、/opt/fafa-one、fafa888.uk 与 a.fafa888.uk。现有实例已发布，用户报告此前版本为 8b99f20 且 Google Owner 已绑定。不要重复首次初始化或 Owner 绑定，不要手工生成或覆盖运行时文件，不覆盖 .env.production，不重新安装 Docker、磁盘、Swap 或 Deploy Key。
 
 ## 优先复用现有 Session Manager
 
@@ -32,14 +32,14 @@ sudo docker ps --all --filter label=com.docker.compose.project=fafa-one --format
 
 ## 人工批准后调用原发布入口
 
-服务器当前报告的版本是 43bb8a1；本轮修复了 root 调用 Git 的身份问题，发布前先审核最新工具提交的完整 SHA 与 CI，再通过现有仓库属主同步干净工作区，不执行 reset --hard 或覆盖本地配置。以下变量必须填写这次明确获批准的40位 SHA。
+发布前必须完成 PR 代码审核、同一 SHA 的完整 CI 与明确发布批准。使用现有仓库属主和 Deploy Key，在跟踪工作区干净时 git fetch origin，再用 git merge --ff-only 同步审核的开发分支提交；分支已前进到未获批准的提交时停止。不要 reset --hard、覆盖 .env.production 或直接部署未审核 HEAD。以下变量必须填写这次明确获批准的40位 SHA。
 
 ```bash
 approved_sha='填写已审核且CI通过的40位提交SHA'
 sudo bash infra/scripts/deploy-production.sh "$approved_sha" deploy
 ```
 
-必须沿用该脚本的部署锁、Git archive 构建、迁移前加密备份、认证解密/目录验证和运行时角色机制。顺序是：构建 → 配置审计 → PG 初始化/健康 → 备份及验证 → 创建运行时身份 → 迁移001–003 → 授予最小权限 → API/Worker/Web/Admin → Caddy → 状态证据。仅创建新的 app 角色凭据，不重设已存在的 PostgreSQL、加密或 Google 密钥。
+必须沿用该脚本的部署锁、Git archive 构建、迁移前加密备份、认证解密/目录验证和运行时角色机制。顺序是：构建 → 配置审计 → PG 初始化/健康 → 备份及验证 → 创建运行时身份 → 迁移001–004（004只增加可空流量策略，不更改Owner） → 授予最小权限 → API/Worker/Web/Admin → Caddy → 状态证据。仅创建新的 app 角色凭据，不重设已存在的 PostgreSQL、加密或 Google 密钥。
 
 失败保留原卷、配置、密钥、加密备份和旧镜像。不得通过清空卷、删除 .env.runtime 或重设密码重试。不要独立执行裸 compose up 替代发布脚本。
 
@@ -60,6 +60,6 @@ curl --fail --silent --show-error --max-time 15 --output /dev/null https://a.faf
 
 ## Owner 与真实验收
 
-Owner 按 [OWNER_SETUP.md](OWNER_SETUP.md) 在服务器**未录制的受信交互终端**生成，随后由账户持有人在正式 HTTPS 页面输入并 Google 登录。若 Session Manager 会话有 S3/CloudWatch/终端记录，不在其中输出 Owner 凭据，也不擅自关闭记录策略。CI、SSM Run Command、聊天和截图均不得接收该凭据。
+现有生产 Owner 已绑定，必须保留；不要再次执行初始化。仅尚无 Owner 的新实例才按 [OWNER_SETUP.md](OWNER_SETUP.md) 在服务器**未录制的受信交互终端**生成，随后由账户持有人在正式 HTTPS 页面输入并 Google 登录。若 Session Manager 会话有 S3/CloudWatch/终端记录，不在其中输出 Owner 凭据，也不擅自关闭记录策略。CI、SSM Run Command、聊天和截图均不得接收该凭据。
 
 Google/Owner、第三方再分发许可、轮换后节点、每用户订阅、OpenAI真实调用、公网SSH与iPhone真机都需真实条件才能签收。CI 首次启动/恢复证据只来自一次性测试卷，无AWS访问；它不启动公网Caddy，不申请正式域名证书，不等同生产部署。
