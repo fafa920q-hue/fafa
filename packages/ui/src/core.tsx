@@ -650,7 +650,9 @@ export function FormDialog({
                 {f.options ? (
                   <select
                     aria-label={f.label}
-                    aria-describedby={f.help ? fieldPrefix + '-' + f.name + '-help' : undefined}
+                    aria-describedby={
+                      f.help ? fieldPrefix + '-' + f.name + '-help' : undefined
+                    }
                     name={f.name}
                     defaultValue={f.value}
                     required={f.required}
@@ -664,7 +666,9 @@ export function FormDialog({
                 ) : f.type === 'textarea' ? (
                   <textarea
                     aria-label={f.label}
-                    aria-describedby={f.help ? fieldPrefix + '-' + f.name + '-help' : undefined}
+                    aria-describedby={
+                      f.help ? fieldPrefix + '-' + f.name + '-help' : undefined
+                    }
                     name={f.name}
                     defaultValue={f.value}
                     required={f.required}
@@ -674,7 +678,9 @@ export function FormDialog({
                 ) : (
                   <input
                     aria-label={f.label}
-                    aria-describedby={f.help ? fieldPrefix + '-' + f.name + '-help' : undefined}
+                    aria-describedby={
+                      f.help ? fieldPrefix + '-' + f.name + '-help' : undefined
+                    }
                     name={f.name}
                     type={f.type || 'text'}
                     defaultValue={f.type === 'checkbox' ? undefined : f.value}
@@ -693,7 +699,9 @@ export function FormDialog({
                     }
                   />
                 )}
-                <small id={fieldPrefix + '-' + f.name + '-help'}>{f.help}</small>
+                <small id={fieldPrefix + '-' + f.name + '-help'}>
+                  {f.help}
+                </small>
               </label>
             ))}
           </div>
