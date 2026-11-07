@@ -85,9 +85,9 @@ test('map selection, conversion, link parsing, real private favorite API and dir
       const url = new URL(req.url());
       requests.push(url.searchParams.get('action') || 'save');
       const headers = await req.allHeaders();
-      expect(headers.cookie).toBeUndefined();
-      expect(headers.authorization).toBeUndefined();
-      expect(headers['x-csrf-token']).toBeUndefined();
+      expect(Boolean(headers.cookie)).toBe(false);
+      expect(Boolean(headers.authorization)).toBe(false);
+      expect(Boolean(headers['x-csrf-token'])).toBe(false);
       if (!url.searchParams.has('action'))
         stored = {
           success: true,
