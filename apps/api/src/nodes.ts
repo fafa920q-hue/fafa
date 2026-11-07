@@ -142,10 +142,17 @@ export async function registerNodes(app: FastifyInstance) {
     const node = await own('nodes', id, req.actor.id);
     if (!node) throw notFound();
     await sql.begin(async (tx) => {
-      await tx`select id from node_sources where id=${node.source_id} for update`;
+      const [source] =
+        await tx`select data from node_sources where id=${node.source_id} for update`;
       const [current] =
         await tx`select * from nodes where id=${id} and owner_id=${req.actor.id} and revoked_at is null for update`;
       if (!current) throw notFound();
+      if (changes.enabled === true && source?.data?.enabled === false)
+        throw new AppError(
+          409,
+          'SOURCE_DISABLED',
+          '所属订阅源已停用，请先启用订阅源',
+        );
       await tx`update nodes set data=data || ${tx.json({ ...changes, overrides: { ...(current.data.overrides || {}), ...changes } })},updated_at=now() where id=${id}`;
     });
     await audit(req.actor.id, 'node.updated', id, req.id);

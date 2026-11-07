@@ -1082,6 +1082,10 @@ dialog::backdrop {
 }
 .dialog-content {
   padding: 24px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  max-height: calc(100dvh - 40px);
+  box-sizing: border-box;
 }
 .dialog-heading {
   display: flex;
@@ -1113,10 +1117,14 @@ dialog::backdrop {
   font-size: 10px;
 }
 .dialog-footer {
+  position: sticky;
+  bottom: 0;
   display: flex;
   justify-content: flex-end;
   gap: 10px;
   margin-top: 24px;
+  padding-top: 12px;
+  background: var(--solid);
 }
 .form-error {
   color: var(--danger);
@@ -1842,6 +1850,7 @@ td .actions {
   }
   .dialog-content {
     padding: 20px;
+    max-height: calc(100dvh - 24px);
   }
   dialog {
     max-height: calc(100dvh - 24px);
