@@ -181,7 +181,7 @@ export async function loginMember(identifier: string, password: string) {
     [user.id, user.credential_hash],
   );
   if (!current) throw invalidLogin();
-  return memberUser(current);
+  return { user: memberUser(current), passwordHash: user.credential_hash as string };
 }
 export async function requestPasswordReset(email: string) {
   requireAccountMail();

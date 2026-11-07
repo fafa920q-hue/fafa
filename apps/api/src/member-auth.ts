@@ -44,7 +44,7 @@ export async function registerMemberAuth(
   app: FastifyInstance,
   options: {
     origins: string[];
-    setSession: (reply: FastifyReply, user: User) => Promise<unknown>;
+    setSession: (reply: FastifyReply, user: User, expectedPasswordHash?: string) => Promise<unknown>;
     startGoogleLink: (reply: FastifyReply, id: string) => Promise<string>;
   },
 ) {
@@ -146,13 +146,13 @@ export async function registerMemberAuth(
         })
         .strict()
         .parse(req.body);
-      const user = await loginMember(data.identifier, data.password);
+      const result = await loginMember(data.identifier, data.password);
       if (req.cookies.fafa_session)
         await sql.unsafe(
           'UPDATE sessions SET revoked_at=now() WHERE token_hash=$1 AND revoked_at IS NULL',
           [hash(req.cookies.fafa_session)],
         );
-      return options.setSession(reply, user);
+      return options.setSession(reply, result.user, result.passwordHash);
     },
   );
   app.post(

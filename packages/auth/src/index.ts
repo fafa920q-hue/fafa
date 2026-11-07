@@ -1,6 +1,6 @@
 import { assertPublicUrls, googleRedirectUri } from './urls';
 import { OAuth2Client } from 'google-auth-library';
-import { sql, audit } from '../../db/src';
+import { sql } from '../../db/src';
 import { token, hash } from '../../shared/src/crypto';
 import { AppError, type User } from '../../shared/src';
 export function mockEnabled() {
@@ -83,11 +83,20 @@ export async function activateGoogle(payload: {
     return u as User;
   });
 }
-export async function createSession(user: User) {
+export async function createSession(user: User, expectedPasswordHash?: string) {
   const raw = token();
   const csrf = token();
-  await sql`insert into sessions(owner_id,token_hash,csrf,expires_at) values (${user.id},${hash(raw)},${csrf},now()+interval '7 days')`;
-  await audit(user.id, 'session.created');
+  await sql.begin(async (tx) => {
+    const [current] = await tx`select id from users where id=${user.id} and role=${user.role} and not disabled and deleted_at is null for update`;
+    if (!current) throw new AppError(401, 'LOGIN_INVALID', '账户状态已变化，请重新登录');
+    if (expectedPasswordHash) {
+      const [credential] = await tx`select password_hash from member_credentials where user_id=${user.id} for update`;
+      if (!credential || credential.password_hash !== expectedPasswordHash)
+        throw new AppError(401, 'LOGIN_INVALID', '密码已变化，请重新登录');
+    }
+    await tx`insert into sessions(owner_id,token_hash,csrf,expires_at) values (${user.id},${hash(raw)},${csrf},now()+interval '7 days')`;
+    await tx`insert into audit_events(owner_id,action) values(${user.id},'session.created')`;
+  });
   return { raw, csrf };
 }
 export async function authenticate(raw?: string) {

@@ -23,6 +23,7 @@ import {
 } from '../packages/auth/src/owner';
 import { hash, token, unseal } from '../packages/shared/src/crypto';
 import { settleAccountMail } from '../packages/auth/src/member-mail';
+import { loginMember } from '../packages/auth/src/member';
 
 const origin = 'http://localhost:5173';
 const password = 'synthetic-password-仅供隔离测试';
@@ -396,6 +397,7 @@ describe('普通账户真实数据库和 API 安全边界', () => {
   });
   it('找回令牌仅存哈希、限时单次使用，重置撤销全部会话与旧密码', async () => {
     const account = await activate();
+    const staleProof = await loginMember(account.email, password);
     expect(
       (
         await publicPost('/auth/member/forgot-password', {
@@ -420,6 +422,7 @@ describe('普通账户真实数据库和 API 安全边界', () => {
       ).statusCode,
     ).toBe(200);
     expect(await authenticate(account.session.raw)).toBeNull();
+    await expect(createSession(staleProof.user, staleProof.passwordHash)).rejects.toMatchObject({ code: 'LOGIN_INVALID' });
     expect(
       (
         await publicPost('/auth/member/login', {

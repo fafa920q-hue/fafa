@@ -234,8 +234,8 @@ export async function buildApp() {
     await sql`select 1`;
     return { status: 'ready' };
   });
-  const setSession = async (reply: any, user: User) => {
-    const s = await createSession(user);
+  const setSession = async (reply: any, user: User, expectedPasswordHash?: string) => {
+    const s = await createSession(user, expectedPasswordHash);
     reply.setCookie('fafa_session', s.raw, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
