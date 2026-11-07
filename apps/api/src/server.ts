@@ -47,6 +47,8 @@ import {
   ownerSetupAvailable,
 } from '../../../packages/auth/src/owner';
 import { publicOrigin } from '../../../packages/auth/src/urls';
+import { completeMemberGoogleLink } from '../../../packages/auth/src/member';
+import { registerMemberAuth } from './member-auth';
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -232,8 +234,12 @@ export async function buildApp() {
     await sql`select 1`;
     return { status: 'ready' };
   });
-  const setSession = async (reply: any, user: User) => {
-    const s = await createSession(user);
+  const setSession = async (
+    reply: any,
+    user: User,
+    expectedPasswordHash?: string,
+  ) => {
+    const s = await createSession(user, expectedPasswordHash);
     reply.setCookie('fafa_session', s.raw, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
@@ -271,18 +277,22 @@ export async function buildApp() {
       return setSession(reply, u as User);
     },
   );
-  const startGoogle = async (
-    reply: any,
-    credential?: string,
-    app: 'web' | 'admin' = 'web',
-  ) => {
+  // Google 登录来源与绑定一并保留：普通登录按 app 回前台/后台，
+  // Member 绑定按 memberLink 回 /member/account，Owner 初始化按
+  // ownerCredential 走原流程；三者不得互相冒充（整合 PR #4 + PR #2）。
+  type GoogleStartOptions = {
+    app?: 'web' | 'admin';
+    ownerCredential?: string;
+    memberLink?: string;
+  };
+  const startGoogle = async (reply: any, options: GoogleStartOptions = {}) => {
     if (!process.env.GOOGLE_CLIENT_ID)
       throw new AppError(503, 'GOOGLE_UNCONFIGURED', 'Google 登录尚未配置');
     const state = token(),
       nonce = token(),
       verifier = token();
-    const ownerCredential = credential
-      ? await beginOwnerCredential(credential, state)
+    const ownerCredential = options.ownerCredential
+      ? await beginOwnerCredential(options.ownerCredential, state)
       : undefined;
     const flow = {
       state,
@@ -290,7 +300,8 @@ export async function buildApp() {
       verifier,
       at: Date.now(),
       ownerCredential,
-      app,
+      app: options.app ?? 'web',
+      memberLink: options.memberLink,
     };
     reply.setCookie(
       'fafa_oidc',
@@ -319,7 +330,7 @@ export async function buildApp() {
     const { app } = z
       .object({ app: z.enum(['web', 'admin']).optional() })
       .parse(req.query);
-    return reply.redirect(await startGoogle(reply, undefined, app ?? 'web'));
+    return reply.redirect(await startGoogle(reply, { app: app ?? 'web' }));
   });
   app.post(
     '/auth/owner/start',
@@ -334,7 +345,12 @@ export async function buildApp() {
           app: z.enum(['web', 'admin']).optional(),
         })
         .parse(req.body);
-      return { url: await startGoogle(reply, credential, app ?? 'web') };
+      return {
+        url: await startGoogle(reply, {
+          ownerCredential: credential,
+          app: app ?? 'web',
+        }),
+      };
     },
   );
   app.get('/auth/google/callback', async (req, reply) => {
@@ -381,10 +397,17 @@ export async function buildApp() {
       p.nonce !== flow.nonce
     )
       throw new AppError(403, 'OIDC_NONCE', '登录验证失败');
-    const user = flow.ownerCredential
-      ? await completeOwnerCredential(flow.ownerCredential, flow.state, p)
-      : await activateGoogle(p);
+    const user = flow.memberLink
+      ? await completeMemberGoogleLink(
+          flow.memberLink,
+          hash(req.cookies.fafa_session || ''),
+          p,
+        )
+      : flow.ownerCredential
+        ? await completeOwnerCredential(flow.ownerCredential, flow.state, p)
+        : await activateGoogle(p);
     await setSession(reply, user);
+    if (flow.memberLink) return reply.redirect(origins[0] + '/member/account');
     return reply.redirect(flow.app === 'admin' ? origins[1] : origins[0]);
   });
   app.get('/api/me', async (req) => ({
@@ -735,6 +758,11 @@ export async function buildApp() {
   app.post('/api/data-request', async (req) => {
     await audit(req.actor.id, 'data.deletion_requested');
     return { message: '删除请求已登记，请联系管理员核验并处理' };
+  });
+  await registerMemberAuth(app, {
+    origins,
+    setSession,
+    startGoogleLink: (reply, id) => startGoogle(reply, { memberLink: id }),
   });
   await registerNodes(app);
   await registerAdmin(app);
