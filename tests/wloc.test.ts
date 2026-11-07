@@ -72,7 +72,7 @@ describe('WLOC independent coordinates and map links', () => {
       parseMapLink('https://www.google.com/maps/place/X/@1,2,3z'),
     ).toThrow('长链接');
   });
-  it('handles declared Baidu coordinate aliases and rejects ambiguous overseas links', () => {
+  it('Baidu declared CRS and overseas ambiguity', () => {
     expect(
       parseMapLink(
         'https://api.map.baidu.com/marker?location=48.85,2.35&coord_type=wgs84ll',
