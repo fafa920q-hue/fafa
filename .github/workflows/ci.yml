@@ -68,8 +68,8 @@ jobs:
       - run: pnpm test && pnpm test:integration && pnpm build
       - run: pnpm security && pnpm audit --audit-level=moderate
       - run: pnpm exec playwright install --with-deps chromium firefox webkit
-      - name: Verify iPhone 1440px preview closes after bounded capture
-        run: pnpm exec playwright test tests/e2e/admin-nodes.spec.ts --project=iphone --grep=1440px --max-failures=1
+      - name: Verify desktop 1440px preview closes after bounded capture
+        run: pnpm exec playwright test tests/e2e/admin-nodes.spec.ts --project=chromium --grep=1440px --max-failures=1
       - name: Verify admin regressions before the complete browser matrix
         run: pnpm exec playwright test tests/e2e/admin-nodes.spec.ts --project=chromium --project=webkit --max-failures=1
       - run: pnpm test:e2e
