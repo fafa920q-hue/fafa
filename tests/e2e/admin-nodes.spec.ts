@@ -526,7 +526,44 @@ for (const width of [375, 390, 430, 768, 1440]) {
           name: '预览并验证',
           exact: true,
         });
-        await submit.scrollIntoViewIfNeeded();
+        const geometry = await submit.evaluate(async (element) => {
+          const samples = [];
+          for (let sample = 0; sample < 5; sample++) {
+            const box = element.getBoundingClientRect();
+            const modal = element.closest('dialog');
+            const bounds = modal?.getBoundingClientRect();
+            samples.push({
+              box: { x: box.x, y: box.y, width: box.width, height: box.height },
+              viewport: {
+                width: innerWidth,
+                height: innerHeight,
+                visualWidth: visualViewport?.width,
+                visualHeight: visualViewport?.height,
+                scale: visualViewport?.scale,
+                offsetTop: visualViewport?.offsetTop,
+              },
+              modal: bounds && {
+                x: bounds.x,
+                y: bounds.y,
+                width: bounds.width,
+                height: bounds.height,
+                scrollTop: modal?.scrollTop,
+                scrollHeight: modal?.scrollHeight,
+              },
+              focusedTag: document.activeElement?.tagName,
+              transform: getComputedStyle(element).transform,
+            });
+            await new Promise((resolve) => setTimeout(resolve, 100));
+          }
+          return samples;
+        });
+        console.log('IMPORT_LAYOUT_GEOMETRY', {
+          project: testInfo.project.name,
+          width,
+          theme,
+          samples: geometry,
+        });
+        await submit.scrollIntoViewIfNeeded({ timeout: 5000 });
         const button = await submit.boundingBox();
         expect(button).not.toBeNull();
         expect(button!.y).toBeGreaterThanOrEqual(0);
