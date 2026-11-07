@@ -7,10 +7,17 @@ INSERT INTO settings(key, value) VALUES
   ('auto_grant_window_start', '"2026-11-07T13:33:00Z"'),
   ('auto_grant_window_end', '"2026-11-10T13:33:00Z"'),
   ('auto_grant_node_source_id', 'null'),
-  ('auto_grant_server_id', 'null'),
   ('auto_grant_node_limit', 'null'),
   ('auto_grant_trial_valid_days', '3')
 ON CONFLICT (key) DO NOTHING;
+
+-- 用户自带服务器（BYOC + BYOS）能力开关：既有用户默认开启（不收回
+-- 已有功能），新用户默认关闭，由自动授权或管理员开通。
+-- 注意：没有“体验服务器”——自动授权只开“连接自己的服务器”资格，
+-- 不授予任何指定服务器行访问，不提供平台算力或共享 SSH 账号。
+ALTER TABLE users ADD COLUMN server_connect_enabled boolean NOT NULL DEFAULT false,
+  ADD COLUMN codex_tasks_enabled boolean NOT NULL DEFAULT false;
+UPDATE users SET server_connect_enabled = true, codex_tasks_enabled = true;
 
 CREATE TABLE auto_grant_records (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
