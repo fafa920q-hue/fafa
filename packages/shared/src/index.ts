@@ -7,6 +7,8 @@ export type User = {
   email: string;
   role: Role;
   disabled: boolean;
+  serverConnectEnabled?: boolean;
+  codexTasksEnabled?: boolean;
 };
 export const isAdmin = (role: Role) => role === 'Owner' || role === 'Admin';
 export const writable = (role: Role) => role !== 'Viewer';
