@@ -2,7 +2,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { parse } from 'yaml';
 import { api } from '../packages/ui/src/core';
-import { backendUrl, terminalUrl } from '../packages/ui/src/endpoints';
+import {
+  backendUrl,
+  loginApp,
+  terminalUrl,
+} from '../packages/ui/src/endpoints';
 import {
   assertPublicUrls,
   googleRedirectUri,
@@ -67,6 +71,18 @@ describe('双域名契约', () => {
     expect(() => backendUrl('//external.invalid')).toThrow();
     expect(terminalUrl('/api/servers/id/terminal', 'https://fafa888.uk')).toBe(
       'wss://fafa888.uk/api/servers/id/terminal',
+    );
+  });
+  it('登录来源只区分前台与管理后台两个固定值', () => {
+    expect(loginApp('fafa888.uk', '443')).toBe('web');
+    expect(loginApp('a.fafa888.uk', '443')).toBe('admin');
+    expect(loginApp('localhost', '5173')).toBe('web');
+    expect(loginApp('localhost', '5174')).toBe('admin');
+    expect(backendUrl('/auth/google?app=admin', 'https://fafa888.uk')).toBe(
+      'https://fafa888.uk/auth/google?app=admin',
+    );
+    expect(backendUrl('/auth/google?app=web', 'https://fafa888.uk')).toBe(
+      'https://fafa888.uk/auth/google?app=web',
     );
   });
   it('生产 Origin 与 OAuth 回调固定，拒绝混合内容和 /api/api 配置', () => {
