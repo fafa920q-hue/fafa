@@ -64,7 +64,7 @@ export async function api<T = any>(
     return data;
   } catch (error) {
     if (controller.signal.aborted)
-      throw new Error('请求超时，请刷新确认操作结果后再重试');
+      throw new Error('请求超时，请刷新确认操作结果后再重试', { cause: error });
     throw error;
   } finally {
     clearTimeout(timeout);
