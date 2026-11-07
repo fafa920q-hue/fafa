@@ -338,9 +338,8 @@ describe('真实数据库 API 闭环', () => {
     expect(blocked.statusCode).toBe(409);
     expect(blocked.json().code).toBe('SOURCE_DISABLED');
     expect(
-      (
-        await send(0, '/api/nodes/' + node.id, 'PATCH', { enabled: false })
-      ).statusCode,
+      (await send(0, '/api/nodes/' + node.id, 'PATCH', { enabled: false }))
+        .statusCode,
     ).toBe(200);
     expect(
       (
@@ -350,9 +349,8 @@ describe('真实数据库 API 闭环', () => {
       ).statusCode,
     ).toBe(200);
     expect(
-      (
-        await send(0, '/api/nodes/' + node.id, 'PATCH', { enabled: true })
-      ).statusCode,
+      (await send(0, '/api/nodes/' + node.id, 'PATCH', { enabled: true }))
+        .statusCode,
     ).toBe(200);
     await send(0, '/api/nodes/' + node.id, 'DELETE');
     await send(0, '/api/node_sources/' + id, 'DELETE');
