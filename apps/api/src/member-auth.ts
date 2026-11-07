@@ -271,11 +271,11 @@ export async function registerMemberAuth(
       await tx.unsafe('SELECT pg_advisory_xact_lock(77702)');
       await tx.unsafe(
         "UPDATE settings SET value=$1::jsonb,updated_at=now() WHERE key='member_registration_open'",
-        [JSON.stringify(data.enabled)],
+        [data.enabled],
       );
       await tx.unsafe(
         "UPDATE settings SET value=$1::jsonb,updated_at=now() WHERE key='seat_limit'",
-        [JSON.stringify(data.seatLimit)],
+        [data.seatLimit],
       );
       await tx.unsafe(
         "INSERT INTO audit_events(owner_id,action) VALUES($1,'member.registration_policy_updated')",

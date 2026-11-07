@@ -61,7 +61,7 @@ it('005 增量迁移保留既有 Owner、Google sub、会话、设置和加密�
     );
     await db.unsafe(
       "INSERT INTO node_sources(id,owner_id,data,secret) VALUES($1,$2,'{}',$3::jsonb)",
-      [sourceId, ownerId, JSON.stringify(opaqueCipher)],
+      [sourceId, ownerId, opaqueCipher as any],
     );
     await db.unsafe("UPDATE settings SET value='17' WHERE key='seat_limit'");
     await apply('003_owner_setup.sql');
