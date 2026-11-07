@@ -573,6 +573,35 @@ describe('真实数据库 API 闭环', () => {
         (await send(1, `/api/servers/${id}/pin`, 'POST', { fingerprint }))
           .statusCode,
       ).toBe(200);
+      const readonlyTicket = (
+        await send(1, `/api/servers/${id}/terminal-ticket`, 'POST', {
+          confirmed: true,
+        })
+      ).json().ticket;
+      const deniedTicket = async (ticket: string) => {
+        const denied = await app.injectWS(`/api/servers/${id}/terminal`, {
+          headers: { origin, cookie: `fafa_session=${sessions[1].raw}` },
+          socket: { remoteAddress: '127.0.0.1' } as any,
+        });
+        const closed = new Promise<number>((resolve) =>
+          denied.once('close', (code: number) => resolve(code)),
+        );
+        denied.send(JSON.stringify({ ticket, csrf: sessions[1].csrf }));
+        expect(await closed).toBe(1008);
+      };
+      await sql`update server_connections set data=data || '{"terminalMode":"interactive"}'::jsonb where id=${id}`;
+      await deniedTicket(readonlyTicket);
+      vi.stubEnv('SSH_INTERACTIVE_ENABLED', 'true');
+      const interactiveTicket = (
+        await send(1, `/api/servers/${id}/terminal-ticket`, 'POST', {
+          confirmed: true,
+          writeApproved: true,
+        })
+      ).json().ticket;
+      expect(typeof interactiveTicket).toBe('string');
+      vi.stubEnv('SSH_INTERACTIVE_ENABLED', 'false');
+      await deniedTicket(interactiveTicket);
+      await sql`update server_connections set data=data || '{"terminalMode":"readonly"}'::jsonb where id=${id}`;
       const ticket = (
         await send(1, `/api/servers/${id}/terminal-ticket`, 'POST', {
           confirmed: true,

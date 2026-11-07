@@ -40,7 +40,12 @@ function connectionOptions(row: any, address: string) {
 export async function registerSsh(app: FastifyInstance, origins: string[]) {
   const tickets = new Map<
     string,
-    { userId: string; serverId: string; expires: number }
+    {
+      userId: string;
+      serverId: string;
+      expires: number;
+      interactiveApproved: boolean;
+    }
   >();
   const active = new Map<string, number>();
   app.get('/api/servers/shared', async (req) =>
@@ -150,6 +155,8 @@ export async function registerSsh(app: FastifyInstance, origins: string[]) {
       userId: req.actor.id,
       serverId: id,
       expires: Date.now() + 30000,
+      interactiveApproved:
+        row.data.terminalMode === 'interactive' && approval.writeApproved,
     });
     await audit(req.actor.id, 'ssh.terminal_approved', id);
     return { ticket: raw };
@@ -208,6 +215,12 @@ export async function registerSsh(app: FastifyInstance, origins: string[]) {
           const row = await accessible(t.serverId, actor.id);
           const ip = await target(row);
           interactive = row.data.terminalMode === 'interactive';
+          if (
+            interactive &&
+            (!t.interactiveApproved ||
+              process.env.SSH_INTERACTIVE_ENABLED !== 'true')
+          )
+            throw Error('交互式写入批准已失效');
           active.set(actor.id, (active.get(actor.id) || 0) + 1);
           const [record] =
             await sql`insert into ssh_sessions(owner_id,server_id,data) values(${actor.id},${row.id},'{"status":"CONNECTING"}') returning id`;
