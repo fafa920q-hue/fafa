@@ -224,6 +224,154 @@ describe('真实数据库 API 闭环', () => {
       vi.unstubAllEnvs();
     }
   });
+  it('Google 登录按来源回跳：后台回管理域名，前台回主域名，无效来源拒绝', async () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    vi.stubEnv('COOKIE_DOMAIN', '');
+    vi.stubEnv('WEB_ORIGIN', 'https://fafa888.uk');
+    vi.stubEnv('ADMIN_ORIGIN', 'https://a.fafa888.uk');
+    vi.stubEnv('API_PUBLIC_URL', 'https://fafa888.uk');
+    vi.stubEnv(
+      'GOOGLE_REDIRECT_URI',
+      'https://fafa888.uk/auth/google/callback',
+    );
+    vi.stubEnv('GOOGLE_CLIENT_ID', 'fixture.apps.googleusercontent.com');
+    vi.stubEnv('GOOGLE_CLIENT_SECRET', 'fixture-not-a-real-secret');
+    const production = await buildApp();
+    const sub = token();
+    await sql`insert into google_identities(user_id,sub) values(${ids[0]},${sub})`;
+    let currentNonce = '';
+    try {
+      // 无效来源直接拒绝，不产生登录状态
+      for (const bad of ['https://evil.invalid', 'admin2', 'ADMIN']) {
+        const rejected = await production.inject(
+          '/auth/google?app=' + encodeURIComponent(bad),
+        );
+        expect(rejected.statusCode).toBe(400);
+      }
+      vi.spyOn(OAuth2Client.prototype, 'getToken').mockResolvedValue({
+        tokens: { id_token: 'fixture' },
+      } as any);
+      vi.spyOn(OAuth2Client.prototype, 'verifyIdToken').mockResolvedValue({
+        getPayload: () => ({
+          sub,
+          email: 'fixture@example.invalid',
+          email_verified: true,
+          nonce: currentNonce,
+          iss: 'https://accounts.google.com',
+          aud: 'fixture.apps.googleusercontent.com',
+          exp: Math.floor(Date.now() / 1000) + 300,
+        }),
+      } as any);
+      const beginAndCallback = async (app: string | undefined) => {
+        const query = app === undefined ? '' : '?app=' + app;
+        const begin = await production.inject('/auth/google' + query);
+        expect(begin.statusCode).toBe(302);
+        const cookie = begin.cookies.find((c) => c.name === 'fafa_oidc')!;
+        const flow = JSON.parse(
+          unseal(JSON.parse(Buffer.from(cookie.value, 'base64url').toString())),
+        );
+        currentNonce = flow.nonce;
+        const callback = await production.inject({
+          url: '/auth/google/callback?state=' + flow.state + '&code=fixture',
+          headers: { cookie: 'fafa_oidc=' + cookie.value },
+        });
+        return { flow, callback };
+      };
+      // 管理入口回管理域名
+      const adminLogin = await beginAndCallback('admin');
+      expect(adminLogin.flow.app).toBe('admin');
+      expect(adminLogin.callback.statusCode).toBe(302);
+      expect(adminLogin.callback.headers.location).toBe('https://a.fafa888.uk');
+      // 管理入口登录的 Owner 会话仍可访问管理员接口
+      const ownerSession = adminLogin.callback.cookies.find(
+        (c) => c.name === 'fafa_session',
+      )!;
+      const adminUsers = await production.inject({
+        url: '/api/admin/users',
+        headers: {
+          origin: 'https://a.fafa888.uk',
+          cookie: 'fafa_session=' + ownerSession.value,
+        },
+      });
+      expect(adminUsers.statusCode).toBe(200);
+      // 前台入口回主域名
+      const webLogin = await beginAndCallback('web');
+      expect(webLogin.flow.app).toBe('web');
+      expect(webLogin.callback.statusCode).toBe(302);
+      expect(webLogin.callback.headers.location).toBe('https://fafa888.uk');
+      // 未传来源默认回主域名（兼容旧链接）
+      const defaultLogin = await beginAndCallback(undefined);
+      expect(defaultLogin.flow.app).toBe('web');
+      expect(defaultLogin.callback.headers.location).toBe('https://fafa888.uk');
+    } finally {
+      await production.close();
+      vi.restoreAllMocks();
+      vi.unstubAllEnvs();
+    }
+  });
+  it('普通成员从管理入口登录仍被拒绝管理员功能', async () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    vi.stubEnv('COOKIE_DOMAIN', '');
+    vi.stubEnv('WEB_ORIGIN', 'https://fafa888.uk');
+    vi.stubEnv('ADMIN_ORIGIN', 'https://a.fafa888.uk');
+    vi.stubEnv('API_PUBLIC_URL', 'https://fafa888.uk');
+    vi.stubEnv(
+      'GOOGLE_REDIRECT_URI',
+      'https://fafa888.uk/auth/google/callback',
+    );
+    vi.stubEnv('GOOGLE_CLIENT_ID', 'fixture.apps.googleusercontent.com');
+    vi.stubEnv('GOOGLE_CLIENT_SECRET', 'fixture-not-a-real-secret');
+    const production = await buildApp();
+    const memberSub = token();
+    await sql`insert into google_identities(user_id,sub) values(${ids[1]},${memberSub})`;
+    let currentNonce = '';
+    try {
+      vi.spyOn(OAuth2Client.prototype, 'getToken').mockResolvedValue({
+        tokens: { id_token: 'fixture' },
+      } as any);
+      vi.spyOn(OAuth2Client.prototype, 'verifyIdToken').mockResolvedValue({
+        getPayload: () => ({
+          sub: memberSub,
+          email: 'member-fixture@example.invalid',
+          email_verified: true,
+          nonce: currentNonce,
+          iss: 'https://accounts.google.com',
+          aud: 'fixture.apps.googleusercontent.com',
+          exp: Math.floor(Date.now() / 1000) + 300,
+        }),
+      } as any);
+      const begin = await production.inject('/auth/google?app=admin');
+      expect(begin.statusCode).toBe(302);
+      const cookie = begin.cookies.find((c) => c.name === 'fafa_oidc')!;
+      const flow = JSON.parse(
+        unseal(JSON.parse(Buffer.from(cookie.value, 'base64url').toString())),
+      );
+      expect(flow.app).toBe('admin');
+      currentNonce = flow.nonce;
+      const callback = await production.inject({
+        url: '/auth/google/callback?state=' + flow.state + '&code=fixture',
+        headers: { cookie: 'fafa_oidc=' + cookie.value },
+      });
+      // 回跳管理域名，但会话仍是普通成员
+      expect(callback.statusCode).toBe(302);
+      expect(callback.headers.location).toBe('https://a.fafa888.uk');
+      const memberSession = callback.cookies.find(
+        (c) => c.name === 'fafa_session',
+      )!;
+      const denied = await production.inject({
+        url: '/api/admin/users',
+        headers: {
+          origin: 'https://a.fafa888.uk',
+          cookie: 'fafa_session=' + memberSession.value,
+        },
+      });
+      expect(denied.statusCode).toBe(403);
+    } finally {
+      await production.close();
+      vi.restoreAllMocks();
+      vi.unstubAllEnvs();
+    }
+  });
   it('批量 SS/VMess 导入、权限、筛选、节点编辑与撤销', async () => {
     const raw =
       'ss://' +
