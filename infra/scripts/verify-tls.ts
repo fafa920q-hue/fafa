@@ -28,8 +28,12 @@ networkMonitor.stdout.on('data', (chunk: Buffer) => {
   networkEvents += chunk.toString().split('\n').filter(Boolean).length;
   lastNetworkEvent = Date.now();
 });
-networkMonitor.on('error', () => { monitorFailed = true; });
-networkMonitor.on('exit', () => { monitorFailed = true; });
+networkMonitor.on('error', () => {
+  monitorFailed = true;
+});
+networkMonitor.on('exit', () => {
+  monitorFailed = true;
+});
 async function waitForNetworkQuiet() {
   const deadline = Date.now() + 15000;
   while (Date.now() - lastNetworkEvent < 3000) {
@@ -243,14 +247,12 @@ try {
       const allowed = await fetch(base + '/api/admin/users', {
         credentials: 'include',
       });
-      const denied = await fetch(base + '/api/location_presets',
-        {
-          method: 'POST',
-          credentials: 'include',
-          headers: { ...headers, 'x-csrf-token': 'wrong' },
-          body: JSON.stringify({ name: 'denied', latitude: 1, longitude: 2 }),
-        },
-      );
+      const denied = await fetch(base + '/api/location_presets', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { ...headers, 'x-csrf-token': 'wrong' },
+        body: JSON.stringify({ name: 'denied', latitude: 1, longitude: 2 }),
+      });
       const source = await fetch(base + '/api/node_sources', {
         method: 'POST',
         credentials: 'include',
@@ -263,21 +265,34 @@ try {
         }),
       });
       const createdSource = await source.json();
-      const patched = await fetch(base + '/api/node_sources/' + createdSource.id, {
-        method: 'PATCH', credentials: 'include', headers,
-        body: JSON.stringify({ name: 'TLS fixture edited' }),
-      });
-      const replaced = await fetch(base + '/api/node_sources/' + createdSource.id, {
-        method: 'PUT', credentials: 'include', headers,
-        body: JSON.stringify({ name: 'TLS fixture edited', kind: 'OWNED_NODE', content: 'trojan://fixture@node.example.com:443#TLS', authorized: true }),
-      });
-      const rotated = await fetch(base + '/api/subscription/rotate',
+      const patched = await fetch(
+        base + '/api/node_sources/' + createdSource.id,
         {
-          method: 'POST',
+          method: 'PATCH',
           credentials: 'include',
-          headers: { 'x-csrf-token': session.csrf },
+          headers,
+          body: JSON.stringify({ name: 'TLS fixture edited' }),
         },
       );
+      const replaced = await fetch(
+        base + '/api/node_sources/' + createdSource.id,
+        {
+          method: 'PUT',
+          credentials: 'include',
+          headers,
+          body: JSON.stringify({
+            name: 'TLS fixture edited',
+            kind: 'OWNED_NODE',
+            content: 'trojan://fixture@node.example.com:443#TLS',
+            authorized: true,
+          }),
+        },
+      );
+      const rotated = await fetch(base + '/api/subscription/rotate', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'x-csrf-token': session.csrf },
+      });
       const subscription = await rotated.json();
       const ws = await new Promise<{ opened: boolean; code: number }>(
         (resolve, reject) => {
@@ -341,9 +356,13 @@ try {
     assert.equal(legacy.status, 200);
     const removed = await page.evaluate(async (id) => {
       const base = 'https://fafa888.uk';
-      const me = await (await fetch(base + '/api/me', { credentials: 'include' })).json();
+      const me = await (
+        await fetch(base + '/api/me', { credentials: 'include' })
+      ).json();
       const response = await fetch(base + '/api/node_sources/' + id, {
-        method: 'DELETE', credentials: 'include', headers: { 'x-csrf-token': me.csrf },
+        method: 'DELETE',
+        credentials: 'include',
+        headers: { 'x-csrf-token': me.csrf },
       });
       return response.status;
     }, result.sourceId);
@@ -372,7 +391,9 @@ try {
     };
   } finally {
     await mkdir('docs/evidence', { recursive: true });
-    diagnostics.add('network-fixture-end', { eventsAfterBrowserStart: networkEvents - eventsBeforeBrowser });
+    diagnostics.add('network-fixture-end', {
+      eventsAfterBrowserStart: networkEvents - eventsBeforeBrowser,
+    });
     const evidence = await diagnostics.snapshot();
     console.log('TLS_BROWSER_DIAGNOSTICS=' + JSON.stringify(evidence));
     await writeFile(

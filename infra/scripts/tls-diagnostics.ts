@@ -84,7 +84,7 @@ export async function createTlsDiagnostics(
         add('request', {
           ...safeEndpoint(request.url()),
           method: request.method(),
-          origin: origin ? safeEndpoint(origin).origin : null,
+          requestOrigin: origin ? safeEndpoint(origin).origin : null,
           cookieSent: !!headers.cookie,
           hasCsrfHeader: !!headers['x-csrf-token'],
           redirectFrom: request.redirectedFrom()
@@ -141,7 +141,11 @@ export async function createTlsDiagnostics(
   await cdp.send('Network.enable');
   cdp.on('Network.requestWillBeSent', (event) => {
     requests.set(event.requestId, safeEndpoint(event.request.url));
-    add('cdp-request', { endpoint: requests.get(event.requestId), method: event.request.method, type: event.type });
+    add('cdp-request', {
+      endpoint: requests.get(event.requestId),
+      method: event.request.method,
+      type: event.type,
+    });
   });
   cdp.on('Network.requestWillBeSentExtraInfo', (event) => {
     add('cdp-request-extra', {
@@ -156,7 +160,16 @@ export async function createTlsDiagnostics(
       secureContext: event.clientSecurityState?.initiatorIsSecureContext,
     });
   });
-  cdp.on('Network.responseReceived', (event) => add('cdp-response', { endpoint: requests.get(event.requestId), type: event.type, status: event.response.status, protocol: event.response.protocol, remoteIp: event.response.remoteIPAddress, ...corsHeaders(event.response.headers) }));
+  cdp.on('Network.responseReceived', (event) =>
+    add('cdp-response', {
+      endpoint: requests.get(event.requestId),
+      type: event.type,
+      status: event.response.status,
+      protocol: event.response.protocol,
+      remoteIp: event.response.remoteIPAddress,
+      ...corsHeaders(event.response.headers),
+    }),
+  );
   cdp.on('Network.loadingFailed', (event) =>
     add('cdp-loading-failed', {
       endpoint: requests.get(event.requestId),
