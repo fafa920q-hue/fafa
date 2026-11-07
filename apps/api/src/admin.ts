@@ -77,8 +77,17 @@ export async function registerAdmin(app: FastifyInstance) {
       throw new AppError(403, 'OWNER_PROTECTED', '不允许修改此账户或角色');
     await sql.begin(async (tx) => {
       await tx`update users set disabled=${d.disabled ?? u.disabled},role=${d.role ?? u.role},node_limit=${d.nodeLimit ?? u.node_limit},subscription_enabled=${d.subscriptionEnabled ?? u.subscription_enabled},traffic_limit_bytes=${d.trafficLimitBytes === undefined ? u.traffic_limit_bytes : d.trafficLimitBytes},updated_at=now() where id=${id}`;
-      if (d.disabled || d.revokeSessions || d.role)
+      if (d.disabled || d.revokeSessions || d.role) {
         await tx`update sessions set revoked_at=now() where owner_id=${id}`;
+        await tx.unsafe(
+          'UPDATE member_action_tokens SET consumed_at=now() WHERE user_id=$1 AND consumed_at IS NULL',
+          [id],
+        );
+        await tx.unsafe(
+          'UPDATE member_google_links SET consumed_at=now() WHERE user_id=$1 AND consumed_at IS NULL',
+          [id],
+        );
+      }
     });
     await audit(req.actor.id, 'user.updated', id);
     return { ok: true };

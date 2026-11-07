@@ -47,6 +47,8 @@ import {
   ownerSetupAvailable,
 } from '../../../packages/auth/src/owner';
 import { publicOrigin } from '../../../packages/auth/src/urls';
+import { completeMemberGoogleLink } from '../../../packages/auth/src/member';
+import { registerMemberAuth } from './member-auth';
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -232,8 +234,12 @@ export async function buildApp() {
     await sql`select 1`;
     return { status: 'ready' };
   });
-  const setSession = async (reply: any, user: User) => {
-    const s = await createSession(user);
+  const setSession = async (
+    reply: any,
+    user: User,
+    expectedPasswordHash?: string,
+  ) => {
+    const s = await createSession(user, expectedPasswordHash);
     reply.setCookie('fafa_session', s.raw, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
@@ -271,7 +277,11 @@ export async function buildApp() {
       return setSession(reply, u as User);
     },
   );
-  const startGoogle = async (reply: any, credential?: string) => {
+  const startGoogle = async (
+    reply: any,
+    credential?: string,
+    memberLink?: string,
+  ) => {
     if (!process.env.GOOGLE_CLIENT_ID)
       throw new AppError(503, 'GOOGLE_UNCONFIGURED', 'Google 登录尚未配置');
     const state = token(),
@@ -280,7 +290,14 @@ export async function buildApp() {
     const ownerCredential = credential
       ? await beginOwnerCredential(credential, state)
       : undefined;
-    const flow = { state, nonce, verifier, at: Date.now(), ownerCredential };
+    const flow = {
+      state,
+      nonce,
+      verifier,
+      at: Date.now(),
+      ownerCredential,
+      memberLink,
+    };
     reply.setCookie(
       'fafa_oidc',
       Buffer.from(JSON.stringify(seal(JSON.stringify(flow)))).toString(
@@ -364,11 +381,19 @@ export async function buildApp() {
       p.nonce !== flow.nonce
     )
       throw new AppError(403, 'OIDC_NONCE', '登录验证失败');
-    const user = flow.ownerCredential
-      ? await completeOwnerCredential(flow.ownerCredential, flow.state, p)
-      : await activateGoogle(p);
+    const user = flow.memberLink
+      ? await completeMemberGoogleLink(
+          flow.memberLink,
+          hash(req.cookies.fafa_session || ''),
+          p,
+        )
+      : flow.ownerCredential
+        ? await completeOwnerCredential(flow.ownerCredential, flow.state, p)
+        : await activateGoogle(p);
     await setSession(reply, user);
-    return reply.redirect(origins[0]);
+    return reply.redirect(
+      flow.memberLink ? origins[0] + '/member/account' : origins[0],
+    );
   });
   app.get('/api/me', async (req) => ({
     user: {
@@ -718,6 +743,11 @@ export async function buildApp() {
   app.post('/api/data-request', async (req) => {
     await audit(req.actor.id, 'data.deletion_requested');
     return { message: '删除请求已登记，请联系管理员核验并处理' };
+  });
+  await registerMemberAuth(app, {
+    origins,
+    setSession,
+    startGoogleLink: (reply, id) => startGoogle(reply, undefined, id),
   });
   await registerNodes(app);
   await registerAdmin(app);

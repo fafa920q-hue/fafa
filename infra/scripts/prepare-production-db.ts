@@ -120,6 +120,16 @@ try {
       ];
       for (const table of tables)
         await tx`grant select,insert,update,delete on ${tx(table)} to ${tx(role)}`;
+      for (const table of [
+        'member_credentials',
+        'member_registrations',
+        'member_action_tokens',
+        'member_auth_buckets',
+        'member_google_links',
+      ])
+        await tx.unsafe(
+          'GRANT SELECT,INSERT,UPDATE ON ' + table + ' TO ' + role,
+        );
       await ddl(tx, 'GRANT SELECT,INSERT ON audit_events TO fafa_app');
       await ddl(
         tx,
