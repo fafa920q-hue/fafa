@@ -217,7 +217,10 @@ export async function registerAdmin(app: FastifyInstance) {
         ['auto_grant_node_limit', policy.nodeLimit],
         ['auto_grant_trial_valid_days', policy.trialValidDays],
       ] as const) {
-        await tx`insert into settings(key,value) values(${key},${tx.json(value)}) on conflict (key) do update set value=excluded.value,updated_at=now()`;
+        // postgres.js 把 JS null 当 SQL NULL 发送，而 settings.value 是
+        // jsonb NOT NULL：null 必须以 JSON 文本 'null' 写入，否则违反非空
+        // 约束（未指定节点组 / 未设上限时必现，管理后台保存同样会 500）。
+        await tx`insert into settings(key,value) values(${key},${tx.json(value === null ? 'null' : value)}) on conflict (key) do update set value=excluded.value,updated_at=now()`;
       }
     });
     await audit(req.actor.id, 'auto_grant.policy.updated');
