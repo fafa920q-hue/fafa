@@ -26,6 +26,7 @@ try {
       'run',
       'tests/member-auth.unit.test.ts',
       'tests/member-auth.integration.test.ts',
+      'tests/member-auth.upgrade.test.ts',
     ],
   ]) {
     const result = spawnSync('pnpm', args, {

@@ -51,7 +51,7 @@ export async function activateGoogle(payload: {
     // Never merge by email: a password account must explicitly prove both identities.
     const emailConflict = await tx.unsafe(
       'SELECT id FROM users WHERE lower(email)=lower($1)',
-      [payload.email],
+      [payload.email!],
     );
     if (emailConflict.length)
       throw new AppError(

@@ -33,7 +33,7 @@ let owner: any;
 let ownerSession: Awaited<ReturnType<typeof createSession>>;
 const publicPost = async (
   url: string,
-  payload: unknown,
+  payload: Record<string, unknown>,
   headers: Record<string, string> = {},
 ) => {
   const config = await app.inject('/auth/member/config');
@@ -57,7 +57,7 @@ const privateRequest = (
   session: any,
   url: string,
   method: any = 'GET',
-  payload?: unknown,
+  payload?: Record<string, unknown>,
 ) =>
   app.inject({
     method,
