@@ -10,9 +10,11 @@ import {
 export async function registerAdmin(app: FastifyInstance) {
   app.get('/api/admin/users', async () =>
     (
-      await sql`select id,name,email,role,disabled,node_limit,subscription_enabled,traffic_limit_bytes,created_at from users where deleted_at is null order by created_at`
+      await sql`select id,name,email,role,disabled,node_limit,subscription_enabled,server_connect_enabled,codex_tasks_enabled,traffic_limit_bytes,created_at from users where deleted_at is null order by created_at`
     ).map((user) => ({
       ...user,
+      serverConnectEnabled: user.server_connect_enabled,
+      codexTasksEnabled: user.codex_tasks_enabled,
       trafficLimitBytes:
         user.traffic_limit_bytes === null
           ? null
