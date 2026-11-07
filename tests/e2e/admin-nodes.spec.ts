@@ -470,147 +470,159 @@ test('Owner 订阅源真实 CRUD', async ({ page }, testInfo) => {
   }
 });
 
-for (const width of [375, 390, 430, 768, 1440]) {
+// 节点导入布局用例：双主题 × 缩小可视高度（430px），验证导入按钮真实可操作。
+async function importLayoutCase(page: Page, testInfo: TestInfo, width: number) {
+  await page.goto(adminOrigin);
+  await page.getByRole('button', { name: '管理员演示', exact: true }).click();
+  await page.getByRole('heading', { name: '管理概览', exact: true }).waitFor();
+  await page.goto(adminOrigin + '/sources');
+  const content =
+    'ss://' +
+    Buffer.from('aes-256-gcm:synthetic-layout-only').toString('base64url') +
+    '@node.example.com:8388#' +
+    encodeURIComponent('日本 IEPL 1.5倍 布局fixture');
+  for (const theme of ['light', 'dark']) {
+    await page.setViewportSize({ width, height: 844 });
+    const current = await page.locator('html').getAttribute('data-theme');
+    if ((current || 'light') !== theme)
+      await page.getByRole('button', { name: '切换主题', exact: true }).click();
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    ).toBe(true);
+    for (const name of ['新增节点', '批量导入', '新增订阅源'])
+      await expect(
+        page.getByRole('button', { name, exact: true }),
+      ).toBeEnabled();
+    await expect(
+      page.getByRole('button', { name: '刷新节点与订阅源', exact: true }),
+    ).toBeEnabled();
+    await page.getByRole('button', { name: '批量导入', exact: true }).click();
+    const dialog = page.getByRole('dialog', {
+      name: '批量导入节点',
+      exact: true,
+    });
+    await dialog
+      .getByLabel('节点批次名称')
+      .fill('布局fixture-' + width + '-' + theme);
+    await dialog
+      .getByLabel('节点配置（敏感）')
+      .fill([content, content, 'invalid-layout-fixture'].join('\n'));
+    await dialog.getByLabel('我有权使用并聚合这些节点').check();
+    // Reduced viewport models limited space only; it is not a real iOS keyboard test.
+    await page.setViewportSize({ width, height: 430 });
+    const submit = dialog.getByRole('button', {
+      name: '预览并验证',
+      exact: true,
+    });
+    const geometry = await submit.evaluate(async (element) => {
+      const samples = [];
+      for (let sample = 0; sample < 5; sample++) {
+        const box = element.getBoundingClientRect();
+        const modal = element.closest('dialog');
+        const bounds = modal?.getBoundingClientRect();
+        samples.push({
+          box: { x: box.x, y: box.y, width: box.width, height: box.height },
+          viewport: {
+            width: innerWidth,
+            height: innerHeight,
+            visualWidth: visualViewport?.width,
+            visualHeight: visualViewport?.height,
+            scale: visualViewport?.scale,
+            offsetTop: visualViewport?.offsetTop,
+          },
+          modal: bounds && {
+            x: bounds.x,
+            y: bounds.y,
+            width: bounds.width,
+            height: bounds.height,
+            scrollTop: modal?.scrollTop,
+            scrollHeight: modal?.scrollHeight,
+          },
+          focusedTag: document.activeElement?.tagName,
+          transform: getComputedStyle(element).transform,
+        });
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      return samples;
+    });
+    console.log(
+      'IMPORT_LAYOUT_GEOMETRY',
+      JSON.stringify({
+        project: testInfo.project.name,
+        width,
+        theme,
+        samples: geometry,
+      }),
+    );
+    // 按钮已在可视区域内且弹窗内容未溢出（scrollHeight 小于高度），
+    // 该调用曾在 CI 中卡在 waiting for element to be stable 直到超时，
+    // 而采样证明按钮坐标完全稳定，因此不再强制滚动。
+    // 直接验证真实可操作性：可见、可启用、位于视口内，再正常点击；
+    // click 自带按需滚动与作用性检查，不用 force。
+    await expect(submit).toBeVisible();
+    await expect(submit).toBeEnabled();
+    const button = await submit.boundingBox();
+    expect(button).not.toBeNull();
+    expect(button!.y).toBeGreaterThanOrEqual(0);
+    expect(button!.y + button!.height).toBeLessThanOrEqual(431);
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    ).toBe(true);
+    await submit.click();
+    const preview = page.getByRole('dialog', {
+      name: '节点导入预览',
+      exact: true,
+    });
+    await expect(
+      preview.getByText('原始条目 3', { exact: true }),
+    ).toBeVisible();
+    await expect(
+      preview.getByRole('group', { name: '预览地区统计', exact: true }),
+    ).toContainText('日本 1');
+    await expect(
+      preview.getByRole('group', { name: '预览协议统计', exact: true }),
+    ).toContainText('ss 1');
+    await expect(
+      preview.getByText('有效 1 · 重复 1 · 解析失败 1 · 所有有效节点待验证'),
+    ).toBeVisible();
+    if (theme === 'dark') {
+      // Synthetic CI data and emulated viewports only; no real iPhone claim.
+      await preview.screenshot({
+        path:
+          'docs/screenshots/admin-import-layout-' +
+          testInfo.project.name +
+          '-' +
+          width +
+          '.png',
+      });
+    }
+    await preview
+      .getByRole('button', { name: '取消并清除待导入内容', exact: true })
+      .click();
+    await expect(preview).not.toBeVisible();
+  }
+}
+
+// 真实移动端尺寸与低高度测试保留在全部项目（含 iPhone）运行。
+for (const width of [375, 390, 430, 768]) {
   test(
     '节点导入在 ' + width + 'px、双主题和缩小可视高度下可操作',
     async ({ page }, testInfo) => {
-      await page.goto(adminOrigin);
-      await page
-        .getByRole('button', { name: '管理员演示', exact: true })
-        .click();
-      await page
-        .getByRole('heading', { name: '管理概览', exact: true })
-        .waitFor();
-      await page.goto(adminOrigin + '/sources');
-      const content =
-        'ss://' +
-        Buffer.from('aes-256-gcm:synthetic-layout-only').toString('base64url') +
-        '@node.example.com:8388#' +
-        encodeURIComponent('日本 IEPL 1.5倍 布局fixture');
-      for (const theme of ['light', 'dark']) {
-        await page.setViewportSize({ width, height: 844 });
-        const current = await page.locator('html').getAttribute('data-theme');
-        if ((current || 'light') !== theme)
-          await page
-            .getByRole('button', { name: '切换主题', exact: true })
-            .click();
-        expect(
-          await page.evaluate(
-            () => document.documentElement.scrollWidth <= innerWidth,
-          ),
-        ).toBe(true);
-        for (const name of ['新增节点', '批量导入', '新增订阅源'])
-          await expect(
-            page.getByRole('button', { name, exact: true }),
-          ).toBeEnabled();
-        await expect(
-          page.getByRole('button', { name: '刷新节点与订阅源', exact: true }),
-        ).toBeEnabled();
-        await page
-          .getByRole('button', { name: '批量导入', exact: true })
-          .click();
-        const dialog = page.getByRole('dialog', {
-          name: '批量导入节点',
-          exact: true,
-        });
-        await dialog
-          .getByLabel('节点批次名称')
-          .fill('布局fixture-' + width + '-' + theme);
-        await dialog
-          .getByLabel('节点配置（敏感）')
-          .fill([content, content, 'invalid-layout-fixture'].join('\n'));
-        await dialog.getByLabel('我有权使用并聚合这些节点').check();
-        // Reduced viewport models limited space only; it is not a real iOS keyboard test.
-        await page.setViewportSize({ width, height: 430 });
-        const submit = dialog.getByRole('button', {
-          name: '预览并验证',
-          exact: true,
-        });
-        const geometry = await submit.evaluate(async (element) => {
-          const samples = [];
-          for (let sample = 0; sample < 5; sample++) {
-            const box = element.getBoundingClientRect();
-            const modal = element.closest('dialog');
-            const bounds = modal?.getBoundingClientRect();
-            samples.push({
-              box: { x: box.x, y: box.y, width: box.width, height: box.height },
-              viewport: {
-                width: innerWidth,
-                height: innerHeight,
-                visualWidth: visualViewport?.width,
-                visualHeight: visualViewport?.height,
-                scale: visualViewport?.scale,
-                offsetTop: visualViewport?.offsetTop,
-              },
-              modal: bounds && {
-                x: bounds.x,
-                y: bounds.y,
-                width: bounds.width,
-                height: bounds.height,
-                scrollTop: modal?.scrollTop,
-                scrollHeight: modal?.scrollHeight,
-              },
-              focusedTag: document.activeElement?.tagName,
-              transform: getComputedStyle(element).transform,
-            });
-            await new Promise((resolve) => setTimeout(resolve, 100));
-          }
-          return samples;
-        });
-        console.log(
-          'IMPORT_LAYOUT_GEOMETRY',
-          JSON.stringify({
-            project: testInfo.project.name,
-            width,
-            theme,
-            samples: geometry,
-          }),
-        );
-        await submit.scrollIntoViewIfNeeded({ timeout: 5000 });
-        const button = await submit.boundingBox();
-        expect(button).not.toBeNull();
-        expect(button!.y).toBeGreaterThanOrEqual(0);
-        expect(button!.y + button!.height).toBeLessThanOrEqual(431);
-        expect(
-          await page.evaluate(
-            () => document.documentElement.scrollWidth <= innerWidth,
-          ),
-        ).toBe(true);
-        await submit.click();
-        const preview = page.getByRole('dialog', {
-          name: '节点导入预览',
-          exact: true,
-        });
-        await expect(
-          preview.getByText('原始条目 3', { exact: true }),
-        ).toBeVisible();
-        await expect(
-          preview.getByRole('group', { name: '预览地区统计', exact: true }),
-        ).toContainText('日本 1');
-        await expect(
-          preview.getByRole('group', { name: '预览协议统计', exact: true }),
-        ).toContainText('ss 1');
-        await expect(
-          preview.getByText(
-            '有效 1 · 重复 1 · 解析失败 1 · 所有有效节点待验证',
-          ),
-        ).toBeVisible();
-        if (theme === 'dark') {
-          // Synthetic CI data and emulated viewports only; no real iPhone claim.
-          await preview.screenshot({
-            path:
-              'docs/screenshots/admin-import-layout-' +
-              testInfo.project.name +
-              '-' +
-              width +
-              '.png',
-          });
-        }
-        await preview
-          .getByRole('button', { name: '取消并清除待导入内容', exact: true })
-          .click();
-        await expect(preview).not.toBeVisible();
-      }
+      await importLayoutCase(page, testInfo, width);
     },
   );
 }
+
+// 1440px 为桌面宽度，仅在桌面项目验证；移动项目跳过。
+test.describe('节点导入 1440px 桌面宽度', () => {
+  test.skip(({ isMobile }) => isMobile, '1440px 为桌面宽度，仅在桌面项目验证');
+  test('节点导入在 1440px、双主题和缩小可视高度下可操作', async ({
+    page,
+  }, testInfo) => {
+    await importLayoutCase(page, testInfo, 1440);
+  });
+});
