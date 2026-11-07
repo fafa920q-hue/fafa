@@ -557,12 +557,15 @@ for (const width of [375, 390, 430, 768, 1440]) {
           }
           return samples;
         });
-        console.log('IMPORT_LAYOUT_GEOMETRY', {
-          project: testInfo.project.name,
-          width,
-          theme,
-          samples: geometry,
-        });
+        console.log(
+          'IMPORT_LAYOUT_GEOMETRY',
+          JSON.stringify({
+            project: testInfo.project.name,
+            width,
+            theme,
+            samples: geometry,
+          }),
+        );
         await submit.scrollIntoViewIfNeeded({ timeout: 5000 });
         const button = await submit.boundingBox();
         expect(button).not.toBeNull();
