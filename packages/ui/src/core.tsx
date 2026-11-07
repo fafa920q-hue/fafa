@@ -654,7 +654,11 @@ export function FormDialog({
                     name={f.name}
                     type={f.type || 'text'}
                     defaultValue={f.type === 'checkbox' ? undefined : f.value}
-                    defaultChecked={f.type === 'checkbox' ? String(f.value) === 'true' : undefined}
+                    defaultChecked={
+                      f.type === 'checkbox'
+                        ? String(f.value) === 'true'
+                        : undefined
+                    }
                     required={f.required}
                     placeholder={f.placeholder}
                     min={f.min}
@@ -679,7 +683,8 @@ export function FormDialog({
               取消
             </button>
             <button className="primary" disabled={busy}>
-              {busy ? <LoaderCircle className="spin" size={16} /> : null}{submitLabel}
+              {busy ? <LoaderCircle className="spin" size={16} /> : null}
+              {submitLabel}
             </button>
           </div>
         </form>

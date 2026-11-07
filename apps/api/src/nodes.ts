@@ -33,7 +33,13 @@ function summary(row: any, actorId: string) {
     editable: row.owner_id === actorId,
     shared: row.owner_id !== actorId,
     enabled: row.data.enabled !== false && row.source_data?.enabled !== false,
-    status: row.data.enabled === false || row.source_data?.enabled === false ? 'DISABLED' : row.source_data?.expiresAt && new Date(row.source_data.expiresAt) <= new Date() ? 'EXPIRED' : 'PENDING_VERIFICATION',
+    status:
+      row.data.enabled === false || row.source_data?.enabled === false
+        ? 'DISABLED'
+        : row.source_data?.expiresAt &&
+            new Date(row.source_data.expiresAt) <= new Date()
+          ? 'EXPIRED'
+          : 'PENDING_VERIFICATION',
     latency: null,
     traffic: null,
   };
@@ -124,7 +130,8 @@ export async function registerNodes(app: FastifyInstance) {
     if (!node) throw notFound();
     await sql.begin(async (tx) => {
       await tx`select id from node_sources where id=${node.source_id} for update`;
-      const [current] = await tx`select * from nodes where id=${id} and owner_id=${req.actor.id} and revoked_at is null for update`;
+      const [current] =
+        await tx`select * from nodes where id=${id} and owner_id=${req.actor.id} and revoked_at is null for update`;
       if (!current) throw notFound();
       await tx`update nodes set data=data || ${tx.json({ ...changes, overrides: { ...(current.data.overrides || {}), ...changes } })},updated_at=now() where id=${id}`;
     });
@@ -162,7 +169,8 @@ export async function registerNodes(app: FastifyInstance) {
     if (!node) throw notFound();
     await sql.begin(async (tx) => {
       await tx`select id from node_sources where id=${node.source_id} for update`;
-      const deleted = await tx`update nodes set revoked_at=now(),updated_at=now(),data=data || '{"userDeleted":true}'::jsonb where id=${id} and owner_id=${req.actor.id} and revoked_at is null returning id`;
+      const deleted =
+        await tx`update nodes set revoked_at=now(),updated_at=now(),data=data || '{"userDeleted":true}'::jsonb where id=${id} and owner_id=${req.actor.id} and revoked_at is null returning id`;
       if (!deleted.length) throw notFound();
       const [count] =
         await tx`select count(*)::int as total from nodes where source_id=${node.source_id} and revoked_at is null`;

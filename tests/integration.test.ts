@@ -6,7 +6,7 @@ import { buildApp } from '../apps/api/src/server';
 import { sql } from '../packages/db/src';
 import { createSession, activateGoogle } from '../packages/auth/src';
 import { token, seal, unseal, hash } from '../packages/shared/src/crypto';
-import { runAiTask, runSubscriptionJob } from '../apps/worker/src/jobs';
+import { runAiTask, runSubscriptionJob, tick } from '../apps/worker/src/jobs';
 vi.mock('../packages/subscription/src/network', async (importOriginal) => {
   const actual = await importOriginal<any>();
   return {
@@ -341,6 +341,45 @@ describe('真实数据库 API 闭环', () => {
     expect((await send(2, '/api/summary')).json().nodes).toBe(0);
     await sql`update users set role='Member' where id=${ids[1]}`;
   });
+  it('SS 与 VMess 混合批量导入通过独立订阅兼容格式输出，公开摘要不泄露凭据', async () => {
+    const vmessId = randomUUID();
+    const ss = 'ss://' + Buffer.from('aes-256-gcm:fixture-batch-secret').toString('base64url') + '@ss.example.com:8388#' + encodeURIComponent('香港 IEPL 0.5倍');
+    const vmess = 'vmess://' + Buffer.from(JSON.stringify({
+      v: '2', ps: '日本 下载专用 2x', add: 'vmess.example.com', port: '443',
+      id: vmessId, aid: '0', scy: 'auto', net: 'ws', type: 'none',
+      host: 'edge.example.com', path: '/ws', tls: 'tls', sni: 'tls.example.com',
+    })).toString('base64');
+    const input = { name: '双协议批量', kind: 'THIRD_PARTY_NODE', group: '第三方授权',
+      content: Buffer.from(ss + '\n' + vmess + '\n' + ss).toString('base64'),
+      authorized: true, redistributionAuthorized: true, authorizationReference: 'fixture-authorized-provider' };
+    const preview = await send(0, '/api/node-import/preview', 'POST', input);
+    expect(preview.statusCode, preview.body).toBe(200);
+    expect(preview.json()).toMatchObject({ valid: 2, duplicates: 1, failures: [] });
+    expect(preview.body).not.toContain(vmessId);
+    const imported = await send(0, '/api/node-import', 'POST', input);
+    expect(imported.statusCode, imported.body).toBe(200);
+    expect(imported.json()).toMatchObject({ imported: 2, duplicates: 1 });
+    const id = imported.json().sourceId;
+    const metadata = await send(0, '/api/nodes');
+    expect(metadata.body).not.toContain('fixture-batch-secret');
+    expect(metadata.body).not.toContain(vmessId);
+    const grant = await send(0, '/api/admin/grants', 'POST', { kind: 'source', resourceId: id, userId: ids[2] });
+    expect(grant.statusCode).toBe(200);
+    const link = new URL((await send(2, '/api/subscription/rotate', 'POST')).json().url).pathname;
+    const output = await app.inject(link + '?format=uri');
+    expect(output.statusCode).toBe(200);
+    expect(output.body).toContain('ss://');
+    expect(output.body).toContain('vmess://');
+    const encoded = await app.inject(link + '?format=base64');
+    expect(Buffer.from(encoded.body, 'base64').toString()).toBe(output.body);
+    expect((await app.inject(link + '?format=mihomo')).body).toContain('proxies:');
+    expect((await app.inject(link + '?format=sing-box')).json().outbounds).toHaveLength(2);
+    await send(0, '/api/admin/grants/source/' + id + '/' + ids[2], 'DELETE');
+    expect((await app.inject(link + '?format=uri')).body).toBe('');
+    expect((await app.inject('/subscription/' + link.split('/').pop() + '?format=uri')).body).toBe('');
+    await send(2, '/api/subscription', 'DELETE');
+    await send(0, '/api/node_sources/' + id, 'DELETE');
+  });
   it('源元数据编辑不回显凭据，远程刷新防重、失败回滚并拒绝陈旧结果', async () => {
     vi.stubEnv('DEMO_MODE', 'false');
     const privateUrl = 'https://provider.example/subscription?token=fixture-private-url';
@@ -374,6 +413,15 @@ describe('真实数据库 API 闭环', () => {
       await expect(runSubscriptionJob(queued)).rejects.toThrow();
       const retained = await sql`select * from nodes where source_id=${id} and revoked_at is null`;
       expect(retained.map((node) => node.id)).toEqual([firstNode.id]);
+      vi.mocked(safeFetch).mockRejectedValueOnce(new Error(privateUrl));
+      await tick();
+      const [failed] = await sql`select data from node_sources where id=${id}`;
+      expect(failed.data.status).toBe('ERROR');
+      expect(failed.data.lastSuccess).toBe(after.data.lastSuccess);
+      expect(failed.data.error).toBe('刷新失败，保留最后成功版本');
+      const [failedJob] = await sql`select data from background_jobs where id=${queued.id}`;
+      expect(failedJob.data.attempt).toBe(1);
+      expect(JSON.stringify(failedJob.data)).not.toContain('fixture-private-url');
       const invalid = await send(0, '/api/node_sources/' + id, 'PUT', {
         name: '无效替换', kind: 'OWNED_NODE', content: 'invalid-node', authorized: true,
       });
@@ -393,53 +441,138 @@ describe('真实数据库 API 闭环', () => {
       expect((await send(0, '/api/node_sources/' + id + '/enabled', 'PATCH', { enabled: false })).statusCode).toBe(200);
       expect((await send(0, '/api/node_sources/' + id + '/refresh', 'POST')).statusCode).toBe(400);
       expect((await send(0, '/api/nodes')).json().find((node: any) => node.sourceId === id)).toMatchObject({ enabled: false, status: 'DISABLED', editable: true, latency: null, traffic: null });
+      await send(0, '/api/node_sources/' + id + '/enabled', 'PATCH', { enabled: true });
+      vi.mocked(safeFetch).mockImplementationOnce(async () => {
+        await send(0, '/api/node_sources/' + id + '/enabled', 'PATCH', { enabled: false });
+        return { status: 200, body: content };
+      });
+      expect(await runSubscriptionJob({ source_id: id })).toEqual({ superseded: true });
       await send(0, '/api/node_sources/' + id, 'DELETE');
+      expect((await sql`select id from background_jobs where source_id=${id} and data->>'status' in ('QUEUED','RUNNING')`).length).toBe(0);
     } finally {
       vi.unstubAllEnvs();
     }
   });
   it('分配列表、目标账户校验、重复及撤销后重新授权与第三方授权撤回', async () => {
     const created = await send(0, '/api/node_sources', 'POST', {
-      name: '共享策略测试', kind: 'REMOTE_SUBSCRIPTION', url: 'https://provider.example/private',
-      authorized: true, enabled: false,
+      name: '共享策略测试',
+      kind: 'REMOTE_SUBSCRIPTION',
+      url: 'https://provider.example/private',
+      authorized: true,
+      enabled: false,
     });
     expect(created.statusCode, created.body).toBe(200);
     const id = created.json().id;
     const grant = { kind: 'source', resourceId: id, userId: ids[2] };
-    expect((await send(0, '/api/admin/grants', 'POST', grant)).statusCode).toBe(403);
-    expect((await send(0, '/api/node_sources/' + id, 'PATCH', { redistributionAuthorized: true, authorizationReference: 'fixture-redistribution-contract' })).statusCode).toBe(200);
-    expect((await send(0, '/api/admin/grants', 'POST', { ...grant, userId: randomUUID() })).statusCode).toBe(404);
-    expect((await send(0, '/api/admin/grants', 'POST', grant)).statusCode).toBe(200);
-    expect((await send(0, '/api/admin/grants', 'POST', grant)).statusCode).toBe(200);
-    let grants = (await send(0, '/api/admin/grants')).json().filter((g: any) => g.resourceId === id);
+    expect((await send(0, '/api/admin/grants', 'POST', grant)).statusCode).toBe(
+      403,
+    );
+    expect(
+      (
+        await send(0, '/api/node_sources/' + id, 'PATCH', {
+          redistributionAuthorized: true,
+          authorizationReference: 'fixture-redistribution-contract',
+        })
+      ).statusCode,
+    ).toBe(200);
+    expect(
+      (
+        await send(0, '/api/admin/grants', 'POST', {
+          ...grant,
+          userId: randomUUID(),
+        })
+      ).statusCode,
+    ).toBe(404);
+    expect((await send(0, '/api/admin/grants', 'POST', grant)).statusCode).toBe(
+      200,
+    );
+    expect((await send(0, '/api/admin/grants', 'POST', grant)).statusCode).toBe(
+      200,
+    );
+    let grants = (await send(0, '/api/admin/grants'))
+      .json()
+      .filter((g: any) => g.resourceId === id);
     expect(grants).toHaveLength(1);
-    expect(grants[0]).toMatchObject({ kind: 'source', resourceId: id, userId: ids[2] });
-    expect((await send(2, '/api/shared-sources')).json().some((source: any) => source.id === id)).toBe(true);
-    expect((await send(0, '/api/node_sources/' + id, 'PATCH', { redistributionAuthorized: false })).statusCode).toBe(200);
-    expect((await send(2, '/api/shared-sources')).json().some((source: any) => source.id === id)).toBe(false);
-    expect((await send(2, '/api/node_sources/' + id, 'DELETE')).statusCode).toBe(404);
+    expect(grants[0]).toMatchObject({
+      kind: 'source',
+      resourceId: id,
+      userId: ids[2],
+    });
+    expect(
+      (await send(2, '/api/shared-sources'))
+        .json()
+        .some((source: any) => source.id === id),
+    ).toBe(true);
+    expect(
+      (
+        await send(0, '/api/node_sources/' + id, 'PATCH', {
+          redistributionAuthorized: false,
+        })
+      ).statusCode,
+    ).toBe(200);
+    expect(
+      (await send(2, '/api/shared-sources'))
+        .json()
+        .some((source: any) => source.id === id),
+    ).toBe(false);
+    expect(
+      (await send(2, '/api/node_sources/' + id, 'DELETE')).statusCode,
+    ).toBe(404);
     await send(0, '/api/admin/grants/source/' + id + '/' + ids[2], 'DELETE');
-    expect((await send(0, '/api/admin/grants')).json().some((g: any) => g.resourceId === id)).toBe(false);
-    await send(0, '/api/node_sources/' + id, 'PATCH', { redistributionAuthorized: true });
-    expect((await send(0, '/api/admin/grants', 'POST', grant)).statusCode).toBe(200);
-    grants = (await send(0, '/api/admin/grants')).json().filter((g: any) => g.resourceId === id);
+    expect(
+      (await send(0, '/api/admin/grants'))
+        .json()
+        .some((g: any) => g.resourceId === id),
+    ).toBe(false);
+    await send(0, '/api/node_sources/' + id, 'PATCH', {
+      redistributionAuthorized: true,
+    });
+    expect((await send(0, '/api/admin/grants', 'POST', grant)).statusCode).toBe(
+      200,
+    );
+    grants = (await send(0, '/api/admin/grants'))
+      .json()
+      .filter((g: any) => g.resourceId === id);
     expect(grants).toHaveLength(1);
     await send(0, '/api/node_sources/' + id, 'DELETE');
   });
   it('流量额度仅持久化策略，明确没有真实计量或数据面限流', async () => {
-    const update = await send(0, '/api/admin/users/' + ids[1], 'PATCH', { trafficLimitBytes: 10737418240 });
+    const update = await send(0, '/api/admin/users/' + ids[1], 'PATCH', {
+      trafficLimitBytes: 10737418240,
+    });
     expect(update.statusCode, update.body).toBe(200);
-    const user = (await send(0, '/api/admin/users')).json().find((user: any) => user.id === ids[1]);
+    const user = (await send(0, '/api/admin/users'))
+      .json()
+      .find((user: any) => user.id === ids[1]);
     expect(user).toMatchObject({
       trafficLimitBytes: 10737418240,
       trafficUsageBytes: null,
       trafficMeteringStatus: 'UNAVAILABLE',
       trafficQuotaEnforcement: 'NOT_ACTIVE',
     });
-    expect((await send(1, '/api/admin/users/' + ids[2], 'PATCH', { trafficLimitBytes: 0 })).statusCode).toBe(403);
-    expect((await send(0, '/api/admin/users/' + ids[1], 'PATCH', { trafficLimitBytes: -1 })).statusCode).toBe(400);
-    expect((await send(0, '/api/admin/users/' + ids[1], 'PATCH', { trafficLimitBytes: null })).statusCode).toBe(200);
-    const [stored] = await sql`select traffic_limit_bytes from users where id=${ids[1]}`;
+    expect(
+      (
+        await send(1, '/api/admin/users/' + ids[2], 'PATCH', {
+          trafficLimitBytes: 0,
+        })
+      ).statusCode,
+    ).toBe(403);
+    expect(
+      (
+        await send(0, '/api/admin/users/' + ids[1], 'PATCH', {
+          trafficLimitBytes: -1,
+        })
+      ).statusCode,
+    ).toBe(400);
+    expect(
+      (
+        await send(0, '/api/admin/users/' + ids[1], 'PATCH', {
+          trafficLimitBytes: null,
+        })
+      ).statusCode,
+    ).toBe(200);
+    const [stored] =
+      await sql`select traffic_limit_bytes from users where id=${ids[1]}`;
     expect(stored.traffic_limit_bytes).toBeNull();
   });
   it('邀请、未验证邮箱、席位超额与 Google sub 绑定', async () => {
@@ -836,6 +969,9 @@ describe('真实数据库 API 闭环', () => {
     expect((await send(1, '/api/subscription/rotate', 'POST')).statusCode).toBe(
       403,
     );
+    const sourceWrite = await send(1, '/api/node_sources/' + sources[0], 'PATCH', { name: '过期会话拒绝' });
+    expect(sourceWrite.statusCode).toBe(403);
+    expect(sourceWrite.json().code).toBe('REAUTH_REQUIRED');
     await sql`update sessions set revoked_at=now() where owner_id=${ids[1]}`;
     expect((await send(1, '/api/me')).statusCode).toBe(401);
     const events =

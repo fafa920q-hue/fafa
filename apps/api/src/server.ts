@@ -438,11 +438,18 @@ export async function buildApp() {
         );
       let secret: any = null;
       const id = (req.params as any)?.id;
-      const existing = id ? await own(table, z.uuid().parse(id), req.actor.id) : null;
+      const existing = id
+        ? await own(table, z.uuid().parse(id), req.actor.id)
+        : null;
       if (id && !existing) throw notFound();
       if (table === 'node_sources') {
         if (data.kind === 'REMOTE_SUBSCRIPTION') {
-          if (data.content) throw new AppError(400, 'SOURCE_FORMAT', '订阅源不能同时提交节点内容');
+          if (data.content)
+            throw new AppError(
+              400,
+              'SOURCE_FORMAT',
+              '订阅源不能同时提交节点内容',
+            );
           if (!data.url)
             throw new AppError(400, 'SOURCE_URL', '请填写订阅链接');
           validateUrl(data.url);
@@ -482,14 +489,17 @@ export async function buildApp() {
       delete data.content;
       const row = await sql.begin(async (tx) => {
         if (id) {
-          const [locked] = await tx`select id from ${tx(table)} where id=${id} and owner_id=${req.actor.id} and revoked_at is null for update`;
+          const [locked] =
+            await tx`select id from ${tx(table)} where id=${id} and owner_id=${req.actor.id} and revoked_at is null for update`;
           if (!locked) throw notFound();
         }
         let row;
         if (id) {
-          [row] = await tx`update ${tx(table)} set data=${tx.json(data)},secret=${secret ? tx.json(secret) : null},updated_at=now() where id=${id} and owner_id=${req.actor.id} returning *`;
+          [row] =
+            await tx`update ${tx(table)} set data=${tx.json(data)},secret=${secret ? tx.json(secret) : null},updated_at=now() where id=${id} and owner_id=${req.actor.id} returning *`;
         } else {
-          [row] = await tx`insert into ${tx(table)}(owner_id,data,secret) values(${req.actor.id},${tx.json(data)},${secret ? tx.json(secret) : null}) returning *`;
+          [row] =
+            await tx`insert into ${tx(table)}(owner_id,data,secret) values(${req.actor.id},${tx.json(data)},${secret ? tx.json(secret) : null}) returning *`;
         }
         if (table === 'node_sources') {
           await tx`update background_jobs set data=data || '{"status":"CANCELLED"}'::jsonb,updated_at=now() where source_id=${row.id} and data->>'status' in ('QUEUED','RUNNING')`;
@@ -498,7 +508,8 @@ export async function buildApp() {
             await tx`update nodes set revoked_at=now() where source_id=${row.id} and revoked_at is null`;
             for (const node of nodes)
               await tx`insert into nodes(owner_id,source_id,data,secret) values(${req.actor.id},${row.id},${tx.json({ ...nodeMetadata(node, data.country), group: data.group || '' })},${tx.json(seal(JSON.stringify(node)))})`;
-            [row] = await tx`update node_sources set data=data || ${tx.json({ nodeCount: nodes.length, status: 'READY', lastSuccess: new Date().toISOString() })} where id=${row.id} returning *`;
+            [row] =
+              await tx`update node_sources set data=data || ${tx.json({ nodeCount: nodes.length, status: 'READY', lastSuccess: new Date().toISOString() })} where id=${row.id} returning *`;
           } else if (data.kind === 'REMOTE_SUBSCRIPTION' && data.enabled) {
             await tx`insert into background_jobs(owner_id,source_id,data) values(${req.actor.id},${row.id},${tx.json({ type: 'SUBSCRIPTION_SYNC', status: 'QUEUED', attempt: 0, nextRun: new Date().toISOString() })})`;
             await tx`update node_sources set data=data || ${tx.json({ lastScheduled: new Date().toISOString() })} where id=${row.id}`;
@@ -519,7 +530,8 @@ export async function buildApp() {
     app.delete(`/api/${table}/:id`, async (req) => {
       const id = z.uuid().parse(params(req).id);
       await sql.begin(async (tx) => {
-        const [row] = await tx`select id from ${tx(table)} where id=${id} and owner_id=${req.actor.id} and revoked_at is null for update`;
+        const [row] =
+          await tx`select id from ${tx(table)} where id=${id} and owner_id=${req.actor.id} and revoked_at is null for update`;
         if (!row) throw notFound();
         await tx`update ${tx(table)} set revoked_at=now() where id=${id} and owner_id=${req.actor.id}`;
         if (table === 'node_sources')
@@ -531,26 +543,41 @@ export async function buildApp() {
   }
   app.patch('/api/node_sources/:id', async (req) => {
     const id = z.uuid().parse(params(req).id);
-    const changes = z.object({
-      name: z.string().min(1).max(80).optional(),
-      group: z.string().max(80).optional(),
-      country: z.string().max(32).optional(),
-      provider: z.string().max(80).optional(),
-      enabled: z.boolean().optional(),
-      expiresAt: z.iso.datetime().nullable().optional(),
-      authorized: z.literal(true).optional(),
-      redistributionAuthorized: z.boolean().optional(),
-      authorizationReference: z.string().max(200).optional(),
-    }).strict().parse(req.body);
+    const changes = z
+      .object({
+        name: z.string().min(1).max(80).optional(),
+        group: z.string().max(80).optional(),
+        country: z.string().max(32).optional(),
+        provider: z.string().max(80).optional(),
+        enabled: z.boolean().optional(),
+        expiresAt: z.iso.datetime().nullable().optional(),
+        authorized: z.literal(true).optional(),
+        redistributionAuthorized: z.boolean().optional(),
+        authorizationReference: z.string().max(200).optional(),
+      })
+      .strict()
+      .parse(req.body);
     const row = await sql.begin(async (tx) => {
-      const [source] = await tx`select * from node_sources where id=${id} and owner_id=${req.actor.id} and revoked_at is null for update`;
+      const [source] =
+        await tx`select * from node_sources where id=${id} and owner_id=${req.actor.id} and revoked_at is null for update`;
       if (!source) throw notFound();
       const data = { ...source.data, ...changes };
-      if (data.kind === 'THIRD_PARTY_NODE' && data.redistributionAuthorized && (!isAdmin(req.actor.role) || !data.authorized || !data.authorizationReference?.trim()))
-        throw new AppError(403, 'REDISTRIBUTION_REQUIRED', '第三方节点需要管理员权限与再分发授权');
+      if (
+        data.kind === 'THIRD_PARTY_NODE' &&
+        data.redistributionAuthorized &&
+        (!isAdmin(req.actor.role) ||
+          !data.authorized ||
+          !data.authorizationReference?.trim())
+      )
+        throw new AppError(
+          403,
+          'REDISTRIBUTION_REQUIRED',
+          '第三方节点需要管理员权限与再分发授权',
+        );
       if (changes.group !== undefined)
         await tx`update nodes set data=data || ${tx.json({ group: changes.group })},updated_at=now() where source_id=${id} and revoked_at is null and not (coalesce(data->'overrides','{}'::jsonb) ? 'group')`;
-      const [updated] = await tx`update node_sources set data=${tx.json(data)},updated_at=now() where id=${id} returning *`;
+      const [updated] =
+        await tx`update node_sources set data=${tx.json(data)},updated_at=now() where id=${id} returning *`;
       return updated;
     });
     await audit(req.actor.id, 'source.metadata_updated', id, req.id);
@@ -567,13 +594,24 @@ export async function buildApp() {
   app.post('/api/node_sources/:id/refresh', async (req) => {
     const id = z.uuid().parse(params(req).id);
     return sql.begin(async (tx) => {
-      const [r] = await tx`select * from node_sources where id=${id} and owner_id=${req.actor.id} and revoked_at is null for update`;
+      const [r] =
+        await tx`select * from node_sources where id=${id} and owner_id=${req.actor.id} and revoked_at is null for update`;
       if (!r) throw notFound();
-      if (r.data.demo || !r.data.enabled || r.data.kind !== 'REMOTE_SUBSCRIPTION')
-        throw new AppError(400, 'REFRESH_UNAVAILABLE', '此源未启用或不支持远程刷新');
-      const [existing] = await tx`select id from background_jobs where source_id=${id} and data->>'status' in ('QUEUED','RUNNING') and revoked_at is null order by created_at limit 1`;
+      if (
+        r.data.demo ||
+        !r.data.enabled ||
+        r.data.kind !== 'REMOTE_SUBSCRIPTION'
+      )
+        throw new AppError(
+          400,
+          'REFRESH_UNAVAILABLE',
+          '此源未启用或不支持远程刷新',
+        );
+      const [existing] =
+        await tx`select id from background_jobs where source_id=${id} and data->>'status' in ('QUEUED','RUNNING') and revoked_at is null order by created_at limit 1`;
       if (existing) return { id: existing.id, queued: true };
-      const [job] = await tx`insert into background_jobs(owner_id,source_id,data) values(${req.actor.id},${r.id},${tx.json({ type: 'SUBSCRIPTION_SYNC', status: 'QUEUED', attempt: 0, nextRun: new Date().toISOString() })}) returning id`;
+      const [job] =
+        await tx`insert into background_jobs(owner_id,source_id,data) values(${req.actor.id},${r.id},${tx.json({ type: 'SUBSCRIPTION_SYNC', status: 'QUEUED', attempt: 0, nextRun: new Date().toISOString() })}) returning id`;
       await tx`update node_sources set data=data || ${tx.json({ lastScheduled: new Date().toISOString() })} where id=${id}`;
       return { id: job.id, queued: true };
     });

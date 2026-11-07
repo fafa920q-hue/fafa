@@ -3,10 +3,19 @@ import { z } from 'zod';
 import { sql, audit } from '../../../packages/db/src';
 import { AppError, notFound } from '../../../packages/shared/src';
 export async function registerAdmin(app: FastifyInstance) {
-  app.get(
-    '/api/admin/users',
-    async () =>
-      (await sql`select id,name,email,role,disabled,node_limit,subscription_enabled,traffic_limit_bytes,created_at from users where deleted_at is null order by created_at`).map((user) => ({ ...user, trafficLimitBytes: user.traffic_limit_bytes === null ? null : Number(user.traffic_limit_bytes), trafficUsageBytes: null, trafficMeteringStatus: 'UNAVAILABLE', trafficQuotaEnforcement: 'NOT_ACTIVE' })),
+  app.get('/api/admin/users', async () =>
+    (
+      await sql`select id,name,email,role,disabled,node_limit,subscription_enabled,traffic_limit_bytes,created_at from users where deleted_at is null order by created_at`
+    ).map((user) => ({
+      ...user,
+      trafficLimitBytes:
+        user.traffic_limit_bytes === null
+          ? null
+          : Number(user.traffic_limit_bytes),
+      trafficUsageBytes: null,
+      trafficMeteringStatus: 'UNAVAILABLE',
+      trafficQuotaEnforcement: 'NOT_ACTIVE',
+    })),
   );
   app.get(
     '/api/admin/invitations',
@@ -48,7 +57,13 @@ export async function registerAdmin(app: FastifyInstance) {
         revokeSessions: z.boolean().optional(),
         nodeLimit: z.number().int().min(0).max(5000).optional(),
         subscriptionEnabled: z.boolean().optional(),
-        trafficLimitBytes: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).nullable().optional(),
+        trafficLimitBytes: z
+          .number()
+          .int()
+          .min(0)
+          .max(Number.MAX_SAFE_INTEGER)
+          .nullable()
+          .optional(),
       })
       .parse(req.body);
     const [u] = await sql`select * from users where id=${id}`;
@@ -82,9 +97,14 @@ export async function registerAdmin(app: FastifyInstance) {
     );
   }
   app.get('/api/admin/grants', async (req) => {
-    const sources = await sql`select g.id,g.source_id as "resourceId",g.user_id as "userId" from node_group_grants g join node_sources s on s.id=g.source_id where s.owner_id=${req.actor.id} and s.revoked_at is null and g.revoked_at is null`;
-    const servers = await sql`select g.id,g.server_id as "resourceId",g.user_id as "userId" from server_access_grants g join server_connections s on s.id=g.server_id where s.owner_id=${req.actor.id} and s.revoked_at is null and g.revoked_at is null`;
-    return [...sources.map((grant) => ({ ...grant, kind: 'source' })), ...servers.map((grant) => ({ ...grant, kind: 'server' }))];
+    const sources =
+      await sql`select g.id,g.source_id as "resourceId",g.user_id as "userId" from node_group_grants g join node_sources s on s.id=g.source_id where s.owner_id=${req.actor.id} and s.revoked_at is null and g.revoked_at is null`;
+    const servers =
+      await sql`select g.id,g.server_id as "resourceId",g.user_id as "userId" from server_access_grants g join server_connections s on s.id=g.server_id where s.owner_id=${req.actor.id} and s.revoked_at is null and g.revoked_at is null`;
+    return [
+      ...sources.map((grant) => ({ ...grant, kind: 'source' })),
+      ...servers.map((grant) => ({ ...grant, kind: 'server' })),
+    ];
   });
   app.post('/api/admin/grants', async (req) => {
     const { kind, resourceId, userId } = z
@@ -98,12 +118,14 @@ export async function registerAdmin(app: FastifyInstance) {
     const [r] =
       await sql`select id,data from ${sql(table)} where id=${resourceId} and owner_id=${req.actor.id} and revoked_at is null`;
     if (!r) throw notFound();
-    const [user] = await sql`select id from users where id=${userId} and not disabled and deleted_at is null`;
+    const [user] =
+      await sql`select id from users where id=${userId} and not disabled and deleted_at is null`;
     if (!user) throw notFound();
     if (
       kind === 'source' &&
       r.data.kind !== 'OWNED_NODE' &&
-      (r.data.authorized !== true || r.data.redistributionAuthorized !== true ||
+      (r.data.authorized !== true ||
+        r.data.redistributionAuthorized !== true ||
         !r.data.authorizationReference?.trim())
     )
       throw new AppError(

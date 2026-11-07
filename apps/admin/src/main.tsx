@@ -181,8 +181,20 @@ function UserManagement() {
                     <td>{u.role}</td>
                     <td>
                       <Badge>{u.disabled ? '已禁用' : '已激活'}</Badge>
-                      <small>节点上限：{u.node_limit} · 订阅{u.subscription_enabled ? '启用' : '停用'}</small>
-                      <small>流量未计量 · {u.trafficLimitBytes == null ? '未设流量政策' : '流量政策 ' + (u.trafficLimitBytes / 1073741824).toLocaleString('zh-CN') + ' GiB（未执行）'}</small>
+                      <small>
+                        节点上限：{u.node_limit} · 订阅
+                        {u.subscription_enabled ? '启用' : '停用'}
+                      </small>
+                      <small>
+                        流量未计量 ·{' '}
+                        {u.trafficLimitBytes == null
+                          ? '未设流量政策'
+                          : '流量政策 ' +
+                            (u.trafficLimitBytes / 1073741824).toLocaleString(
+                              'zh-CN',
+                            ) +
+                            ' GiB（未执行）'}
+                      </small>
                     </td>
                     <td>
                       <div className="actions">
@@ -323,7 +335,10 @@ function UserManagement() {
           {
             name: 'trafficPolicy',
             label: '流量限额政策（未执行）',
-            value: action?.user.trafficLimitBytes == null ? 'unlimited' : 'configured',
+            value:
+              action?.user.trafficLimitBytes == null
+                ? 'unlimited'
+                : 'configured',
             options: [
               { label: '不设限额', value: 'unlimited' },
               { label: '保存指定限额（尚未执行）', value: 'configured' },
@@ -333,7 +348,11 @@ function UserManagement() {
             name: 'trafficLimitGiB',
             label: '流量政策额度（GiB）',
             type: 'number',
-            value: String(action?.user.trafficLimitBytes == null ? 1 : action.user.trafficLimitBytes / 1073741824),
+            value: String(
+              action?.user.trafficLimitBytes == null
+                ? 1
+                : action.user.trafficLimitBytes / 1073741824,
+            ),
             min: 0,
             max: 8388607,
             step: 'any',
@@ -353,7 +372,10 @@ function UserManagement() {
           await request('/api/admin/users/' + action!.user.id, 'PATCH', {
             nodeLimit: d.nodeLimit,
             subscriptionEnabled: d.enabled === 'true',
-            trafficLimitBytes: d.trafficPolicy === 'configured' ? Math.round(d.trafficLimitGiB * 1073741824) : null,
+            trafficLimitBytes:
+              d.trafficPolicy === 'configured'
+                ? Math.round(d.trafficLimitGiB * 1073741824)
+                : null,
           });
           users.refresh();
           toast('节点额度与订阅权限已保存');
@@ -382,10 +404,15 @@ function UserManagement() {
 }
 function SourcesAdmin() {
   const [version, setVersion] = useState(0);
-  return <div className="stack">
-    <SubscriptionWorkspace admin onChanged={() => setVersion((value) => value + 1)} />
-    <ResourceAdmin key={version} kind="sources" embedded />
-  </div>;
+  return (
+    <div className="stack">
+      <SubscriptionWorkspace
+        admin
+        onChanged={() => setVersion((value) => value + 1)}
+      />
+      <ResourceAdmin key={version} kind="sources" embedded />
+    </div>
+  );
 }
 function ResourceAdmin({
   kind,
@@ -408,23 +435,52 @@ function ResourceAdmin({
   };
   return (
     <>
-      {!embedded && <PageTitle
-        title={labels[kind]}
+      {!embedded && (
+        <PageTitle
+          title={labels[kind]}
+          description={
+            kind === 'audit'
+              ? '只追加审计，不记录凭据、订阅 URL 或终端输出。'
+              : '平台共享资源与用户个人资源分别授权，界面只展示非敏感摘要。'
+          }
+          action={
+            <button onClick={data.refresh}>
+              <RefreshCw size={15} />
+              刷新
+            </button>
+          }
+        />
+      )}
+      <Card
+        title={embedded ? '节点源授权分配' : labels[kind]}
         description={
-          kind === 'audit'
-            ? '只追加审计，不记录凭据、订阅 URL 或终端输出。'
-            : '平台共享资源与用户个人资源分别授权，界面只展示非敏感摘要。'
+          embedded
+            ? '平台自有资源可以分配给用户；其他用户个人源只显示摘要，不允许越权编辑。'
+            : undefined
         }
         action={
-          <button onClick={data.refresh}>
-            <RefreshCw size={15} />
-            刷新
-          </button>
+          embedded && (
+            <button
+              aria-label="刷新授权摘要"
+              onClick={() => {
+                data.refresh();
+                grants.refresh();
+                users.refresh();
+              }}
+            >
+              <RefreshCw size={15} />
+              刷新
+            </button>
+          )
         }
-      />}
-      <Card title={embedded ? '节点源授权分配' : labels[kind]} description={embedded ? '平台自有资源可以分配给用户；其他用户个人源只显示摘要，不允许越权编辑。' : undefined}
-        action={embedded && <button aria-label="刷新授权摘要" onClick={() => { data.refresh(); grants.refresh(); users.refresh(); }}><RefreshCw size={15} />刷新</button>}>
-        {kind === 'sources' && <DataState error={grants.error} loading={false} onRetry={grants.refresh} />}
+      >
+        {kind === 'sources' && (
+          <DataState
+            error={grants.error}
+            loading={false}
+            onRetry={grants.refresh}
+          />
+        )}
         <DataState
           error={data.error}
           loading={!data.data}
@@ -438,7 +494,11 @@ function ResourceAdmin({
                   {r.data?.name || r.action || r.data?.type || '后台任务'}
                 </h3>
                 <Badge>
-                  {r.data?.demo ? '演示数据' : kind === 'sources' && r.data?.status === 'READY' ? '已解析 · 待实测' : r.data?.status || '记录'}
+                  {r.data?.demo
+                    ? '演示数据'
+                    : kind === 'sources' && r.data?.status === 'READY'
+                      ? '已解析 · 待实测'
+                      : r.data?.status || '记录'}
                 </Badge>
               </div>
               <div className="resource-meta">
@@ -467,10 +527,29 @@ function ResourceAdmin({
               </div>
               {['sources', 'servers'].includes(kind) && (
                 <>
-                  <p>已授权：{r.owner_id !== session.user.id ? '个人授权不可见' : grants.data?.filter((g) => g.resourceId === r.id && g.kind === (kind === 'sources' ? 'source' : 'server')).map((g) => users.data?.find((u) => u.id === g.userId)?.name || g.userId).join('、') || '暂无授权'}</p>
-                  {r.owner_id === session.user.id
-                    ? <button onClick={() => setGrant(r)}>分配 / 撤销授权</button>
-                    : <p className="muted">个人资源 · 仅拥有者可管理</p>}
+                  <p>
+                    已授权：
+                    {r.owner_id !== session.user.id
+                      ? '个人授权不可见'
+                      : grants.data
+                          ?.filter(
+                            (g) =>
+                              g.resourceId === r.id &&
+                              g.kind ===
+                                (kind === 'sources' ? 'source' : 'server'),
+                          )
+                          .map(
+                            (g) =>
+                              users.data?.find((u) => u.id === g.userId)
+                                ?.name || g.userId,
+                          )
+                          .join('、') || '暂无授权'}
+                  </p>
+                  {r.owner_id === session.user.id ? (
+                    <button onClick={() => setGrant(r)}>分配 / 撤销授权</button>
+                  ) : (
+                    <p className="muted">个人资源 · 仅拥有者可管理</p>
+                  )}
                 </>
               )}
               {kind === 'jobs' && r.data.status === 'FAILED' && (

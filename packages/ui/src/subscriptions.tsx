@@ -52,7 +52,11 @@ const fields: Field[] = [
   { name: 'country', label: '国家 / 地区', value: '未标注' },
   { name: 'provider', label: '供应商（可选）' },
   { name: 'group', label: '分组（可选）' },
-  { name: 'authorizationReference', label: '聚合与再分发授权依据', help: '第三方资源必须填写提供商条款或授权说明，不要填写连接凭据。' },
+  {
+    name: 'authorizationReference',
+    label: '聚合与再分发授权依据',
+    help: '第三方资源必须填写提供商条款或授权说明，不要填写连接凭据。',
+  },
   {
     name: 'redistributionAuthorized',
     label: '我已获得向授权用户再分发的许可',
@@ -70,7 +74,13 @@ const fields: Field[] = [
     required: true,
   },
 ];
-export function SubscriptionWorkspace({ admin = false, onChanged }: { admin?: boolean; onChanged?: () => void }) {
+export function SubscriptionWorkspace({
+  admin = false,
+  onChanged,
+}: {
+  admin?: boolean;
+  onChanged?: () => void;
+}) {
   const { request, toast, session } = useApp();
   const data = useData<Row[]>('/api/node_sources');
   const shared = useData<Row[]>('/api/shared-sources');
@@ -95,9 +105,14 @@ export function SubscriptionWorkspace({ admin = false, onChanged }: { admin?: bo
     setNodeVersion((value) => value + 1);
     onChanged?.();
   };
-  const pendingSources = (data.data || []).filter((row) =>
-    row.kind === 'REMOTE_SUBSCRIPTION' && ['PENDING', 'QUEUED', 'SYNCING'].includes(row.status)
-  ).map((row) => row.id).join(',');
+  const pendingSources = (data.data || [])
+    .filter(
+      (row) =>
+        row.kind === 'REMOTE_SUBSCRIPTION' &&
+        ['PENDING', 'QUEUED', 'SYNCING'].includes(row.status),
+    )
+    .map((row) => row.id)
+    .join(',');
   useEffect(() => {
     if (!pendingSources) return;
     const timer = window.setInterval(() => {
@@ -133,7 +148,13 @@ export function SubscriptionWorkspace({ admin = false, onChanged }: { admin?: bo
         action={
           writable && (
             <div className="toolbar source-create-actions">
-              <button className="primary" onClick={() => setImportMode('single')}><Plus size={16} />新增节点</button>
+              <button
+                className="primary"
+                onClick={() => setImportMode('single')}
+              >
+                <Plus size={16} />
+                新增节点
+              </button>
               <button onClick={() => setImportMode('batch')}>批量导入</button>
               <button onClick={() => setEdit(null)}>新增订阅源</button>
             </div>
@@ -141,7 +162,12 @@ export function SubscriptionWorkspace({ admin = false, onChanged }: { admin?: bo
         }
       />
       <div className="stack">
-        <NodeManager onChanged={reloadSources} importMode={importMode} onImportModeChange={setImportMode} refreshVersion={nodeVersion} />
+        <NodeManager
+          onChanged={reloadSources}
+          importMode={importMode}
+          onImportModeChange={setImportMode}
+          refreshVersion={nodeVersion}
+        />
         <Card
           title="统一订阅"
           description="汇集个人源与获授权共享源 · 独立令牌，可轮换与撤销"
@@ -179,7 +205,14 @@ export function SubscriptionWorkspace({ admin = false, onChanged }: { admin?: bo
             >
               撤销链接
             </button>
-            <button onClick={() => { runs.refresh(); setHistory(true); }}>同步历史</button>
+            <button
+              onClick={() => {
+                runs.refresh();
+                setHistory(true);
+              }}
+            >
+              同步历史
+            </button>
           </div>
           {url ? (
             <>
@@ -252,7 +285,13 @@ export function SubscriptionWorkspace({ admin = false, onChanged }: { admin?: bo
               onChange={(e) => setCountry(e.target.value)}
             >
               <option value="ALL">全部地区</option>
-              {[...new Set([...(data.data || []), ...(shared.data || [])].map((r) => r.country))].map((c) => (
+              {[
+                ...new Set(
+                  [...(data.data || []), ...(shared.data || [])].map(
+                    (r) => r.country,
+                  ),
+                ),
+              ].map((c) => (
                 <option key={c}>{c}</option>
               ))}
             </select>
@@ -274,19 +313,25 @@ export function SubscriptionWorkspace({ admin = false, onChanged }: { admin?: bo
                     <h3>{row.name}</h3>
                   </div>
                   <Badge tone={row.status === 'ERROR' ? 'danger' : 'neutral'}>
-                    {row.enabled === false ? '已停用' : row.demo
-                      ? '演示 · 未探测'
-                      : row.status === 'READY'
-                        ? '已解析 · 待实测'
-                        : row.status === 'ERROR'
-                          ? '同步失败'
-                          : '等待同步'}
+                    {row.enabled === false
+                      ? '已停用'
+                      : row.demo
+                        ? '演示 · 未探测'
+                        : row.status === 'READY'
+                          ? '已解析 · 待实测'
+                          : row.status === 'ERROR'
+                            ? '同步失败'
+                            : '等待同步'}
                   </Badge>
                 </div>
                 <div className="resource-meta">
                   <span>
-                    {row.kind === 'OWNED_NODE' ? '自有节点' : row.kind === 'THIRD_PARTY_NODE' ? '第三方授权节点' : '第三方订阅'} ·{' '}
-                    {row.country} · {row.nodeCount || 0} 个节点
+                    {row.kind === 'OWNED_NODE'
+                      ? '自有节点'
+                      : row.kind === 'THIRD_PARTY_NODE'
+                        ? '第三方授权节点'
+                        : '第三方订阅'}{' '}
+                    · {row.country} · {row.nodeCount || 0} 个节点
                   </span>
                   <span>
                     最近成功：
@@ -301,8 +346,15 @@ export function SubscriptionWorkspace({ admin = false, onChanged }: { admin?: bo
                       : '未提供'}{' '}
                     · 流量：数据不可用
                   </span>
-                  <span>{row.status === 'ERROR' ? '同步失败；上次成功配置已保留，请查看同步历史。' : '上游链接与节点凭据不会在此显示'}</span>
-                  <span>{row.shared ? '获授权 · 只读' : '本人拥有 · 可管理'} · {row.group || '未分组'}</span>
+                  <span>
+                    {row.status === 'ERROR'
+                      ? '同步失败；上次成功配置已保留，请查看同步历史。'
+                      : '上游链接与节点凭据不会在此显示'}
+                  </span>
+                  <span>
+                    {row.shared ? '获授权 · 只读' : '本人拥有 · 可管理'} ·{' '}
+                    {row.group || '未分组'}
+                  </span>
                 </div>
                 {writable && !row.shared && (
                   <div className="actions">
@@ -320,12 +372,21 @@ export function SubscriptionWorkspace({ admin = false, onChanged }: { admin?: bo
                       {row.enabled ? '停用' : '启用'}
                     </button>
                     <button onClick={() => setEdit(row)}>编辑</button>
-                    <button onClick={() => setCredentials(row)}>更新连接配置</button>
+                    <button onClick={() => setCredentials(row)}>
+                      更新连接配置
+                    </button>
                     <button
-                      disabled={row.demo || row.enabled === false || row.kind !== 'REMOTE_SUBSCRIPTION'}
+                      disabled={
+                        row.demo ||
+                        row.enabled === false ||
+                        row.kind !== 'REMOTE_SUBSCRIPTION'
+                      }
                       onClick={() =>
                         request(`/api/node_sources/${row.id}/refresh`, 'POST')
-                          .then(() => { reloadSources(); toast('刷新任务已入队；失败时保留最后成功版本'); })
+                          .then(() => {
+                            reloadSources();
+                            toast('刷新任务已入队；失败时保留最后成功版本');
+                          })
                           .catch(() => {})
                       }
                     >
@@ -343,7 +404,17 @@ export function SubscriptionWorkspace({ admin = false, onChanged }: { admin?: bo
             <Empty
               title="暂无匹配的订阅源"
               description="添加自有节点或有授权的第三方订阅，开始统一管理。"
-              action={writable && <button className="primary" aria-label="从空状态新增订阅源" onClick={() => setEdit(null)}>新增订阅源</button>}
+              action={
+                writable && (
+                  <button
+                    className="primary"
+                    aria-label="从空状态新增订阅源"
+                    onClick={() => setEdit(null)}
+                  >
+                    新增订阅源
+                  </button>
+                )
+              }
             />
           )}
         </Card>
@@ -352,13 +423,30 @@ export function SubscriptionWorkspace({ admin = false, onChanged }: { admin?: bo
         open={edit !== undefined}
         onClose={() => setEdit(undefined)}
         title={edit ? '编辑订阅源' : '新增订阅源'}
-        fields={(edit ? fields.filter((field) => !['kind', 'url', 'content'].includes(field.name)) : fields).map((f) => ({
+        fields={(edit
+          ? fields.filter(
+              (field) => !['kind', 'url', 'content'].includes(field.name),
+            )
+          : fields
+        ).map((f) => ({
           ...f,
           value: edit?.[f.name] === undefined ? f.value : String(edit[f.name]),
         }))}
-        notice={edit ? '这里只更新名称、分组、地区及授权策略；连接凭据保持不变。更换 URL 或节点配置请使用“更新连接配置”。' : '第三方资源必须已有使用、聚合及再分发授权。订阅 URL 只通过 HTTPS 发送并加密保存，后台刷新失败将保留最后成功版本。'}
+        notice={
+          edit
+            ? '这里只更新名称、分组、地区及授权策略；连接凭据保持不变。更换 URL 或节点配置请使用“更新连接配置”。'
+            : '第三方资源必须已有使用、聚合及再分发授权。订阅 URL 只通过 HTTPS 发送并加密保存，后台刷新失败将保留最后成功版本。'
+        }
         onSubmit={async (d) => {
-          const body = edit ? { ...d, group: d.group || '', provider: d.provider || '', authorizationReference: d.authorizationReference || '', expiresAt: d.expiresAt || null } : d;
+          const body = edit
+            ? {
+                ...d,
+                group: d.group || '',
+                provider: d.provider || '',
+                authorizationReference: d.authorizationReference || '',
+                expiresAt: d.expiresAt || null,
+              }
+            : d;
           await request(
             `/api/node_sources${edit ? '/' + edit.id : ''}`,
             edit ? 'PATCH' : 'POST',
@@ -372,14 +460,29 @@ export function SubscriptionWorkspace({ admin = false, onChanged }: { admin?: bo
         open={!!credentials}
         onClose={() => setCredentials(undefined)}
         title="更新订阅源连接"
-        fields={fields.filter((field) => field.name !== 'kind').map((field) => ({
-          ...field,
-          required: field.name === 'url' ? credentials?.kind === 'REMOTE_SUBSCRIPTION' : field.name === 'content' ? credentials?.kind !== 'REMOTE_SUBSCRIPTION' : field.required,
-          value: ['url', 'content'].includes(field.name) ? undefined : credentials?.[field.name] === undefined ? field.value : String(credentials[field.name]),
-        }))}
+        fields={fields
+          .filter((field) => field.name !== 'kind')
+          .map((field) => ({
+            ...field,
+            required:
+              field.name === 'url'
+                ? credentials?.kind === 'REMOTE_SUBSCRIPTION'
+                : field.name === 'content'
+                  ? credentials?.kind !== 'REMOTE_SUBSCRIPTION'
+                  : field.required,
+            value: ['url', 'content'].includes(field.name)
+              ? undefined
+              : credentials?.[field.name] === undefined
+                ? field.value
+                : String(credentials[field.name]),
+          }))}
         notice="仅在需要轮换连接凭据时使用。已保存的 URL、密码与 UUID 不会回显；更新失败不会覆盖最后成功的节点版本。"
         onSubmit={async (data) => {
-          await request('/api/node_sources/' + credentials!.id, 'PUT', { ...data, kind: credentials!.kind, enabled: credentials!.enabled });
+          await request('/api/node_sources/' + credentials!.id, 'PUT', {
+            ...data,
+            kind: credentials!.kind,
+            enabled: credentials!.enabled,
+          });
           reloadSources();
           toast('订阅源连接已更新');
         }}

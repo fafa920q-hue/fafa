@@ -11,31 +11,53 @@ import {
 export async function runSubscriptionJob(job: any) {
   const [source] =
     await sql`select s.* from node_sources s join users u on u.id=s.owner_id where s.id=${job.source_id} and s.revoked_at is null and not u.disabled and u.deleted_at is null`;
-  if (!source || !source.data.enabled || source.data.demo || source.data.kind !== 'REMOTE_SUBSCRIPTION' || process.env.DEMO_MODE === 'true')
+  if (
+    !source ||
+    !source.data.enabled ||
+    source.data.demo ||
+    source.data.kind !== 'REMOTE_SUBSCRIPTION' ||
+    process.env.DEMO_MODE === 'true'
+  )
     throw Error('源不可用或演示模式');
   const headers: Record<string, string> = {};
   if (source.data.etag) headers['If-None-Match'] = source.data.etag;
-  if (source.data.lastModified) headers['If-Modified-Since'] = source.data.lastModified;
+  if (source.data.lastModified)
+    headers['If-Modified-Since'] = source.data.lastModified;
   const result = await safeFetch(unseal(source.secret), headers);
   const nodes = result.status === 304 ? null : parseSubscription(result.body);
   if (nodes && !nodes.length) throw Error('订阅没有有效节点');
   return sql.begin(async (tx) => {
     // Network I/O is outside the lock; recheck the latest configuration before committing.
-    const [current] = await tx`select s.* from node_sources s join users u on u.id=s.owner_id where s.id=${source.id} and s.revoked_at is null and not u.disabled and u.deleted_at is null for update of s`;
-    if (!current || !current.data.enabled || current.data.demo || current.data.kind !== 'REMOTE_SUBSCRIPTION' || current.data.syncRevision !== source.data.syncRevision || JSON.stringify(current.secret) !== JSON.stringify(source.secret))
+    const [current] =
+      await tx`select s.* from node_sources s join users u on u.id=s.owner_id where s.id=${source.id} and s.revoked_at is null and not u.disabled and u.deleted_at is null for update of s`;
+    if (
+      !current ||
+      !current.data.enabled ||
+      current.data.demo ||
+      current.data.kind !== 'REMOTE_SUBSCRIPTION' ||
+      current.data.syncRevision !== source.data.syncRevision ||
+      JSON.stringify(current.secret) !== JSON.stringify(source.secret)
+    )
       return { superseded: true };
     if (!nodes) {
       await tx`update node_sources set data=data || ${tx.json({ lastSuccess: new Date().toISOString(), status: 'READY', error: null })},updated_at=now() where id=${source.id}`;
       return { unchanged: true };
     }
-    const previous = await tx`select * from nodes where source_id=${source.id} order by updated_at desc`;
-    const old = new Set(previous.filter((n) => !n.revoked_at).map((n) => identity(JSON.parse(unseal(n.secret)) as Node)));
+    const previous =
+      await tx`select * from nodes where source_id=${source.id} order by updated_at desc`;
+    const old = new Set(
+      previous
+        .filter((n) => !n.revoked_at)
+        .map((n) => identity(JSON.parse(unseal(n.secret)) as Node)),
+    );
     const overrides = new Map<string, any>();
     for (const row of previous) {
       const key = identity(JSON.parse(unseal(row.secret)) as Node);
       if (!overrides.has(key)) overrides.set(key, row.data);
     }
-    const accepted = nodes.filter((node) => !overrides.get(identity(node))?.userDeleted);
+    const accepted = nodes.filter(
+      (node) => !overrides.get(identity(node))?.userDeleted,
+    );
     const fresh = new Set(accepted.map(identity));
     const diff = {
       added: [...fresh].filter((key) => !old.has(key)).length,
@@ -56,15 +78,22 @@ export async function tick() {
     const sources =
       await tx`select s.* from node_sources s join users u on u.id=s.owner_id where s.revoked_at is null and not u.disabled and u.deleted_at is null and s.data->>'kind'='REMOTE_SUBSCRIPTION' and s.data->>'enabled'='true' and coalesce((s.data->>'lastScheduled')::timestamptz,to_timestamp(0))<now()-interval '1 hour' and not exists(select 1 from background_jobs j where j.source_id=s.id and j.data->>'status' in ('QUEUED','RUNNING'))`;
     for (const s of sources) {
-      const [current] = await tx`select id from node_sources where id=${s.id} and revoked_at is null and data->>'enabled'='true' for update`;
-      if (!current || (await tx`select id from background_jobs where source_id=${s.id} and data->>'status' in ('QUEUED','RUNNING')`).length) continue;
+      const [current] =
+        await tx`select id from node_sources where id=${s.id} and revoked_at is null and data->>'enabled'='true' for update`;
+      if (
+        !current ||
+        (
+          await tx`select id from background_jobs where source_id=${s.id} and data->>'status' in ('QUEUED','RUNNING')`
+        ).length
+      )
+        continue;
       await tx`insert into background_jobs(owner_id,source_id,data) values(${s.owner_id},${s.id},${tx.json({ type: 'SUBSCRIPTION_SYNC', status: 'QUEUED', attempt: 0, nextRun: new Date().toISOString() })})`;
       await tx`update node_sources set data=data || ${tx.json({ lastScheduled: new Date().toISOString() })} where id=${s.id}`;
     }
   });
   const job = await sql.begin(async (tx) => {
     const [r] =
-      await tx`select * from background_jobs where data->>'status'='QUEUED' and (data->>'nextRun')::timestamptz<=now() order by created_at for update skip locked limit 1`;
+      await tx`select j.* from background_jobs j join node_sources s on s.id=j.source_id join users u on u.id=s.owner_id where j.revoked_at is null and j.data->>'type'='SUBSCRIPTION_SYNC' and j.data->>'status'='QUEUED' and (j.data->>'nextRun')::timestamptz<=now() and s.revoked_at is null and s.data->>'enabled'='true' and s.data->>'kind'='REMOTE_SUBSCRIPTION' and not u.disabled and u.deleted_at is null order by j.created_at for update of j skip locked limit 1`;
     if (r)
       await tx`update background_jobs set data=data || '{"status":"RUNNING"}',updated_at=now() where id=${r.id}`;
     return r;
@@ -72,14 +101,17 @@ export async function tick() {
   if (job) {
     try {
       const diff = await runSubscriptionJob(job);
-      const changed = await sql`update background_jobs set data=data || '{"status":"COMPLETED"}',updated_at=now() where id=${job.id} and data->>'status'='RUNNING' returning id`;
-      if (changed.length) await sql`insert into subscription_sync_runs(owner_id,data) values(${job.owner_id},${sql.json({ sourceId: job.source_id, status: 'COMPLETED', diff })})`;
+      const changed =
+        await sql`update background_jobs set data=data || '{"status":"COMPLETED"}',updated_at=now() where id=${job.id} and data->>'status'='RUNNING' returning id`;
+      if (changed.length)
+        await sql`insert into subscription_sync_runs(owner_id,data) values(${job.owner_id},${sql.json({ sourceId: job.source_id, status: 'COMPLETED', diff })})`;
     } catch {
       await sql.begin(async (tx) => {
         await tx`select id from node_sources where id=${job.source_id} for update`;
         const attempt = (job.data.attempt || 0) + 1;
         const status = attempt >= 3 ? 'FAILED' : 'QUEUED';
-        const changed = await tx`update background_jobs set data=data || ${tx.json({ status, attempt, error: '订阅刷新失败，请检查授权、格式与网络', nextRun: new Date(Date.now() + 2 ** attempt * 60000).toISOString() })},updated_at=now() where id=${job.id} and data->>'status'='RUNNING' returning id`;
+        const changed =
+          await tx`update background_jobs set data=data || ${tx.json({ status, attempt, error: '订阅刷新失败，请检查授权、格式与网络', nextRun: new Date(Date.now() + 2 ** attempt * 60000).toISOString() })},updated_at=now() where id=${job.id} and data->>'status'='RUNNING' returning id`;
         if (!changed.length) return;
         await tx`update node_sources set data=data || '{"status":"ERROR","error":"刷新失败，保留最后成功版本"}' where id=${job.source_id} and revoked_at is null`;
         await tx`insert into subscription_sync_runs(owner_id,data) values(${job.owner_id},${tx.json({ sourceId: job.source_id, status: 'FAILED', attempt })})`;

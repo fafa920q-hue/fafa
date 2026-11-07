@@ -78,7 +78,9 @@ test('Owner 节点管理与权限隔离', async ({ page, browser }, testInfo) =>
       exact: true,
     });
     await expect(sourceDialog).toBeVisible();
-    await sourceDialog.getByRole('button', { name: '取消', exact: true }).click();
+    await sourceDialog
+      .getByRole('button', { name: '取消', exact: true })
+      .click();
     await page.getByLabel('搜索订阅源').fill('');
 
     await page.getByRole('button', { name: '批量导入', exact: true }).click();
@@ -96,9 +98,7 @@ test('Owner 节点管理与权限隔离', async ({ page, browser }, testInfo) =>
       .getByLabel('第三方聚合、再分发授权依据')
       .fill('仅CI合成节点，无第三方真实服务或凭据');
     await importDialog.getByLabel('我有权使用并聚合这些节点').check();
-    await importDialog
-      .getByLabel('提供商已允许向获授权用户再分发')
-      .check();
+    await importDialog.getByLabel('提供商已允许向获授权用户再分发').check();
     const previewResponse = page.waitForResponse(
       (response) =>
         response.url().endsWith('/api/node-import/preview') &&
@@ -154,9 +154,13 @@ test('Owner 节点管理与权限隔离', async ({ page, browser }, testInfo) =>
     for (const sensitive of [password, uuid, ss, vmess])
       expect(JSON.stringify(metadata.data)).not.toContain(sensitive);
 
-    await card(ssName).getByRole('button', { name: '停用', exact: true }).click();
+    await card(ssName)
+      .getByRole('button', { name: '停用', exact: true })
+      .click();
     await expect(card(ssName)).toContainText('已禁用');
-    await card(ssName).getByRole('button', { name: '启用', exact: true }).click();
+    await card(ssName)
+      .getByRole('button', { name: '启用', exact: true })
+      .click();
     await expect(card(ssName)).toContainText('待真实验证');
     await card(ssName)
       .getByRole('button', { name: '编辑标签 / 分组', exact: true })
@@ -222,9 +226,11 @@ test('Owner 节点管理与权限隔离', async ({ page, browser }, testInfo) =>
       ]),
     );
     expect(
-      (await api(member, '/api/nodes/' + importedNodes[0].id, 'PATCH', {
-        enabled: false,
-      })).status,
+      (
+        await api(member, '/api/nodes/' + importedNodes[0].id, 'PATCH', {
+          enabled: false,
+        })
+      ).status,
     ).toBe(404);
     expect(
       (await api(member, '/api/node_sources/' + sourceId, 'DELETE')).status,
@@ -286,6 +292,151 @@ test('Owner 节点管理与权限隔离', async ({ page, browser }, testInfo) =>
       }
     } finally {
       await memberContext.close();
+    }
+  }
+});
+
+test('Owner 订阅源真实 CRUD', async ({ page }, testInfo) => {
+  const name = '源管理fixture-' + testInfo.project.name + '-' + Date.now();
+  const editedName = name + '-编辑';
+  const password = 'fictional-source-fixture-' + testInfo.project.name;
+  const content =
+    'ss://' +
+    Buffer.from('aes-256-gcm:' + password).toString('base64') +
+    '@source.node.example.com:8388#' +
+    encodeURIComponent('日本 IEPL 安全来源fixture');
+  let sourceId: string | undefined;
+  let removed = false;
+  try {
+    await page.goto(adminOrigin);
+    await page.getByRole('button', { name: '管理员演示', exact: true }).click();
+    await expect(
+      page.getByRole('heading', { name: '管理概览', exact: true }),
+    ).toBeVisible();
+    await page.goto(adminOrigin + '/sources');
+    await page.getByRole('button', { name: '新增订阅源', exact: true }).click();
+    const create = page.getByRole('dialog', { name: '新增订阅源', exact: true });
+    await create.getByLabel('源名称').fill(name);
+    await create.getByLabel('源类型').selectOption('OWNED_NODE');
+    await create.getByLabel('自有节点配置').fill(content);
+    await create.getByLabel('国家 / 地区').fill('日本');
+    await create.getByLabel('分组（可选）').fill('初始分组');
+    await create.getByLabel('我有权使用并聚合该资源').check();
+    const createdResponse = page.waitForResponse(
+      (response) =>
+        response.url().endsWith('/api/node_sources') &&
+        response.request().method() === 'POST',
+    );
+    await create.getByRole('button', { name: '保存', exact: true }).click();
+    const createdReply = await createdResponse;
+    expect(createdReply.status()).toBe(200);
+    const created = await createdReply.json();
+    sourceId = created.id;
+    expect(created.nodeCount).toBe(1);
+    expect(created.status).toBe('READY');
+    for (const sensitive of [password, content])
+      expect(JSON.stringify(created)).not.toContain(sensitive);
+
+    const source = (value: string) =>
+      page
+        .getByRole('region', { name: '我的订阅源', exact: true })
+        .locator('.resource-card')
+        .filter({
+          has: page.getByRole('heading', { name: value, exact: true }),
+        });
+    await expect(source(name)).toContainText('初始分组');
+    const before = await api(page, '/api/nodes');
+    const node = before.data.find(
+      (item: { sourceId: string }) => item.sourceId === sourceId,
+    );
+    expect(node).toMatchObject({ protocol: 'ss', country: '日本' });
+    await source(name).getByRole('button', { name: '编辑', exact: true }).click();
+    const edit = page.getByRole('dialog', { name: '编辑订阅源', exact: true });
+    await expect(edit.getByLabel('自有节点配置')).toHaveCount(0);
+    await expect(edit.getByLabel('第三方订阅 URL')).toHaveCount(0);
+    await expect(edit.getByLabel('我有权使用并聚合该资源')).toBeChecked();
+    await edit.getByLabel('源名称').fill(editedName);
+    await edit.getByLabel('分组（可选）').fill('元数据编辑分组');
+    const patchedResponse = page.waitForResponse(
+      (response) =>
+        response.url().endsWith('/api/node_sources/' + sourceId) &&
+        response.request().method() === 'PATCH',
+    );
+    await edit.getByRole('button', { name: '保存', exact: true }).click();
+    const patchedReply = await patchedResponse;
+    expect(patchedReply.status()).toBe(200);
+    const patch = patchedReply.request().postDataJSON();
+    expect(patch).not.toHaveProperty('content');
+    expect(patch).not.toHaveProperty('url');
+    const patched = await patchedReply.json();
+    for (const sensitive of [password, content])
+      expect(JSON.stringify(patched)).not.toContain(sensitive);
+    await expect(source(editedName)).toContainText('元数据编辑分组');
+    const afterEdit = await api(page, '/api/nodes');
+    expect(afterEdit.data).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: node.id, sourceId, protocol: 'ss' }),
+      ]),
+    );
+
+    for (const enabled of [false, true]) {
+      const toggledResponse = page.waitForResponse(
+        (response) =>
+          response
+            .url()
+            .endsWith('/api/node_sources/' + sourceId + '/enabled') &&
+          response.request().method() === 'PATCH',
+      );
+      await source(editedName)
+        .getByRole('button', { name: enabled ? '启用' : '停用', exact: true })
+        .click();
+      expect((await toggledResponse).status()).toBe(200);
+      await expect(source(editedName)).toContainText(
+        enabled ? '已解析 · 待实测' : '已停用',
+      );
+    }
+    const detail = await api(page, '/api/node_sources/' + sourceId);
+    expect(detail.status).toBe(200);
+    expect(detail.data).toMatchObject({
+      name: editedName,
+      group: '元数据编辑分组',
+      enabled: true,
+      nodeCount: 1,
+    });
+    for (const sensitive of [password, content])
+      expect(JSON.stringify(detail.data)).not.toContain(sensitive);
+    await expect(page.locator('body')).not.toContainText(password);
+
+    await source(editedName)
+      .getByRole('button', { name: '删除', exact: true })
+      .click();
+    const deletedResponse = page.waitForResponse(
+      (response) =>
+        response.url().endsWith('/api/node_sources/' + sourceId) &&
+        response.request().method() === 'DELETE',
+    );
+    await page
+      .getByRole('dialog', { name: '删除订阅源？', exact: true })
+      .getByRole('button', { name: '确认操作', exact: true })
+      .click();
+    expect((await deletedResponse).status()).toBe(200);
+    removed = true;
+    await expect(source(editedName)).toHaveCount(0);
+    expect((await api(page, '/api/node_sources/' + sourceId)).status).toBe(404);
+    const afterDelete = await api(page, '/api/nodes');
+    expect(
+      afterDelete.data.some(
+        (item: { sourceId: string }) => item.sourceId === sourceId,
+      ),
+    ).toBe(false);
+  } finally {
+    if (sourceId && !removed) {
+      const cleanup = await api(
+        page,
+        '/api/node_sources/' + sourceId,
+        'DELETE',
+      );
+      expect(cleanup.status).toBe(200);
     }
   }
 });
