@@ -13,13 +13,13 @@ HEALTHCHECK --interval=20s --timeout=3s CMD node -e "fetch('http://127.0.0.1:400
 CMD ["node","--import","tsx","apps/api/src/index.ts"]
 FROM caddy:2.10.2-alpine AS web
 COPY --from=build /app/apps/web/dist /srv
-COPY --from=build /app/LICENSE /app/docs/THIRD_PARTY_NOTICES.txt /srv/
+COPY --from=build /app/LICENSE /app/docs/THIRD_PARTY_NOTICES.txt /app/docs/WLOC_THIRD_PARTY_NOTICES.txt /srv/
 COPY infra/docker/Caddyfile.static /etc/caddy/Caddyfile
 USER 1000:1000
 EXPOSE 8080
 FROM caddy:2.10.2-alpine AS admin
 COPY --from=build /app/apps/admin/dist /srv
-COPY --from=build /app/LICENSE /app/docs/THIRD_PARTY_NOTICES.txt /srv/
+COPY --from=build /app/LICENSE /app/docs/THIRD_PARTY_NOTICES.txt /app/docs/WLOC_THIRD_PARTY_NOTICES.txt /srv/
 COPY infra/docker/Caddyfile.static /etc/caddy/Caddyfile
 USER 1000:1000
 EXPOSE 8080

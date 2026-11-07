@@ -19,7 +19,7 @@ worker/src/page.js、worker/src/index.js 及其地图链接解析、坐标转换
 原版模块地址指向 main 且内部脚本引用 main；审计 SHA 不意味着设备脚本已固定版本。
 
 地图客户端 Leaflet 1.9.4 (BSD-2-Clause)、坐标库 gcoord 1.0.7 (MIT) 本地构建；
-完整声明位于 docs/THIRD_PARTY_NOTICES.txt，静态镜像继续分发该文件。
+完整声明位于 docs/WLOC_THIRD_PARTY_NOTICES.txt，静态镜像继续分发该文件。
 底图 OpenStreetMap 标注不能移除；不预取、不离线批量下载、不禁用浏览器瓦片缓存。
 瓦片单独设置 referrerPolicy=origin，仅发送源站，不发送用户路径、查询或凭据。
 Photon 软件 Apache-2.0，数据需保留 OSM 署名。公共搜索服务仅合理有限使用，无 SLA；
