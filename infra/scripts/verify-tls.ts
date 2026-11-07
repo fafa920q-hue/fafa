@@ -237,7 +237,7 @@ try {
     await googleLink.waitFor();
     assert.equal(
       await googleLink.getAttribute('href'),
-      'https://fafa888.uk/auth/google',
+      'https://fafa888.uk/auth/google?app=admin',
     );
     await page.getByRole('button', { name: '管理员演示', exact: true }).click();
     await page
