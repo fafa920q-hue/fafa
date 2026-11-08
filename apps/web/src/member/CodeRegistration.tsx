@@ -146,14 +146,17 @@ export function CodeRegistration() {
         <span>用户名</span>
         <input
           name="username"
+          aria-describedby="member-username-help"
           autoComplete="username"
           required
           minLength={3}
           maxLength={32}
           pattern="[a-zA-Z0-9_]{3,32}"
         />
-        <small>用户名为3至32位英文字母、数字或下划线，大小写统一处理。</small>
       </label>
+      <small id="member-username-help" className="member-field-hint">
+        用户名为3至32位英文字母、数字或下划线，大小写统一处理。
+      </small>
       <label>
         <span>邮箱</span>
         <input
