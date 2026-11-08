@@ -75,7 +75,8 @@ function mailToken(email: string, purpose: 'VERIFY' | 'RESET') {
     .filter(
       (mail) =>
         mail.to[0] === email &&
-        mail.subject.includes(purpose === 'VERIFY' ? '激活' : '重置') && mail.text.split('\n').some((line) => line.startsWith('http')),
+        mail.subject.includes(purpose === 'VERIFY' ? '激活' : '重置') &&
+        mail.text.split('\n').some((line) => line.startsWith('http')),
     )
     .at(-1)!;
   const link = message.text
@@ -662,116 +663,438 @@ describe('普通账户真实数据库和 API 安全边界', () => {
   });
 });
 
-describe('验证码、真实API邮件状态和限时授权集成',()=>{
- function provider(){
-  vi.stubGlobal('fetch',vi.fn(async(url:string,options:any)=>{expect(url).toBe('https://api.resend.com/emails');outbox.push(JSON.parse(options.body));return new Response('{}',{status:200});}));
- }
- let client=50;
- async function post(url:string,payload:Record<string,unknown>){
-  const config=await app.inject('/auth/member/config'),cookie=config.cookies.find(c=>c.name.endsWith('fafa_member_csrf'))!;
-  return app.inject({method:'POST',url,payload,remoteAddress:'192.0.2.'+client,headers:{origin,cookie:cookie.name+'='+cookie.value,'x-csrf-token':config.json().csrf}});
- }
- function codeFor(email:string){const text=outbox.filter(m=>m.to[0]===email&&m.subject.includes('注册验证码')).at(-1)!.text;return text.match(/验证码：(\d{6})/)![1];}
- async function start(){
-  client++;provider();
-  await privateRequest(ownerSession,'/api/admin/member-registration','PATCH',{enabled:true,seatLimit:1000});
-  const username='otp_'+randomUUID().replaceAll('-','').slice(0,12),email=username+'@example.invalid';
-  const response=await post('/auth/member/registration/start',{username,email,password,confirmPassword:password});
-  expect(response.statusCode).toBe(202);
-  return {username,email,challenge:response.json().challenge,code:codeFor(email)};
- }
- async function finish(account:any){
-  const response=await post('/auth/member/registration/complete',{challenge:account.challenge,code:account.code,password});
-  expect(response.statusCode).toBe(200);
-  return {id:response.json().user.id,raw:response.cookies.find(c=>c.name==='fafa_session')!.value,csrf:response.json().csrf};
- }
- it('真实验证码请求、哈希、未激活禁止登录、一次激活并建立Member会话及成功通知',async()=>{
-  const account=await start();
-  const [pending]=await sql.unsafe('SELECT * FROM member_registrations WHERE challenge_hash=$1',[hash(account.challenge)]);
-  expect(pending.code_hash).toMatch(/^[0-9a-f]{64}$/);
-  expect(pending.code_hash).not.toBe(hash(account.code));
-  expect(JSON.stringify(pending)).not.toContain(account.challenge);
-  expect((await post('/auth/member/login',{identifier:account.username,password})).statusCode).toBe(401);
-  const session=await finish(account);
-  expect((await privateRequest(session,'/api/me')).json().user.role).toBe('Member');
-  expect((await privateRequest(session,'/api/admin/member-mail')).statusCode).toBe(403);
-  expect((await post('/auth/member/registration/complete',{challenge:account.challenge,code:account.code,password})).statusCode).toBe(400);
-  await settleAccountMail();
-  expect(outbox.some(m=>m.to[0]===account.email&&m.subject.includes('验证成功'))).toBe(true);
-  const events=await sql.unsafe("SELECT purpose,status FROM member_mail_events WHERE owner_id=$1",[session.id]);
-  expect(events.some(x=>x.purpose==='VERIFIED'&&x.status==='ACCEPTED')).toBe(true);
- });
- it('错误次数持久化且五次后锁定；过期验证码明确拒绝',async()=>{
-  const account=await start(),bad=account.code==='000000'?'111111':'000000';
-  for(let i=0;i<5;i++)expect((await post('/auth/member/registration/complete',{challenge:account.challenge,code:bad,password})).json().code).toBe('CODE_INVALID');
-  expect((await post('/auth/member/registration/complete',{challenge:account.challenge,code:account.code,password})).json().code).toBe('CODE_LOCKED');
-  const [row]=await sql.unsafe('SELECT code_attempts FROM member_registrations WHERE challenge_hash=$1',[hash(account.challenge)]);expect(row.code_attempts).toBe(5);
-  const expired=await start();
-  await sql.unsafe("UPDATE member_registrations SET code_expires_at=now()-interval '1 second' WHERE challenge_hash=$1",[hash(expired.challenge)]);
-  expect((await post('/auth/member/registration/complete',{challenge:expired.challenge,code:expired.code,password})).json().code).toBe('CODE_EXPIRED');
- });
- it('重发使旧验证码失效，刷新恢复需原密码，邮件失败有持久化真实失败状态',async()=>{
-  const account=await start();
-  expect((await post('/auth/member/registration/recover',{email:account.email,password:'incorrect fictional password'})).statusCode).toBe(400);
-  const resent=await post('/auth/member/registration/resend',{challenge:account.challenge,password});expect(resent.statusCode).toBe(200);
-  const next=codeFor(account.email);
-  expect(next).not.toBe(account.code);
-  expect((await post('/auth/member/registration/complete',{challenge:account.challenge,code:account.code,password})).statusCode).toBe(400);
-  await finish({...account,code:next});
-  client++;
-  vi.stubGlobal('fetch',vi.fn(async()=>new Response('provider body must not escape',{status:503})));
-  const failed=await post('/auth/member/registration/start',{username:'failure_'+client,email:'failure_'+client+'@example.invalid',password,confirmPassword:password});
-  expect(failed.statusCode).toBe(503);expect(failed.json().code).toBe('MAIL_SEND_FAILED');expect(failed.body).not.toContain('provider body');
-  const [event]=await sql.unsafe("SELECT status,failure_code FROM member_mail_events ORDER BY created_at DESC LIMIT 1");expect(event.status).toBe('FAILED');expect(event.failure_code).toBe('PROVIDER_REJECTED');
- });
- it('重复用户名明确提示；邮箱存在性仅在验证邮箱及原密码后披露',async()=>{
-  const original=await start();await finish(original);
-  const duplicateName=await post('/auth/member/registration/start',{username:original.username,email:'other_'+client+'@example.invalid',password,confirmPassword:password});
-  expect(duplicateName.statusCode).toBe(409);expect(duplicateName.json().code).toBe('USERNAME_UNAVAILABLE');
-  const duplicateMail=await post('/auth/member/registration/start',{username:'alt_'+randomUUID().replaceAll('-','').slice(0,10),email:original.email.toUpperCase(),password,confirmPassword:password});
-  expect(duplicateMail.statusCode).toBe(202);
-  const check=await post('/auth/member/registration/complete',{challenge:duplicateMail.json().challenge,code:codeFor(original.email),password});
-  expect(check.statusCode).toBe(400);expect(check.json().code).toBe('EMAIL_IN_USE');
- });
- it('登录后修改密码撤销旧会话且通知，不允许改Owner密码',async()=>{
-  const account=await start(),session=await finish(account);
-  expect((await privateRequest(session,'/api/member/password','POST',{currentPassword:'wrong-password',newPassword:changedPassword})).statusCode).toBe(403);
-  const changed=await privateRequest(session,'/api/member/password','POST',{currentPassword:password,newPassword:changedPassword});expect(changed.statusCode).toBe(200);
-  expect((await privateRequest(session,'/api/me')).statusCode).toBe(401);
-  expect((await post('/auth/member/login',{identifier:account.email,password})).statusCode).toBe(401);
-  expect((await post('/auth/member/login',{identifier:account.email,password:changedPassword})).statusCode).toBe(200);
-  expect((await privateRequest(ownerSession,'/api/member/password','POST',{currentPassword:password,newPassword:changedPassword})).statusCode).toBe(403);
-  await settleAccountMail();expect(outbox.some(m=>m.to[0]===account.email&&m.subject.includes('密码修改'))).toBe(true);
- });
- it('前三天授权接入激活、到期真正阻止API和旧订阅，管理员单独开放且记录审计',async()=>{
-  provider();client++;
-  const now=Date.now(),policy={enabled:true,windowStart:new Date(now-3600000).toISOString(),windowEnd:new Date(now+2*86400000).toISOString(),nodeSourceId:null,nodeLimit:5,trialValidDays:3};
-  expect((await privateRequest(ownerSession,'/api/admin/auto-grant-policy','PATCH',policy)).statusCode).toBe(200);
-  const account=await start(),session=await finish(account);
-  const profile=(await privateRequest(session,'/api/member/profile')).json();expect(profile.capabilities).toEqual({node:true,server:true,codex:true});
-  const records=await sql.unsafe('SELECT kind,expires_at FROM auto_grant_records WHERE user_id=$1',[session.id]);expect(records.map(x=>x.kind).sort()).toEqual(['codex','node','server']);
-  const firstExpiry=records[0].expires_at;
-  await privateRequest(ownerSession,'/api/admin/auto-grant/backfill','POST',{});
-  const [same]=await sql.unsafe('SELECT expires_at FROM auto_grant_records WHERE user_id=$1 LIMIT 1',[session.id]);expect(same.expires_at).toEqual(firstExpiry);
-  const rotation=await privateRequest(session,'/api/subscription/rotate','POST',{});expect(rotation.statusCode).toBe(200);
-  const link=rotation.json().url;expect(typeof link).toBe('string');
-  await sql.unsafe("UPDATE users SET node_access_until=now()-interval '1 second',server_connect_until=now()-interval '1 second',codex_tasks_until=now()-interval '1 second' WHERE id=$1",[session.id]);
-  for(const path of ['/api/subscription/profile','/api/server_connections','/api/ai/tasks']) expect((await privateRequest(session,path)).statusCode).toBe(403);
-  expect((await app.inject(new URL(link,origin).pathname)).statusCode).toBe(403);
-  expect((await privateRequest(ownerSession,'/api/admin/users/'+session.id,'PATCH',{serverConnectEnabled:true})).statusCode).toBe(200);
-  const current=(await privateRequest(session,'/api/member/profile')).json();expect(current.capabilities).toEqual({node:false,server:true,codex:false});
-  const audit=await sql.unsafe("SELECT target_id FROM audit_events WHERE action='member.capabilities_updated'");expect(audit.some(x=>x.target_id.includes(session.id))).toBe(true);
-  await privateRequest(ownerSession,'/api/admin/auto-grant-policy','PATCH',{...policy,enabled:false});
- });
- it('活动结束新用户不自动授权，Owner不可通过策略改绑，管理邮件响应无凭据',async()=>{
-  client++;provider();
-  const now=Date.now();
-  await privateRequest(ownerSession,'/api/admin/auto-grant-policy','PATCH',{enabled:true,windowStart:new Date(now-3*86400000).toISOString(),windowEnd:new Date(now-1000).toISOString(),nodeSourceId:null,nodeLimit:null,trialValidDays:3});
-  const account=await start(),session=await finish(account);
-  expect((await privateRequest(session,'/api/member/profile')).json().capabilities).toEqual({node:false,server:false,codex:false});
-  expect((await privateRequest(session,'/api/admin/auto-grant-policy','PATCH',{})).statusCode).toBe(403);
-  const list=await privateRequest(ownerSession,'/api/admin/member-mail');expect(list.statusCode).toBe(200);
-  expect(list.body).not.toContain(process.env.MAIL_API_KEY!);expect(list.body).not.toContain(account.code);expect(list.body).not.toContain(account.email);
-  const [binding]=await sql.unsafe('SELECT owner_id,google_sub,closed FROM owner_initialization WHERE singleton');expect(binding.owner_id).toBe(owner.id);expect(binding.closed).toBe(true);
- });
+describe('验证码、真实API邮件状态和限时授权集成', () => {
+  function provider() {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, options: any) => {
+        expect(url).toBe('https://api.resend.com/emails');
+        outbox.push(JSON.parse(options.body));
+        return new Response('{}', { status: 200 });
+      }),
+    );
+  }
+  let client = 50;
+  async function post(url: string, payload: Record<string, unknown>) {
+    const config = await app.inject('/auth/member/config'),
+      cookie = config.cookies.find((c) => c.name.endsWith('fafa_member_csrf'))!;
+    return app.inject({
+      method: 'POST',
+      url,
+      payload,
+      remoteAddress: '192.0.2.' + client,
+      headers: {
+        origin,
+        cookie: cookie.name + '=' + cookie.value,
+        'x-csrf-token': config.json().csrf,
+      },
+    });
+  }
+  function codeFor(email: string) {
+    const text = outbox
+      .filter((m) => m.to[0] === email && m.subject.includes('注册验证码'))
+      .at(-1)!.text;
+    return text.match(/验证码：(\d{6})/)![1];
+  }
+  async function start() {
+    client++;
+    provider();
+    await privateRequest(
+      ownerSession,
+      '/api/admin/member-registration',
+      'PATCH',
+      { enabled: true, seatLimit: 1000 },
+    );
+    const username = 'otp_' + randomUUID().replaceAll('-', '').slice(0, 12),
+      email = username + '@example.invalid';
+    const response = await post('/auth/member/registration/start', {
+      username,
+      email,
+      password,
+      confirmPassword: password,
+    });
+    expect(response.statusCode).toBe(202);
+    return {
+      username,
+      email,
+      challenge: response.json().challenge,
+      code: codeFor(email),
+    };
+  }
+  async function finish(account: any) {
+    const response = await post('/auth/member/registration/complete', {
+      challenge: account.challenge,
+      code: account.code,
+      password,
+    });
+    expect(response.statusCode).toBe(200);
+    return {
+      id: response.json().user.id,
+      raw: response.cookies.find((c) => c.name === 'fafa_session')!.value,
+      csrf: response.json().csrf,
+    };
+  }
+  it('真实验证码请求、哈希、未激活禁止登录、一次激活并建立Member会话及成功通知', async () => {
+    const account = await start();
+    const [pending] = await sql.unsafe(
+      'SELECT * FROM member_registrations WHERE challenge_hash=$1',
+      [hash(account.challenge)],
+    );
+    expect(pending.code_hash).toMatch(/^[0-9a-f]{64}$/);
+    expect(pending.code_hash).not.toBe(hash(account.code));
+    expect(JSON.stringify(pending)).not.toContain(account.challenge);
+    expect(
+      (
+        await post('/auth/member/login', {
+          identifier: account.username,
+          password,
+        })
+      ).statusCode,
+    ).toBe(401);
+    const session = await finish(account);
+    expect((await privateRequest(session, '/api/me')).json().user.role).toBe(
+      'Member',
+    );
+    expect(
+      (await privateRequest(session, '/api/admin/member-mail')).statusCode,
+    ).toBe(403);
+    expect(
+      (
+        await post('/auth/member/registration/complete', {
+          challenge: account.challenge,
+          code: account.code,
+          password,
+        })
+      ).statusCode,
+    ).toBe(400);
+    await settleAccountMail();
+    expect(
+      outbox.some(
+        (m) => m.to[0] === account.email && m.subject.includes('验证成功'),
+      ),
+    ).toBe(true);
+    const events = await sql.unsafe(
+      'SELECT purpose,status FROM member_mail_events WHERE owner_id=$1',
+      [session.id],
+    );
+    expect(
+      events.some((x) => x.purpose === 'VERIFIED' && x.status === 'ACCEPTED'),
+    ).toBe(true);
+  });
+  it('错误次数持久化且五次后锁定；过期验证码明确拒绝', async () => {
+    const account = await start(),
+      bad = account.code === '000000' ? '111111' : '000000';
+    for (let i = 0; i < 5; i++)
+      expect(
+        (
+          await post('/auth/member/registration/complete', {
+            challenge: account.challenge,
+            code: bad,
+            password,
+          })
+        ).json().code,
+      ).toBe('CODE_INVALID');
+    expect(
+      (
+        await post('/auth/member/registration/complete', {
+          challenge: account.challenge,
+          code: account.code,
+          password,
+        })
+      ).json().code,
+    ).toBe('CODE_LOCKED');
+    const [row] = await sql.unsafe(
+      'SELECT code_attempts FROM member_registrations WHERE challenge_hash=$1',
+      [hash(account.challenge)],
+    );
+    expect(row.code_attempts).toBe(5);
+    const expired = await start();
+    await sql.unsafe(
+      "UPDATE member_registrations SET code_expires_at=now()-interval '1 second' WHERE challenge_hash=$1",
+      [hash(expired.challenge)],
+    );
+    expect(
+      (
+        await post('/auth/member/registration/complete', {
+          challenge: expired.challenge,
+          code: expired.code,
+          password,
+        })
+      ).json().code,
+    ).toBe('CODE_EXPIRED');
+  });
+  it('重发使旧验证码失效，刷新恢复需原密码，邮件失败有持久化真实失败状态', async () => {
+    const account = await start();
+    expect(
+      (
+        await post('/auth/member/registration/recover', {
+          email: account.email,
+          password: 'incorrect fictional password',
+        })
+      ).statusCode,
+    ).toBe(400);
+    const resent = await post('/auth/member/registration/resend', {
+      challenge: account.challenge,
+      password,
+    });
+    expect(resent.statusCode).toBe(200);
+    const next = codeFor(account.email);
+    expect(next).not.toBe(account.code);
+    expect(
+      (
+        await post('/auth/member/registration/complete', {
+          challenge: account.challenge,
+          code: account.code,
+          password,
+        })
+      ).statusCode,
+    ).toBe(400);
+    await finish({ ...account, code: next });
+    client++;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          new Response('provider body must not escape', { status: 503 }),
+      ),
+    );
+    const failed = await post('/auth/member/registration/start', {
+      username: 'failure_' + client,
+      email: 'failure_' + client + '@example.invalid',
+      password,
+      confirmPassword: password,
+    });
+    expect(failed.statusCode).toBe(503);
+    expect(failed.json().code).toBe('MAIL_SEND_FAILED');
+    expect(failed.body).not.toContain('provider body');
+    const [event] = await sql.unsafe(
+      'SELECT status,failure_code FROM member_mail_events ORDER BY created_at DESC LIMIT 1',
+    );
+    expect(event.status).toBe('FAILED');
+    expect(event.failure_code).toBe('PROVIDER_REJECTED');
+  });
+  it('重复用户名明确提示；邮箱存在性仅在验证邮箱及原密码后披露', async () => {
+    const original = await start();
+    await finish(original);
+    const duplicateName = await post('/auth/member/registration/start', {
+      username: original.username,
+      email: 'other_' + client + '@example.invalid',
+      password,
+      confirmPassword: password,
+    });
+    expect(duplicateName.statusCode).toBe(409);
+    expect(duplicateName.json().code).toBe('USERNAME_UNAVAILABLE');
+    const duplicateMail = await post('/auth/member/registration/start', {
+      username: 'alt_' + randomUUID().replaceAll('-', '').slice(0, 10),
+      email: original.email.toUpperCase(),
+      password,
+      confirmPassword: password,
+    });
+    expect(duplicateMail.statusCode).toBe(202);
+    const check = await post('/auth/member/registration/complete', {
+      challenge: duplicateMail.json().challenge,
+      code: codeFor(original.email),
+      password,
+    });
+    expect(check.statusCode).toBe(400);
+    expect(check.json().code).toBe('EMAIL_IN_USE');
+  });
+  it('登录后修改密码撤销旧会话且通知，不允许改Owner密码', async () => {
+    const account = await start(),
+      session = await finish(account);
+    expect(
+      (
+        await privateRequest(session, '/api/member/password', 'POST', {
+          currentPassword: 'wrong-password',
+          newPassword: changedPassword,
+        })
+      ).statusCode,
+    ).toBe(403);
+    const changed = await privateRequest(
+      session,
+      '/api/member/password',
+      'POST',
+      { currentPassword: password, newPassword: changedPassword },
+    );
+    expect(changed.statusCode).toBe(200);
+    expect((await privateRequest(session, '/api/me')).statusCode).toBe(401);
+    expect(
+      (
+        await post('/auth/member/login', {
+          identifier: account.email,
+          password,
+        })
+      ).statusCode,
+    ).toBe(401);
+    expect(
+      (
+        await post('/auth/member/login', {
+          identifier: account.email,
+          password: changedPassword,
+        })
+      ).statusCode,
+    ).toBe(200);
+    expect(
+      (
+        await privateRequest(ownerSession, '/api/member/password', 'POST', {
+          currentPassword: password,
+          newPassword: changedPassword,
+        })
+      ).statusCode,
+    ).toBe(403);
+    await settleAccountMail();
+    expect(
+      outbox.some(
+        (m) => m.to[0] === account.email && m.subject.includes('密码修改'),
+      ),
+    ).toBe(true);
+  });
+  it('前三天授权接入激活、到期真正阻止API和旧订阅，管理员单独开放且记录审计', async () => {
+    provider();
+    client++;
+    const now = Date.now(),
+      policy = {
+        enabled: true,
+        windowStart: new Date(now - 3600000).toISOString(),
+        windowEnd: new Date(now + 2 * 86400000).toISOString(),
+        nodeSourceId: null,
+        nodeLimit: 5,
+        trialValidDays: 3,
+      };
+    expect(
+      (
+        await privateRequest(
+          ownerSession,
+          '/api/admin/auto-grant-policy',
+          'PATCH',
+          policy,
+        )
+      ).statusCode,
+    ).toBe(200);
+    const account = await start(),
+      session = await finish(account);
+    const profile = (
+      await privateRequest(session, '/api/member/profile')
+    ).json();
+    expect(profile.capabilities).toEqual({
+      node: true,
+      server: true,
+      codex: true,
+    });
+    const records = await sql.unsafe(
+      'SELECT kind,expires_at FROM auto_grant_records WHERE user_id=$1',
+      [session.id],
+    );
+    expect(records.map((x) => x.kind).sort()).toEqual([
+      'codex',
+      'node',
+      'server',
+    ]);
+    const firstExpiry = records[0].expires_at;
+    await privateRequest(
+      ownerSession,
+      '/api/admin/auto-grant/backfill',
+      'POST',
+      {},
+    );
+    const [same] = await sql.unsafe(
+      'SELECT expires_at FROM auto_grant_records WHERE user_id=$1 LIMIT 1',
+      [session.id],
+    );
+    expect(same.expires_at).toEqual(firstExpiry);
+    const rotation = await privateRequest(
+      session,
+      '/api/subscription/rotate',
+      'POST',
+      {},
+    );
+    expect(rotation.statusCode).toBe(200);
+    const link = rotation.json().url;
+    expect(typeof link).toBe('string');
+    await sql.unsafe(
+      "UPDATE users SET node_access_until=now()-interval '1 second',server_connect_until=now()-interval '1 second',codex_tasks_until=now()-interval '1 second' WHERE id=$1",
+      [session.id],
+    );
+    for (const path of [
+      '/api/subscription/profile',
+      '/api/server_connections',
+      '/api/ai/tasks',
+    ])
+      expect((await privateRequest(session, path)).statusCode).toBe(403);
+    expect((await app.inject(new URL(link, origin).pathname)).statusCode).toBe(
+      403,
+    );
+    expect(
+      (
+        await privateRequest(
+          ownerSession,
+          '/api/admin/users/' + session.id,
+          'PATCH',
+          { serverConnectEnabled: true },
+        )
+      ).statusCode,
+    ).toBe(200);
+    const current = (
+      await privateRequest(session, '/api/member/profile')
+    ).json();
+    expect(current.capabilities).toEqual({
+      node: false,
+      server: true,
+      codex: false,
+    });
+    const audit = await sql.unsafe(
+      "SELECT target_id FROM audit_events WHERE action='member.capabilities_updated'",
+    );
+    expect(audit.some((x) => x.target_id.includes(session.id))).toBe(true);
+    await privateRequest(
+      ownerSession,
+      '/api/admin/auto-grant-policy',
+      'PATCH',
+      { ...policy, enabled: false },
+    );
+  });
+  it('活动结束新用户不自动授权，Owner不可通过策略改绑，管理邮件响应无凭据', async () => {
+    client++;
+    provider();
+    const now = Date.now();
+    await privateRequest(
+      ownerSession,
+      '/api/admin/auto-grant-policy',
+      'PATCH',
+      {
+        enabled: true,
+        windowStart: new Date(now - 3 * 86400000).toISOString(),
+        windowEnd: new Date(now - 1000).toISOString(),
+        nodeSourceId: null,
+        nodeLimit: null,
+        trialValidDays: 3,
+      },
+    );
+    const account = await start(),
+      session = await finish(account);
+    expect(
+      (await privateRequest(session, '/api/member/profile')).json()
+        .capabilities,
+    ).toEqual({ node: false, server: false, codex: false });
+    expect(
+      (
+        await privateRequest(
+          session,
+          '/api/admin/auto-grant-policy',
+          'PATCH',
+          {},
+        )
+      ).statusCode,
+    ).toBe(403);
+    const list = await privateRequest(ownerSession, '/api/admin/member-mail');
+    expect(list.statusCode).toBe(200);
+    expect(list.body).not.toContain(process.env.MAIL_API_KEY!);
+    expect(list.body).not.toContain(account.code);
+    expect(list.body).not.toContain(account.email);
+    const [binding] = await sql.unsafe(
+      'SELECT owner_id,google_sub,closed FROM owner_initialization WHERE singleton',
+    );
+    expect(binding.owner_id).toBe(owner.id);
+    expect(binding.closed).toBe(true);
+  });
 });

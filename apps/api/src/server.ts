@@ -77,7 +77,8 @@ function publicRow(row: any) {
 export async function visibleNodes(owner: string) {
   const [user] =
     await sql`select role,node_access_enabled,node_access_until,node_limit,subscription_enabled from users where id=${owner} and not disabled and deleted_at is null`;
-  if (!user?.subscription_enabled || !capabilityAllowed(user,'node')) return [];
+  if (!user?.subscription_enabled || !capabilityAllowed(user, 'node'))
+    return [];
   const [profile] =
     await sql`select data from subscription_profiles where owner_id=${owner} and revoked_at is null order by updated_at desc limit 1`;
   const filter = profile?.data || {};
@@ -188,8 +189,21 @@ export async function buildApp() {
     const actor = await authenticate(req.cookies.fafa_session);
     if (!actor) throw new AppError(401, 'UNAUTHENTICATED', '请先登录');
     req.actor = actor;
-    const capability = /^\/api\/(servers|server_connections)(\/|$)/.test(path) ? 'server' : /^\/api\/(ai|ai_accounts)(\/|$)/.test(path) ? 'codex' : /^\/api\/(subscription|node_sources|nodes|node-import|shared-sources)(\/|$)/.test(path) ? 'node' : undefined;
-    if(capability && !capabilityAllowed(actor,capability)) throw new AppError(403,'CAPABILITY_REQUIRED','此功能尚未授权或试用已到期，请联系管理员');
+    const capability = /^\/api\/(servers|server_connections)(\/|$)/.test(path)
+      ? 'server'
+      : /^\/api\/(ai|ai_accounts)(\/|$)/.test(path)
+        ? 'codex'
+        : /^\/api\/(subscription|node_sources|nodes|node-import|shared-sources)(\/|$)/.test(
+              path,
+            )
+          ? 'node'
+          : undefined;
+    if (capability && !capabilityAllowed(actor, capability))
+      throw new AppError(
+        403,
+        'CAPABILITY_REQUIRED',
+        '此功能尚未授权或试用已到期，请联系管理员',
+      );
     if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
       if (
         !origins.includes(req.headers.origin || '') ||
@@ -725,8 +739,13 @@ export async function buildApp() {
         const raw = params(req).token;
         const [t] =
           await sql`select t.*,u.role,u.node_access_enabled,u.node_access_until from subscription_tokens t join users u on u.id=t.owner_id where t.token_hash=${hash(raw)} and t.revoked_at is null and not u.disabled and u.deleted_at is null and u.subscription_enabled and t.data->>'enabled'='true'`;
-        if(t && !capabilityAllowed(t,'node')) throw new AppError(403,'CAPABILITY_REQUIRED','订阅授权已撤销或到期');
-      if (!t) throw notFound();
+        if (t && !capabilityAllowed(t, 'node'))
+          throw new AppError(
+            403,
+            'CAPABILITY_REQUIRED',
+            '订阅授权已撤销或到期',
+          );
+        if (!t) throw notFound();
         const { format } = z
           .object({
             format: z

@@ -184,7 +184,10 @@ function UserManagement() {
                       {u.name}
                       <br />
                       <small>{u.email}</small>
-                      <small>注册：{new Date(u.created_at).toLocaleString('zh-CN')} · {u.email_verified?'邮箱已验证':'邮箱未验证'}</small>
+                      <small>
+                        注册：{new Date(u.created_at).toLocaleString('zh-CN')} ·{' '}
+                        {u.email_verified ? '邮箱已验证' : '邮箱未验证'}
+                      </small>
                     </td>
                     <td>{u.role}</td>
                     <td>
@@ -205,7 +208,7 @@ function UserManagement() {
                       </small>
                     </td>
                     <td>
-                      <MemberAccessControls user={u} onSaved={users.refresh}/>
+                      <MemberAccessControls user={u} onSaved={users.refresh} />
                       <div className="actions">
                         <button
                           disabled={u.role === 'Owner'}
