@@ -1,12 +1,14 @@
 name: FAFA ONE checks
 on:
   push:
-    branches: [main]
-  pull_request:
+    branches:
+      - main
+  pull_request: null
 concurrency:
   group: fafa-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
-permissions: { contents: read }
+permissions:
+  contents: read
 jobs:
   windows-launcher:
     runs-on: windows-latest
@@ -38,19 +40,19 @@ jobs:
       postgres:
         image: postgres:17.7-alpine
         env:
-          {
-            POSTGRES_DB: fafa,
-            POSTGRES_USER: fafa,
-            POSTGRES_PASSWORD: fafa_dev_only,
-          }
-        ports: ['5432:5432']
-        options: >-
-          --health-cmd "pg_isready -U fafa" --health-interval 5s
-          --health-timeout 3s --health-retries 20
+          POSTGRES_DB: fafa
+          POSTGRES_USER: fafa
+          POSTGRES_PASSWORD: fafa_dev_only
+        ports:
+          - 5432:5432
+        options:
+          --health-cmd "pg_isready -U fafa" --health-interval 5s --health-timeout
+          3s --health-retries 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: '24' }
+        with:
+          node-version: '24'
       - run: npm install -g pnpm@11.25.0
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec tsx infra/scripts/init-env.ts
@@ -62,44 +64,33 @@ jobs:
             exit 1
           fi
       - run: pnpm lint && pnpm typecheck
-      - run: bash -n infra/scripts/deploy-production.sh infra/scripts/production-compose.sh infra/scripts/backup-production.sh
+      - run: bash -n infra/scripts/deploy-production.sh
+          infra/scripts/production-compose.sh infra/scripts/backup-production.sh
       - run: python3 -m unittest discover -s infra/deploy -p 'test_*.py'
       - run: pnpm db:migrate && pnpm db:seed
       - run: pnpm test && pnpm test:integration && pnpm build
       - run: pnpm security && pnpm audit --audit-level=moderate
-      - run: pnpm exec playwright install --with-deps chromium firefox webkit
-      - name: Verify desktop 1440px preview closes after bounded capture
-        run: pnpm exec playwright test tests/e2e/admin-nodes.spec.ts --project=chromium --grep=1440px --max-failures=1
-      - name: Verify admin regressions before the complete browser matrix
-        run: pnpm exec playwright test tests/e2e/admin-nodes.spec.ts --project=chromium --project=webkit --max-failures=1
-      - run: pnpm test:e2e
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: browser-evidence
-          path: |
-            docs/screenshots/
-            docs/evidence/playwright.json
-            docs/AXE_REPORT.json
-            test-results/
   containers:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: '24' }
+        with:
+          node-version: '24'
       - run: npm install -g pnpm@11.25.0
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec tsx infra/scripts/init-env.ts
       - name: Build and start isolated development services
-        run: docker compose -f infra/docker/compose.dev.yaml -f infra/docker/compose.tls-test.yaml up --build -d --wait --wait-timeout 120
+        run: docker compose -f infra/docker/compose.dev.yaml -f
+          infra/docker/compose.tls-test.yaml up --build -d --wait --wait-timeout
+          120
       - name: Validate production Caddy configuration
-        run: >-
-          docker run --rm -i
-          -e PANEL_DOMAIN=fafa888.uk -e ADMIN_DOMAIN=a.fafa888.uk
-          caddy:2.10.2-alpine caddy adapt --config - --adapter caddyfile --validate
-          < infra/reverse-proxy/Caddyfile > /tmp/fafa-caddy-adapt.json
+        run:
+          docker run --rm -i -e PANEL_DOMAIN=fafa888.uk -e ADMIN_DOMAIN=a.fafa888.uk
+          caddy:2.10.2-alpine caddy adapt --config - --adapter caddyfile
+          --validate < infra/reverse-proxy/Caddyfile >
+          /tmp/fafa-caddy-adapt.json
       - run: pnpm exec playwright install --with-deps chromium
       - name: Verify Caddy HTTPS and API boundaries
         timeout-minutes: 3
@@ -109,10 +100,14 @@ jobs:
           done
       - name: Retain service health evidence
         if: always()
-        run: |
+        run: >
           mkdir -p docs/evidence
-          docker compose -f infra/docker/compose.dev.yaml ps --all --format json > docs/evidence/compose.json
-          docker compose -f infra/docker/compose.dev.yaml logs --tail=50 > /tmp/fafa-compose.log
+
+          docker compose -f infra/docker/compose.dev.yaml ps --all --format json
+          > docs/evidence/compose.json
+
+          docker compose -f infra/docker/compose.dev.yaml logs --tail=50 >
+          /tmp/fafa-compose.log
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -127,13 +122,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: '24' }
+        with:
+          node-version: '24'
       - name: Check deployment shell syntax
-        run: bash -n infra/scripts/deploy-production.sh infra/scripts/repository-git.sh infra/scripts/verify-production-startup.sh
+        run:
+          bash -n infra/scripts/deploy-production.sh infra/scripts/repository-git.sh
+          infra/scripts/verify-production-startup.sh
       - name: Verify root uses the existing repository identity
-        run: |
+        run: >
           expected="$(git rev-parse HEAD)"
-          observed="$(sudo bash -c 'cd "$1"; source infra/scripts/repository-git.sh; repository_git rev-parse HEAD' _ "$GITHUB_WORKSPACE")"
+
+          observed="$(sudo bash -c 'cd "$1"; source
+          infra/scripts/repository-git.sh; repository_git rev-parse HEAD' _
+          "$GITHUB_WORKSPACE")"
+
           test "$expected" = "$observed"
       - name: Verify first deployment with disposable credentials and volumes
         run: bash infra/scripts/verify-production-startup.sh
@@ -144,3 +146,76 @@ jobs:
           path: |
             docs/evidence/production-startup.json
             docs/evidence/production-startup-containers.json
+  browser-matrix:
+    needs: checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - project: chromium
+            browser: chromium
+          - project: firefox
+            browser: firefox
+          - project: webkit
+            browser: webkit
+          - project: iphone
+            browser: webkit
+          - project: android
+            browser: chromium
+    services:
+      postgres:
+        image: postgres:17.7-alpine
+        env:
+          POSTGRES_DB: fafa
+          POSTGRES_USER: fafa
+          POSTGRES_PASSWORD: fafa_dev_only
+        ports:
+          - 5432:5432
+        options:
+          --health-cmd "pg_isready -U fafa" --health-interval 5s --health-timeout
+          3s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: npm install -g pnpm@11.25.0
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec tsx infra/scripts/init-env.ts
+      - run: pnpm db:migrate && pnpm db:seed
+      - name: Record browser disk budget before installation
+        run: df -h
+      - run: pnpm exec playwright install --with-deps ${{ matrix.browser }}
+      - name: Verify desktop 1440px preview closes after bounded capture
+        if: matrix.project == 'chromium'
+        run:
+          pnpm exec playwright test tests/e2e/admin-nodes.spec.ts --project=chromium
+          --grep=1440px --max-failures=1
+      - name: Verify admin regressions before the complete browser matrix
+        if: matrix.project == 'chromium' || matrix.project == 'webkit'
+        run:
+          pnpm exec playwright test tests/e2e/admin-nodes.spec.ts --project=${{
+          matrix.project }} --max-failures=1
+      - name: WLOC iPhone 1440px regression before full matrix
+        if: matrix.project == 'iphone'
+        run: pnpm exec playwright test tests/e2e/wloc.spec.ts --project=iphone
+          --grep='WLOC responsive 1440px' --max-failures=1
+      - name: Complete original browser project with one worker
+        run: pnpm exec playwright test --project=${{ matrix.project }}
+      - name: Retain final browser disk usage
+        if: always()
+        run: df -h
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: browser-evidence-${{ matrix.project }}
+          path: |
+            docs/evidence/playwright.json
+            test-results/
+            docs/screenshots/
+            docs/AXE_REPORT.json

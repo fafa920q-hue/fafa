@@ -285,7 +285,10 @@ test('Owner 节点管理与权限隔离', async ({ page, browser }, testInfo) =>
         'docs/screenshots/admin-node-management-' +
         testInfo.project.name +
         '.png',
-      fullPage: true,
+      fullPage: false,
+      scale: 'css',
+      animations: 'disabled',
+      timeout: 5000,
     });
 
     for (const name of [editedName, vmessName]) {
