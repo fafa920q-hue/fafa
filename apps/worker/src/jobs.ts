@@ -1,3 +1,4 @@
+import { capabilityAllowed } from '../../../packages/auth/src/auto-grant';
 import OpenAI from 'openai';
 import { sql, audit } from '../../../packages/db/src';
 import { seal, unseal } from '../../../packages/shared/src/crypto';
@@ -132,7 +133,25 @@ export async function runAiTask(task: any) {
   let status = 'COMPLETED';
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 120000);
+  let accessRevoked = false;
+  const accessWatchdog = setInterval(async () => {
+    try {
+      const [user] =
+        await sql`select * from users where id=${task.owner_id} and not disabled and deleted_at is null`;
+      if (!user || !capabilityAllowed(user, 'codex')) {
+        accessRevoked = true;
+        controller.abort();
+      }
+    } catch {
+      accessRevoked = true;
+      controller.abort();
+    }
+  }, 1000);
   try {
+    const [user] =
+      await sql`select * from users where id=${task.owner_id} and not disabled and deleted_at is null`;
+    if (!user || !capabilityAllowed(user, 'codex'))
+      throw Error('CAPABILITY_REQUIRED');
     const [account] =
       await sql`select * from ai_accounts where id=${task.account_id} and owner_id=${task.owner_id} and revoked_at is null`;
     if (process.env.DEMO_MODE === 'true' || !account?.secret)
@@ -155,8 +174,12 @@ export async function runAiTask(task: any) {
     let last = 0;
     for await (const event of stream) {
       const [state] =
-        await sql`select t.data->>'status' as status,u.disabled from ai_tasks t join users u on u.id=t.owner_id where t.id=${task.id}`;
-      if (state.status === 'CANCELLED' || state.disabled) {
+        await sql`select t.data->>'status' as status,u.disabled,u.role,u.codex_tasks_enabled,u.codex_tasks_until from ai_tasks t join users u on u.id=t.owner_id where t.id=${task.id}`;
+      if (
+        state.status === 'CANCELLED' ||
+        state.disabled ||
+        !capabilityAllowed(state, 'codex')
+      ) {
         status = 'CANCELLED';
         controller.abort();
         break;
@@ -169,9 +192,14 @@ export async function runAiTask(task: any) {
     }
     await sql`update ai_accounts set data=data || ${sql.json({ status: 'VERIFIED', verifiedAt: new Date().toISOString() })} where id=${task.account_id}`;
   } catch {
-    status = controller.signal.aborted ? 'TIMEOUT' : 'FAILED';
+    status = accessRevoked
+      ? 'CANCELLED'
+      : controller.signal.aborted
+        ? 'TIMEOUT'
+        : 'FAILED';
   } finally {
     clearTimeout(timeout);
+    clearInterval(accessWatchdog);
     await sql`update ai_tasks set data=data || ${sql.json({ status, output, error: status === 'FAILED' ? '请求失败，请检查 API Key、额度和模型权限' : null })},updated_at=now() where id=${task.id} and data->>'status'='RUNNING'`;
     await audit(task.owner_id, 'ai.task_finished', task.id);
   }

@@ -7,6 +7,8 @@ for (const name of [
   '003_owner_setup.sql',
   '004_traffic_policy.sql',
   '005_member_auth.sql',
+  '006_auto_grant_policy.sql',
+  '007_member_delivery.sql',
 ]) {
   await sql.begin(async (tx) => {
     await tx`select pg_advisory_xact_lock(77701)`;

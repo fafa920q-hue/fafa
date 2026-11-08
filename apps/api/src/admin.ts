@@ -1,13 +1,19 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { sql, audit } from '../../../packages/db/src';
+import { capabilityAllowed } from '../../../packages/auth/src/auto-grant';
 import { AppError, notFound } from '../../../packages/shared/src';
 export async function registerAdmin(app: FastifyInstance) {
   app.get('/api/admin/users', async () =>
     (
-      await sql`select id,name,email,role,disabled,node_limit,subscription_enabled,traffic_limit_bytes,created_at from users where deleted_at is null order by created_at`
+      await sql`select u.id,u.name,u.email,u.role,u.disabled,u.node_limit,u.subscription_enabled,u.traffic_limit_bytes,u.created_at,u.node_access_enabled,u.node_access_until,u.server_connect_enabled,u.server_connect_until,u.codex_tasks_enabled,u.codex_tasks_until,(exists(select 1 from member_credentials c where c.user_id=u.id) or exists(select 1 from google_identities g where g.user_id=u.id)) as email_verified from users u where u.deleted_at is null order by u.created_at`
     ).map((user) => ({
       ...user,
+      capabilities: {
+        node: capabilityAllowed(user, 'node'),
+        server: capabilityAllowed(user, 'server'),
+        codex: capabilityAllowed(user, 'codex'),
+      },
       trafficLimitBytes:
         user.traffic_limit_bytes === null
           ? null
@@ -23,6 +29,12 @@ export async function registerAdmin(app: FastifyInstance) {
       sql`select id,data,created_at,revoked_at from invitations order by created_at desc`,
   );
   app.post('/api/admin/invitations', async (req) => {
+    if (process.env.MEMBER_SELF_SERVICE === 'true')
+      throw new AppError(
+        409,
+        'INVITATIONS_RETIRED',
+        '已改为用户自行注册，不再创建邀请',
+      );
     const d = z
       .object({
         email: z.email(),
@@ -52,6 +64,9 @@ export async function registerAdmin(app: FastifyInstance) {
     const { id } = z.object({ id: z.uuid() }).parse(req.params);
     const d = z
       .object({
+        nodeAccessEnabled: z.boolean().optional(),
+        serverConnectEnabled: z.boolean().optional(),
+        codexTasksEnabled: z.boolean().optional(),
         disabled: z.boolean().optional(),
         role: z.enum(['Admin', 'Member', 'Viewer']).optional(),
         revokeSessions: z.boolean().optional(),
@@ -69,6 +84,17 @@ export async function registerAdmin(app: FastifyInstance) {
     const [u] = await sql`select * from users where id=${id}`;
     if (!u) throw notFound();
     if (
+      u.role !== 'Member' &&
+      [d.nodeAccessEnabled, d.serverConnectEnabled, d.codexTasksEnabled].some(
+        (value) => value !== undefined,
+      )
+    )
+      throw new AppError(
+        403,
+        'MEMBER_CAPABILITY_ONLY',
+        '功能开关适用于 Member；管理角色与只读访客继续使用原角色权限',
+      );
+    if (
       u.role === 'Owner' ||
       id === req.actor.id ||
       (d.role && req.actor.role !== 'Owner') ||
@@ -77,6 +103,45 @@ export async function registerAdmin(app: FastifyInstance) {
       throw new AppError(403, 'OWNER_PROTECTED', '不允许修改此账户或角色');
     await sql.begin(async (tx) => {
       await tx`update users set disabled=${d.disabled ?? u.disabled},role=${d.role ?? u.role},node_limit=${d.nodeLimit ?? u.node_limit},subscription_enabled=${d.subscriptionEnabled ?? u.subscription_enabled},traffic_limit_bytes=${d.trafficLimitBytes === undefined ? u.traffic_limit_bytes : d.trafficLimitBytes},updated_at=now() where id=${id}`;
+      for (const [key, column, expiry] of [
+        ['nodeAccessEnabled', 'node_access_enabled', 'node_access_until'],
+        [
+          'serverConnectEnabled',
+          'server_connect_enabled',
+          'server_connect_until',
+        ],
+        ['codexTasksEnabled', 'codex_tasks_enabled', 'codex_tasks_until'],
+      ] as const) {
+        if (d[key] !== undefined)
+          await tx.unsafe(
+            'UPDATE users SET ' +
+              column +
+              '=$2,' +
+              expiry +
+              '=NULL WHERE id=$1',
+            [id, d[key]!],
+          );
+      }
+      if (
+        d.nodeAccessEnabled !== undefined ||
+        d.serverConnectEnabled !== undefined ||
+        d.codexTasksEnabled !== undefined
+      )
+        await tx.unsafe(
+          "INSERT INTO audit_events(owner_id,action,target_id) VALUES($1,'member.capabilities_updated',$2)",
+          [
+            req.actor.id,
+            JSON.stringify({
+              userId: id,
+              source: 'ADMIN',
+              startsAt: new Date().toISOString(),
+              endsAt: null,
+              node: d.nodeAccessEnabled,
+              server: d.serverConnectEnabled,
+              codex: d.codexTasksEnabled,
+            }),
+          ],
+        );
       if (d.disabled || d.revokeSessions || d.role) {
         await tx`update sessions set revoked_at=now() where owner_id=${id}`;
         await tx.unsafe(
@@ -145,7 +210,7 @@ export async function registerAdmin(app: FastifyInstance) {
     const grant =
       kind === 'source' ? 'node_group_grants' : 'server_access_grants';
     const fk = kind === 'source' ? 'source_id' : 'server_id';
-    await sql`insert into ${sql(grant)}(owner_id,${sql(fk)},user_id,data) values(${req.actor.id},${resourceId},${userId},${sql.json({ scope: 'USE' })}) on conflict do nothing`;
+    await sql`insert into ${sql(grant)}(owner_id,${sql(fk)},user_id,data) values(${req.actor.id},${resourceId},${userId},${sql.json({ scope: 'USE', grantSource: 'ADMIN', startsAt: new Date().toISOString(), endsAt: null })}) on conflict (${sql(fk)},user_id) where revoked_at is null do update set data=excluded.data,updated_at=now()`;
     await audit(req.actor.id, 'grant.created', resourceId);
     return { ok: true };
   });

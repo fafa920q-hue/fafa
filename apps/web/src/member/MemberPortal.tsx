@@ -1,3 +1,8 @@
+import { consumeActionToken } from './action-token';
+import { AuthPolicy } from './AuthPolicy';
+import { AuthBrand, AuthLegal, GoogleSignIn, PasswordField } from './AuthUI';
+import { CodeRegistration } from './CodeRegistration';
+import './member.css';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, Route, Routes, useLocation } from 'react-router-dom';
 
@@ -38,12 +43,15 @@ const titles: Record<string, string> = {
 function CredentialForm({ mode }: { mode: string }) {
   const [config, setConfig] = useState<Config>();
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState('');
+  const [message, setMessage] = useState(
+    mode === 'login' &&
+      new URLSearchParams(window.location.search).get('reset') === 'success'
+      ? '密码已重置，请使用新密码登录。'
+      : '',
+  );
   const [error, setError] = useState('');
   const submitting = useRef(false);
-  const action = useRef(
-    new URLSearchParams(window.location.hash.slice(1)).get('token') || '',
-  );
+  const action = useRef(consumeActionToken());
   useEffect(() => {
     // Never keep action credentials in browser history, query strings or rendered DOM.
     if (window.location.hash)
@@ -77,17 +85,31 @@ function CredentialForm({ mode }: { mode: string }) {
     setMessage('');
     const form = event.currentTarget;
     const data = Object.fromEntries(new FormData(form).entries());
+    if (mode === 'reset' && data.password !== data.confirmPassword) {
+      setError('两次输入的密码不一致');
+      submitting.current = false;
+      setBusy(false);
+      return;
+    }
+    delete data.confirmPassword;
+    if (mode === 'login')
+      data.remember = data.remember === 'on' ? 'true' : 'false';
     if (mode === 'verify' || mode === 'reset') data.token = action.current;
     try {
       const result = await send(
         '/auth/member/' + endpoints[mode],
         'POST',
-        data,
+        mode === 'login'
+          ? { ...data, remember: data.remember === 'true' }
+          : data,
         config.csrf,
       );
       form.reset();
       if (mode === 'login') window.location.assign('/member/account');
-      else {
+      else if (mode === 'reset') {
+        action.current = '';
+        window.location.assign('/member/login?reset=success');
+      } else {
         if (mode === 'verify' || mode === 'reset') action.current = '';
         setMessage(result.message);
       }
@@ -110,7 +132,15 @@ function CredentialForm({ mode }: { mode: string }) {
   return (
     <form className="fields" onSubmit={submit}>
       <h1>{titles[mode]}</h1>
-      <p>新注册账户仅为 Member；管理员和 Owner 权限不会通过注册获得。</p>
+      <p>
+        {mode === 'login'
+          ? '欢迎回来，登录你的 FAFA ONE 账户。'
+          : mode === 'forgot'
+            ? '输入注册邮箱，我们会向你发送密码重置链接。'
+            : mode === 'reset'
+              ? '设置一个安全的新密码，重新开始连接。'
+              : '验证本人邮箱，安全地管理你的账户。'}
+      </p>
       {config && mode === 'register' && !config.registrationOpen && (
         <p role="status">当前未开放普通用户注册</p>
       )}
@@ -156,27 +186,34 @@ function CredentialForm({ mode }: { mode: string }) {
         </label>
       )}
       {mode !== 'forgot' && (
-        <label>
-          <span>
-            {mode === 'reset'
+        <PasswordField
+          label={
+            mode === 'reset'
               ? '新密码'
               : mode === 'verify'
                 ? '注册时设置的密码'
-                : '密码'}
-          </span>
-          <input
-            name="password"
-            type="password"
-            autoComplete={
-              ['register', 'reset'].includes(mode)
-                ? 'new-password'
-                : 'current-password'
-            }
-            required
-            minLength={['register', 'reset'].includes(mode) ? 15 : 1}
-            maxLength={128}
-          />
-        </label>
+                : '密码'
+          }
+          minimum={mode === 'reset' ? 15 : 1}
+          autoComplete={mode === 'reset' ? 'new-password' : 'current-password'}
+        />
+      )}
+      {mode === 'reset' && (
+        <PasswordField
+          label="确认新密码"
+          name="confirmPassword"
+          minimum={15}
+          autoComplete="new-password"
+        />
+      )}
+      {mode === 'login' && (
+        <div className="auth-options">
+          <label className="auth-check">
+            <input type="checkbox" name="remember" />
+            <span>记住登录状态</span>
+          </label>
+          <Link to="/member/forgot">忘记密码？</Link>
+        </div>
       )}
       {['register', 'reset'].includes(mode) && (
         <small>密码为15至128个字符，可使用空格和中文；请使用独立密码。</small>
@@ -193,14 +230,32 @@ function CredentialForm({ mode }: { mode: string }) {
       )}
       {message && <p role="status">{message}</p>}
       <button className="primary" disabled={busy || unavailable}>
-        {busy ? '处理中…' : '确认'}
+        {busy
+          ? '处理中…'
+          : mode === 'login'
+            ? '登录'
+            : mode === 'forgot'
+              ? '发送重置邮件'
+              : mode === 'reset'
+                ? '设置新密码'
+                : mode === 'verify'
+                  ? '验证邮箱'
+                  : '重新发送激活邮件'}
       </button>
-      <Link to="/member/login">普通账户登录</Link>
-      <Link to="/member/register">注册普通账户</Link>
-      <Link to="/member/forgot">忘记密码</Link>
-      <Link to="/member/resend">重新发送激活邮件</Link>
-      <a href="/auth/google">使用 Google 登录</a>
-      <a href="/">返回现有控制台</a>
+      {mode === 'login' ? (
+        <p className="auth-help">
+          还没有账户？<Link to="/member/register">立即注册</Link>
+        </p>
+      ) : (
+        <p className="auth-help">
+          <Link to="/member/login">返回登录</Link>
+          {mode === 'verify' && (
+            <Link to="/member/resend">重新发送激活邮件</Link>
+          )}
+        </p>
+      )}
+      {mode === 'login' && <GoogleSignIn />}
+      <AuthLegal />
     </form>
   );
 }
@@ -257,6 +312,83 @@ function AccountSecurity() {
             {profile?.emailVerified ? '邮箱已验证' : '通过现有身份提供商登录'} ·{' '}
             {profile?.googleLinked ? 'Google 已绑定' : 'Google 未绑定'}
           </p>
+
+          {profile?.passwordConfigured && (
+            <form
+              className="fields"
+              onSubmit={(event) => {
+                event.preventDefault();
+                const form = event.currentTarget;
+                const data = Object.fromEntries(new FormData(form));
+                if (data.newPassword !== data.confirmPassword) {
+                  setError('两次输入的密码不一致');
+                  return;
+                }
+                void run(async () => {
+                  await send(
+                    '/api/member/password',
+                    'POST',
+                    {
+                      currentPassword: data.currentPassword,
+                      newPassword: data.newPassword,
+                    },
+                    session.csrf,
+                  );
+                  form.reset();
+                  window.location.assign('/member/login');
+                });
+              }}
+            >
+              <h2>修改密码</h2>
+              <label>
+                <span>当前密码</span>
+                <input
+                  name="currentPassword"
+                  type="password"
+                  autoComplete="current-password"
+                  required
+                  maxLength={128}
+                />
+              </label>
+              <label>
+                <span>新密码</span>
+                <input
+                  name="newPassword"
+                  type="password"
+                  autoComplete="new-password"
+                  required
+                  minLength={15}
+                  maxLength={128}
+                />
+              </label>
+              <label>
+                <span>确认新密码</span>
+                <input
+                  name="confirmPassword"
+                  type="password"
+                  autoComplete="new-password"
+                  required
+                  minLength={15}
+                  maxLength={128}
+                />
+              </label>
+              <button disabled={busy}>修改密码并撤销旧会话</button>
+            </form>
+          )}
+
+          <h2>功能授权</h2>
+          {(['node', 'server', 'codex'] as const).map((kind, index) => (
+            <p key={kind}>
+              {['节点订阅', '自有服务器连接', 'Codex任务'][index]}：
+              {profile?.capabilities?.[kind] ? '已开放' : '未授权或已到期'}
+              {profile?.capabilityExpiry?.[kind]
+                ? ' · 到期 ' +
+                  new Date(profile.capabilityExpiry[kind]).toLocaleString(
+                    'zh-CN',
+                  )
+                : ''}
+            </p>
+          ))}
           <h2>有效会话</h2>
           {sessions.map((item) => (
             <div className="list-item" key={item.id}>
@@ -344,20 +476,30 @@ function AccountSecurity() {
 export function MemberPortal() {
   const location = useLocation();
   return (
-    <main className="login">
-      <section className="login-card glass">
-        <Routes>
-          {Object.keys(titles).map((mode) => (
-            <Route
-              key={mode}
-              path={'/member/' + mode}
-              element={<CredentialForm key={location.pathname} mode={mode} />}
-            />
-          ))}
-          <Route path="/member/account" element={<AccountSecurity />} />
-          <Route path="*" element={<CredentialForm mode="login" />} />
-        </Routes>
-      </section>
+    <main className="member-portal">
+      <div className="auth-layout">
+        <AuthBrand />
+        <section className="login-card glass">
+          <Routes>
+            <Route path="/member/terms" element={<AuthPolicy />} />
+            <Route path="/member/privacy" element={<AuthPolicy privacy />} />
+            <Route path="/member/register" element={<CodeRegistration />} />
+            {Object.keys(titles)
+              .filter((mode) => mode !== 'register')
+              .map((mode) => (
+                <Route
+                  key={mode}
+                  path={'/member/' + mode}
+                  element={
+                    <CredentialForm key={location.pathname} mode={mode} />
+                  }
+                />
+              ))}
+            <Route path="/member/account" element={<AccountSecurity />} />
+            <Route path="*" element={<CredentialForm mode="login" />} />
+          </Routes>
+        </section>
+      </div>
     </main>
   );
 }

@@ -126,6 +126,8 @@ try {
         'member_action_tokens',
         'member_auth_buckets',
         'member_google_links',
+        'member_mail_events',
+        'auto_grant_records',
       ])
         await tx.unsafe(
           'GRANT SELECT,INSERT,UPDATE ON ' + table + ' TO ' + role,

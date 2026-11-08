@@ -21,10 +21,22 @@ import {
   settleAccountMail,
 } from '../../../packages/auth/src/member-mail';
 
-const email = z
-  .email()
-  .max(254)
-  .transform((value) => value.trim().toLowerCase());
+import {
+  startCodeRegistration,
+  resumeCodeRegistration,
+  resendRegistrationCode,
+  verifyRegistrationCode,
+  changeMemberPassword,
+} from '../../../packages/auth/src/member-codes';
+import {
+  capabilityAllowed,
+  AUTO_GRANT_POLICY_KEYS,
+  autoGrantPolicySchema,
+  readAutoGrantPolicy,
+  backfillAutoGrants,
+} from './auto-grant';
+
+const email = z.string().trim().toLowerCase().pipe(z.email().max(254));
 const password = z.string().min(1).max(512);
 const actionToken = z.string().regex(/^[A-Za-z0-9_-]{43}$/);
 const username = z
@@ -48,6 +60,7 @@ export async function registerMemberAuth(
       reply: FastifyReply,
       user: User,
       expectedPasswordHash?: string,
+      remember?: boolean,
     ) => Promise<unknown>;
     startGoogleLink: (reply: FastifyReply, id: string) => Promise<string>;
   },
@@ -97,9 +110,141 @@ export async function registerMemberAuth(
     return {
       csrf,
       registrationOpen: open?.value === true,
+      selfService: process.env.MEMBER_SELF_SERVICE === 'true',
       mailConfigured: mailConfigured(),
     };
   });
+
+  app.post(
+    '/auth/member/registration/start',
+    { ...limit(15), preHandler: guard },
+    async (req, reply) => {
+      const data = z
+        .object({ username, email, password, confirmPassword: password })
+        .strict()
+        .parse(req.body);
+      return reply.code(202).send(await startCodeRegistration(data));
+    },
+  );
+  app.post(
+    '/auth/member/registration/resend',
+    { ...limit(10), preHandler: guard },
+    async (req) => {
+      const data = z
+        .object({ challenge: actionToken, password })
+        .strict()
+        .parse(req.body);
+      return resendRegistrationCode(data.challenge, data.password);
+    },
+  );
+  app.post(
+    '/auth/member/registration/recover',
+    { ...limit(10), preHandler: guard },
+    async (req) => {
+      const data = z.object({ email, password }).strict().parse(req.body);
+      return resumeCodeRegistration(data.email, data.password);
+    },
+  );
+  app.post(
+    '/auth/member/registration/complete',
+    { ...limit(15), preHandler: guard },
+    async (req, reply) => {
+      const data = z
+        .object({
+          challenge: actionToken,
+          code: z.string().regex(/^\d{6}$/),
+          password,
+        })
+        .strict()
+        .parse(req.body);
+      const result = await verifyRegistrationCode(
+        data.challenge,
+        data.code,
+        data.password,
+      );
+      return options.setSession(reply, result.user, result.passwordHash);
+    },
+  );
+  app.post('/api/member/password', limit(10), async (req, reply) => {
+    const data = z
+      .object({ currentPassword: password, newPassword: password })
+      .strict()
+      .parse(req.body);
+    await changeMemberPassword(
+      req.actor.id,
+      data.currentPassword,
+      data.newPassword,
+    );
+    clearSession(reply);
+    return { message: '密码已修改，旧会话已撤销，请重新登录' };
+  });
+  app.get('/api/admin/member-mail', async () =>
+    sql.unsafe(
+      'SELECT id,owner_id,purpose,status,failure_code,provider_status,created_at,updated_at FROM member_mail_events ORDER BY created_at DESC LIMIT 100',
+    ),
+  );
+  app.get('/api/admin/auto-grant-policy', async () => {
+    const policy = await readAutoGrantPolicy();
+    return process.env.MEMBER_SELF_SERVICE === 'true'
+      ? { ...policy, enabled: false, retired: true }
+      : policy;
+  });
+  app.patch('/api/admin/auto-grant-policy', async (req) => {
+    if (process.env.MEMBER_SELF_SERVICE === 'true')
+      throw new AppError(
+        409,
+        'AUTO_GRANT_RETIRED',
+        '当前注册不附带自动试用授权',
+      );
+    if (req.actor.role !== 'Owner')
+      throw new AppError(
+        403,
+        'OWNER_REQUIRED',
+        '仅Owner可修改首次三天授权策略',
+      );
+    const data = autoGrantPolicySchema.parse(req.body);
+    if (data.nodeSourceId) {
+      const [source] = await sql.unsafe(
+        'SELECT id FROM node_sources WHERE id=$1 AND owner_id=$2 AND revoked_at IS NULL',
+        [data.nodeSourceId, req.actor.id],
+      );
+      if (!source)
+        throw new AppError(404, 'NOT_FOUND', '节点源不存在或无权设置');
+    }
+    const values = [
+      data.enabled,
+      data.windowStart,
+      data.windowEnd,
+      data.nodeSourceId,
+      data.nodeLimit,
+      data.trialValidDays,
+    ];
+    await sql.begin(async (tx) => {
+      await tx.unsafe('SELECT pg_advisory_xact_lock(77702)');
+      for (let i = 0; i < AUTO_GRANT_POLICY_KEYS.length; i++) {
+        if (values[i] === null)
+          await tx`update settings set value='null'::jsonb,updated_at=now() where key=${AUTO_GRANT_POLICY_KEYS[i]}`;
+        else
+          await tx`update settings set value=${tx.json(values[i])},updated_at=now() where key=${AUTO_GRANT_POLICY_KEYS[i]}`;
+      }
+      await tx.unsafe(
+        "INSERT INTO audit_events(owner_id,action,target_id) VALUES($1,'auto_grant.policy_updated',$2)",
+        [req.actor.id, JSON.stringify(data)],
+      );
+    });
+    return { ok: true };
+  });
+  app.post('/api/admin/auto-grant/backfill', async (req) => {
+    if (req.actor.role !== 'Owner')
+      throw new AppError(403, 'OWNER_REQUIRED', '仅Owner可补处理授权');
+    return backfillAutoGrants(req.actor.id);
+  });
+  app.get('/api/admin/auto-grant-records', async () =>
+    sql.unsafe(
+      'SELECT user_id,kind,resource_id,status,reason,granted_at,expires_at,created_at FROM auto_grant_records ORDER BY created_at DESC LIMIT 100',
+    ),
+  );
+
   app.post(
     '/auth/member/register',
     { ...limit(15), preHandler: guard },
@@ -147,6 +292,7 @@ export async function registerMemberAuth(
             .max(254)
             .transform((value) => value.toLowerCase()),
           password,
+          remember: z.boolean().optional().default(false),
         })
         .strict()
         .parse(req.body);
@@ -156,7 +302,12 @@ export async function registerMemberAuth(
           'UPDATE sessions SET revoked_at=now() WHERE token_hash=$1 AND revoked_at IS NULL',
           [hash(req.cookies.fafa_session)],
         );
-      return options.setSession(reply, result.user, result.passwordHash);
+      return options.setSession(
+        reply,
+        result.user,
+        result.passwordHash,
+        data.remember,
+      );
     },
   );
   app.post(
@@ -193,6 +344,16 @@ export async function registerMemberAuth(
     );
     return {
       user: memberUser(req.actor),
+      capabilities: {
+        node: capabilityAllowed(req.actor, 'node'),
+        server: capabilityAllowed(req.actor, 'server'),
+        codex: capabilityAllowed(req.actor, 'codex'),
+      },
+      capabilityExpiry: {
+        node: req.actor.node_access_until,
+        server: req.actor.server_connect_until,
+        codex: req.actor.codex_tasks_until,
+      },
       username: credential?.username || null,
       emailVerified: !!credential,
       passwordConfigured: !!credential,
@@ -242,7 +403,7 @@ export async function registerMemberAuth(
       "SELECT key,value FROM settings WHERE key IN ('member_registration_open','seat_limit')",
     );
     const [failures] = await sql.unsafe(
-      "SELECT count(*)::int AS total FROM audit_events WHERE action='member.mail_failed' AND created_at>now()-interval '1 hour'",
+      "SELECT count(*)::int AS total FROM member_mail_events WHERE status='FAILED' AND created_at>now()-interval '1 hour'",
     );
     return {
       enabled:

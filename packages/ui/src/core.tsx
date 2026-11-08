@@ -71,7 +71,13 @@ export async function api<T = any>(
     clearTimeout(timeout);
   }
 }
-export function Provider({ children }: { children: ReactNode }) {
+export function Provider({
+  children,
+  loginPage,
+}: {
+  children: ReactNode;
+  loginPage?: ReactNode;
+}) {
   const [session, setSession] = useState<Session | null>();
   const [error, setError] = useState('');
   const [toast, setToast] = useState('');
@@ -93,7 +99,7 @@ export function Provider({ children }: { children: ReactNode }) {
         <div className="skeleton" />
       </div>
     );
-  if (!session) return <Login onLogin={setSession} />;
+  if (!session) return <Login onLogin={setSession} publicPage={loginPage} />;
   const request = async <T,>(path: string, method = 'GET', body?: unknown) => {
     try {
       return await api<T>(path, method, body, session.csrf);
@@ -130,7 +136,13 @@ export function Provider({ children }: { children: ReactNode }) {
     </Context.Provider>
   );
 }
-function Login({ onLogin }: { onLogin: (s: Session) => void }) {
+function Login({
+  onLogin,
+  publicPage,
+}: {
+  onLogin: (s: Session) => void;
+  publicPage?: ReactNode;
+}) {
   const [config, setConfig] = useState<any>();
   const [ownerCredential, setOwnerCredential] = useState('');
   const [error, setError] = useState('');
@@ -140,6 +152,8 @@ function Login({ onLogin }: { onLogin: (s: Session) => void }) {
       .then(setConfig)
       .catch(() => setError('无法连接 API，请确认服务已启动'));
   }, []);
+  if (config && !config.mock && !config.ownerSetup && publicPage)
+    return <>{publicPage}</>;
   return (
     <main className="login">
       <div className="glass login-card">

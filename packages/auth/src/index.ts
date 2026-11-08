@@ -1,3 +1,5 @@
+import { applyAutoGrant } from './auto-grant';
+import { selfServiceRegistration } from './self-service';
 import { assertPublicUrls, googleRedirectUri } from './urls';
 import { OAuth2Client } from 'google-auth-library';
 import { sql } from '../../db/src';
@@ -64,22 +66,29 @@ export async function activateGoogle(payload: {
     const [registration] = await tx.unsafe(
       "SELECT value FROM settings WHERE key='member_registration_open'",
     );
-    if (!invite && registration?.value !== true)
+    if (selfServiceRegistration() && registration?.value !== true)
+      throw new AppError(403, 'REGISTRATION_CLOSED', '当前暂未开放注册');
+    if (!selfServiceRegistration() && !invite && registration?.value !== true)
       throw new AppError(403, 'INVITE_REQUIRED', '此账号尚未受邀');
     const [limit] = await tx`select value from settings where key='seat_limit'`;
     const [count] =
       await tx`select count(*)::int as total from users where deleted_at is null`;
     if (count.total >= Number(limit.value))
       throw new AppError(409, 'SEAT_LIMIT', '用户席位已满');
-    const role = invite ? invite.data.role : 'Member';
+    const role = selfServiceRegistration()
+      ? 'Member'
+      : invite
+        ? invite.data.role
+        : 'Member';
     if (!['Admin', 'Member', 'Viewer'].includes(role))
       throw new AppError(403, 'INVITE_ROLE', '邀请角色无效');
     const [u] =
       await tx`insert into users(email,name,role) values(${payload.email!},${payload.name || 'Google 用户'},${role}) returning *`;
     await tx`insert into google_identities(user_id,sub) values(${u.id},${payload.sub})`;
     await tx`insert into subscription_tokens(owner_id,token_hash,data) values(${u.id},${hash(token())},${tx.json({ enabled: true })})`;
-    if (invite)
+    if (invite && !selfServiceRegistration())
       await tx`update invitations set data=data || ${tx.json({ usedAt: new Date().toISOString() })} where id=${invite.id}`;
+    await applyAutoGrant(u.id, tx);
     return u as User;
   });
 }

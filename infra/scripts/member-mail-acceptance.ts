@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import { assertPublicUrls } from '../../packages/auth/src/urls';
+import { mailApiKey } from '../../packages/auth/src/mail-secret';
 
 type Result = {
   configuration: 'VALID' | 'INVALID';
@@ -26,7 +27,7 @@ const mailbox = /^[^\s<>@\r\n]+@[^\s<>@\r\n]+\.[^\s<>@\r\n]+$/;
 export async function verifyMemberMail(send = false): Promise<Result> {
   if (
     process.env.MAIL_PROVIDER !== 'resend' ||
-    !/^\S+$/.test(process.env.MAIL_API_KEY || '') ||
+    !/^\S+$/.test(mailApiKey()) ||
     !mailbox.test(process.env.MAIL_FROM || '')
   )
     return invalid('MAIL_UNCONFIGURED');
@@ -56,7 +57,7 @@ export async function verifyMemberMail(send = false): Promise<Result> {
       redirect: 'error',
       signal: AbortSignal.timeout(8000),
       headers: {
-        authorization: 'Bearer ' + process.env.MAIL_API_KEY,
+        authorization: 'Bearer ' + mailApiKey(),
         'content-type': 'application/json',
         'idempotency-key': 'fafa-member-acceptance-' + reference,
       },
