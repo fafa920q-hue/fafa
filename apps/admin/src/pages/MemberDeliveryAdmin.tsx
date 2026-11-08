@@ -43,7 +43,7 @@ export function MemberDeliveryAdmin(){
  </Card>
  <Card title="自动授权记录" description="记录授权来源、资格状态和到期时间；缺少已授权节点源时保持待分配。">
  <DataState error={records.error} loading={!records.data} onRetry={records.refresh}/>
- {records.data?.map(row=><div className="list-item" key={row.user_id+row.kind+row.resource_id}><div><strong>{row.kind} · {row.status}</strong><small>来源：首次三天活动 · {row.reason||'已按策略处理'}</small><small>开始：{new Date(row.granted_at||row.created_at).toLocaleString('zh-CN')} · 到期：{row.expires_at?new Date(row.expires_at).toLocaleString('zh-CN'):'无'}</small></div></div>)}
+ {records.data?.map(row=><div className="list-item" key={row.user_id+row.kind+row.resource_id}><div><strong>{row.kind} · {row.expires_at&&new Date(row.expires_at).getTime()<=Date.now()?'已到期':row.status}</strong><small>来源：首次三天活动 · {row.reason||'已按策略处理'}</small><small>开始：{new Date(row.granted_at||row.created_at).toLocaleString('zh-CN')} · 到期：{row.expires_at?new Date(row.expires_at).toLocaleString('zh-CN'):'无'}</small></div></div>)}
  </Card>
  </>;
 }

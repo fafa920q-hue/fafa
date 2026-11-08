@@ -20,7 +20,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Format tracked delivery changes only
         run: |
-          git diff --name-only -z b623dac1420f07f0b54077ec0d87c059fe1dd13f HEAD |
+          git diff --name-only -z b623dac1420f07f0b54077ec0d87c059fe1dd13f HEAD -- . ':!.github/workflows/**' |
             xargs -0 -r pnpm exec prettier --write --ignore-unknown
           if ! git diff --quiet; then
             git config user.name 'github-actions[bot]'

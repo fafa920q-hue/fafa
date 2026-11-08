@@ -3,7 +3,8 @@ on:
   push:
     branches: [feat/member-auth-registration, feat/member-auth-delivery]
   pull_request:
-    branches: [feat/fafa-one-control-panel, feat/member-auth-integration-b4dd0cea]
+    branches:
+      [feat/fafa-one-control-panel, feat/member-auth-integration-b4dd0cea]
     paths:
       - 'packages/auth/**'
       - 'apps/api/src/member-auth.ts'
@@ -184,7 +185,12 @@ jobs:
     services:
       postgres:
         image: postgres:17.7-alpine
-        env: { POSTGRES_DB: fafa, POSTGRES_USER: fafa, POSTGRES_PASSWORD: fafa_dev_only }
+        env:
+          {
+            POSTGRES_DB: fafa,
+            POSTGRES_USER: fafa,
+            POSTGRES_PASSWORD: fafa_dev_only,
+          }
         ports: ['5432:5432']
         options: >-
           --health-cmd "pg_isready -U fafa" --health-interval 5s --health-timeout 3s --health-retries 20
@@ -196,10 +202,14 @@ jobs:
       MAIL_PROVIDER: resend
       MAIL_API_KEY: synthetic-browser-resend-fixture
       MAIL_FROM: accounts@example.invalid
-      FAFA_TEST_MAIL_FILE: ${{ runner.temp }}/member-synthetic-mail.ndjson
+      FAFA_TEST_MAIL_FILE: /tmp/member-synthetic-mail.ndjson
     steps:
       - uses: actions/checkout@v4
-        with: { persist-credentials: false, ref: '${{ github.event.pull_request.head.sha || github.sha }}' }
+        with:
+          {
+            persist-credentials: false,
+            ref: '${{ github.event.pull_request.head.sha || github.sha }}',
+          }
       - uses: actions/setup-node@v4
         with: { node-version: '24' }
       - run: npm install -g pnpm@11.25.0

@@ -7,6 +7,12 @@ export type User = {
   email: string;
   role: Role;
   disabled: boolean;
+  node_access_enabled?: boolean;
+  node_access_until?: Date | string | null;
+  server_connect_enabled?: boolean;
+  server_connect_until?: Date | string | null;
+  codex_tasks_enabled?: boolean;
+  codex_tasks_until?: Date | string | null;
 };
 export const isAdmin = (role: Role) => role === 'Owner' || role === 'Admin';
 export const writable = (role: Role) => role !== 'Viewer';
