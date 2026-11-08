@@ -68,12 +68,23 @@ it('005 增量迁移保留既有 Owner、Google sub、会话、设置和加密�
     await apply('004_traffic_policy.sql');
     await apply('005_member_auth.sql');
     await apply('006_auto_grant_policy.sql');
-    const trialId=randomUUID();
-    await db.unsafe("INSERT INTO users(id,email,name,role,server_connect_enabled) VALUES($1,'legacy-trial@example.invalid','Legacy trial','Member',true)",[trialId]);
-    await db.unsafe("INSERT INTO auto_grant_records(user_id,kind,status,expires_at,granted_at) VALUES($1,'server','GRANTED',now()-interval '1 second',now()-interval '3 days')",[trialId]);
+    const trialId = randomUUID();
+    await db.unsafe(
+      "INSERT INTO users(id,email,name,role,server_connect_enabled) VALUES($1,'legacy-trial@example.invalid','Legacy trial','Member',true)",
+      [trialId],
+    );
+    await db.unsafe(
+      "INSERT INTO auto_grant_records(user_id,kind,status,expires_at,granted_at) VALUES($1,'server','GRANTED',now()-interval '1 second',now()-interval '3 days')",
+      [trialId],
+    );
     await apply('007_member_delivery.sql');
-    const [trial]=await db.unsafe('SELECT server_connect_until FROM users WHERE id=$1',[trialId]);
-    expect(new Date(trial.server_connect_until).getTime()).toBeLessThan(Date.now());
+    const [trial] = await db.unsafe(
+      'SELECT server_connect_until FROM users WHERE id=$1',
+      [trialId],
+    );
+    expect(new Date(trial.server_connect_until).getTime()).toBeLessThan(
+      Date.now(),
+    );
     await apply('005_member_auth.sql');
     await apply('006_auto_grant_policy.sql');
     await apply('007_member_delivery.sql');
