@@ -191,23 +191,13 @@ export async function registerSsh(app: FastifyInstance, origins: string[]) {
       } catch {
         permitted = false;
       }
-      if (
-        Date.now() - idle > 300000 ||
-        !session ||
-        !u ||
-        !capabilityAllowed(u, 'server') ||
-        !permitted
-      )
+      if (Date.now() - idle > 300000 || !session || !u || !capabilityAllowed(u,'server') || !permitted)
         ws.close(1008, '会话已过期');
     }, 10000);
     ws.on('message', async (raw: Buffer) => {
       try {
-        const [live] =
-          await sql`select u.* from users u join sessions s on s.owner_id=u.id where u.id=${actor.id} and s.id=${actor.session_id} and s.revoked_at is null and s.expires_at>now() and not u.disabled and u.deleted_at is null`;
-        if (!live || !capabilityAllowed(live, 'server')) {
-          ws.close(1008, '服务器授权已撤销或到期');
-          return;
-        }
+        const [live]=await sql`select u.* from users u join sessions s on s.owner_id=u.id where u.id=${actor.id} and s.id=${actor.session_id} and s.revoked_at is null and s.expires_at>now() and not u.disabled and u.deleted_at is null`;
+        if(!live||!capabilityAllowed(live,'server')){ws.close(1008,'服务器授权已撤销或到期');return;}
         idle = Date.now();
         if (!initialized) {
           initialized = true;
