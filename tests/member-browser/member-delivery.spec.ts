@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, mkdirSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { sql } from '../../packages/db/src';
 
@@ -258,6 +258,9 @@ test('不同意协议时不发送注册邮件', async ({ page }) => {
 });
 
 test('认证页面视觉与手机溢出检查', async ({ page }, testInfo) => {
+  const folder =
+    process.env.FAFA_TEST_SCREENSHOT_DIR || 'docs/screenshots/member-auth';
+  mkdirSync(folder, { recursive: true });
   for (const mode of ['login', 'register', 'forgot']) {
     await page.goto('/member/' + mode);
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
@@ -267,7 +270,7 @@ test('认证页面视觉与手机溢出检查', async ({ page }, testInfo) => {
       ),
     ).toBe(true);
     await page.screenshot({
-      path: '/evidence/auth-' + mode + '-' + testInfo.project.name + '.jpg',
+      path: folder + '/auth-' + mode + '-' + testInfo.project.name + '.jpg',
       type: 'jpeg',
       quality: 60,
       fullPage: true,

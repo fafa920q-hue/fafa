@@ -1,3 +1,4 @@
+import { consumeActionToken } from './action-token';
 import { AuthPolicy } from './AuthPolicy';
 import { AuthBrand, AuthLegal, GoogleSignIn, PasswordField } from './AuthUI';
 import { CodeRegistration } from './CodeRegistration';
@@ -50,9 +51,7 @@ function CredentialForm({ mode }: { mode: string }) {
   );
   const [error, setError] = useState('');
   const submitting = useRef(false);
-  const action = useRef(
-    new URLSearchParams(window.location.hash.slice(1)).get('token') || '',
-  );
+  const action = useRef(consumeActionToken());
   useEffect(() => {
     // Never keep action credentials in browser history, query strings or rendered DOM.
     if (window.location.hash)

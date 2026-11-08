@@ -40,7 +40,7 @@ createRoot(document.getElementById('root')!).render(
     {window.location.pathname.startsWith('/member/') ? (
       <MemberPortal />
     ) : (
-      <Provider>
+      <Provider loginPage={<MemberPortal />}>
         <Shell nav={nav} bottom={[nav[0], nav[1], nav[2], nav[3], nav[5]]}>
           <Suspense
             fallback={<div className="skeleton" aria-label="正在加载页面" />}
