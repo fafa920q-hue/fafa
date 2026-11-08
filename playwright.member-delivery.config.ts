@@ -6,7 +6,14 @@ export default defineConfig({
   reporter: [
     ['list'],
     ['html', { open: 'never', outputFolder: 'member-browser-report' }],
-    ['json', { outputFile: 'docs/evidence/member-delivery-browser.json' }],
+    [
+      'json',
+      {
+        outputFile:
+          process.env.FAFA_TEST_REPORT ||
+          'docs/evidence/member-delivery-browser.json',
+      },
+    ],
   ],
   projects: base.projects!.filter((project) =>
     ['chromium', 'iphone', 'android'].includes(project.name!),

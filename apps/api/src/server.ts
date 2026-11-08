@@ -256,6 +256,7 @@ export async function buildApp() {
     reply: any,
     user: User,
     expectedPasswordHash?: string,
+    remember = true,
   ) => {
     const s = await createSession(user, expectedPasswordHash);
     reply.setCookie('fafa_session', s.raw, {
@@ -264,7 +265,7 @@ export async function buildApp() {
       sameSite: 'lax',
       ...sharedCookieDomain(),
       path: '/',
-      maxAge: 604800,
+      ...(remember ? { maxAge: 604800 } : {}),
     });
     return { user, csrf: s.csrf, demo: process.env.DEMO_MODE === 'true' };
   };

@@ -1,3 +1,4 @@
+import { AuthLegal, GoogleSignIn, PasswordField } from './AuthUI';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 
@@ -54,7 +55,7 @@ export function CodeRegistration() {
     const data = values();
     const fields =
       kind === 'start'
-        ? ['username', 'email', 'password', 'confirmPassword']
+        ? ['username', 'email', 'password', 'confirmPassword', 'acceptedTerms']
         : kind === 'complete'
           ? ['password', 'code']
           : ['email', 'password'];
@@ -167,31 +168,29 @@ export function CodeRegistration() {
           maxLength={254}
         />
       </label>
-      <label>
-        <span>密码</span>
-        <input
-          name="password"
-          type="password"
-          autoComplete="new-password"
-          required
-          minLength={15}
-          maxLength={128}
-        />
-      </label>
-      <label>
-        <span>确认密码</span>
-        <input
-          name="confirmPassword"
-          type="password"
-          autoComplete="new-password"
-          required
-          minLength={15}
-          maxLength={128}
-        />
-      </label>
+      <PasswordField minimum={15} autoComplete="new-password" />
+      <PasswordField
+        label="确认密码"
+        name="confirmPassword"
+        minimum={15}
+        autoComplete="new-password"
+      />
       <small>
         密码为15至128个字符，可包含中文和空格。不要分享验证码或密码。
       </small>
+      <label className="auth-check">
+        <input type="checkbox" name="acceptedTerms" required />
+        <span>
+          我已阅读并同意
+          <Link to="/member/terms" target="_blank" rel="noreferrer">
+            用户协议
+          </Link>
+          和
+          <Link to="/member/privacy" target="_blank" rel="noreferrer">
+            隐私政策
+          </Link>
+        </span>
+      </label>
       <div className="member-actions">
         <button
           type="button"
@@ -235,14 +234,14 @@ export function CodeRegistration() {
           className="primary"
           disabled={busy || unavailable || !challenge.current}
         >
-          {busy ? '处理中…' : '确认'}
+          {busy ? '处理中…' : '验证邮箱并创建账户'}
         </button>
       </div>
-      <Link to="/member/login">普通账户登录</Link>
-      <Link to="/member/forgot">忘记密码</Link>
-      <Link to="/member/resend">重新发送激活邮件</Link>
-      <a href="/auth/google">使用 Google 登录</a>
-      <a href="/">返回现有控制台</a>
+      <p className="auth-help">
+        已有账户？<Link to="/member/login">立即登录</Link>
+      </p>
+      <GoogleSignIn />
+      <AuthLegal />
     </form>
   );
 }

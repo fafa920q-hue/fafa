@@ -66,7 +66,7 @@ for (const width of [375, 390, 430, 768, 1440])
         page.getByRole('button', { name: '发送验证码', exact: true }),
       ).toBeEnabled();
       await expect(
-        page.getByRole('button', { name: '确认', exact: true }),
+        page.getByRole('button', { name: '验证邮箱并创建账户', exact: true }),
       ).toBeDisabled();
       await page.getByLabel('用户名', { exact: true }).fill('layout_user');
       await page
@@ -76,6 +76,7 @@ for (const width of [375, 390, 430, 768, 1440])
       await page
         .getByLabel('确认密码', { exact: true })
         .fill('a different synthetic password');
+      await page.getByRole('checkbox', { name: /我已阅读并同意/ }).check();
       await page
         .getByRole('button', { name: '发送验证码', exact: true })
         .click();
@@ -100,12 +101,15 @@ test('真实数据库与API：验证码、重发、自动登录、找回及重�
   await page.getByLabel('邮箱', { exact: true }).fill(email);
   await page.getByLabel('密码', { exact: true }).fill(password);
   await page.getByLabel('确认密码', { exact: true }).fill(password);
+  await page.getByRole('checkbox', { name: /我已阅读并同意/ }).check();
   await page.getByRole('button', { name: '发送验证码', exact: true }).click();
   await expect(page.getByRole('status')).toContainText('已由邮件服务接受');
   const first = await code(email),
     bad = first === '000000' ? '111111' : '000000';
   await page.getByLabel('邮箱验证码', { exact: true }).fill(bad);
-  await page.getByRole('button', { name: '确认', exact: true }).click();
+  await page
+    .getByRole('button', { name: '验证邮箱并创建账户', exact: true })
+    .click();
   await expect(page.getByRole('alert')).toContainText(
     '验证码或原注册密码不正确',
   );
@@ -119,7 +123,9 @@ test('真实数据库与API：验证码、重发、自动登录、找回及重�
   const latest = await code(email);
   expect(latest).not.toBe(first);
   await page.getByLabel('邮箱验证码', { exact: true }).fill(latest);
-  await page.getByRole('button', { name: '确认', exact: true }).click();
+  await page
+    .getByRole('button', { name: '验证邮箱并创建账户', exact: true })
+    .click();
   await expect(
     page.getByRole('heading', { name: '账户安全', exact: true }),
   ).toBeVisible();
@@ -133,13 +139,27 @@ test('真实数据库与API：验证码、重发、自动登录、找回及重�
   await page.getByRole('button', { name: '安全退出登录', exact: true }).click();
   await page.getByLabel('用户名或邮箱', { exact: true }).fill(email);
   await page.getByLabel('密码', { exact: true }).fill(password);
-  await page.getByRole('button', { name: '确认', exact: true }).click();
+  await page.getByRole('button', { name: '登录', exact: true }).click();
   await expect(
     page.getByRole('heading', { name: '账户安全', exact: true }),
   ).toBeVisible();
+  expect(
+    (await context.cookies()).find((c) => c.name === 'fafa_session')?.expires,
+  ).toBe(-1);
+  await page.getByRole('button', { name: '安全退出登录', exact: true }).click();
+  await page.getByLabel('用户名或邮箱', { exact: true }).fill(username);
+  await page.getByLabel('密码', { exact: true }).fill(password);
+  await page.getByRole('checkbox', { name: '记住登录状态' }).check();
+  await page.getByRole('button', { name: '登录', exact: true }).click();
+  await expect(
+    page.getByRole('heading', { name: '账户安全', exact: true }),
+  ).toBeVisible();
+  expect(
+    (await context.cookies()).find((c) => c.name === 'fafa_session')!.expires,
+  ).toBeGreaterThan(Date.now() / 1000);
   await page.goto('/member/forgot');
   await page.getByLabel('邮箱', { exact: true }).fill(email);
-  await page.getByRole('button', { name: '确认', exact: true }).click();
+  await page.getByRole('button', { name: '发送重置邮件', exact: true }).click();
   await expect
     .poll(() => messages(email).some((m) => m.subject === 'FAFA ONE 密码重置'))
     .toBe(true);
@@ -154,7 +174,7 @@ test('真实数据库与API：验证码、重发、自动登录、找回及重�
   const next = 'synthetic changed browser password 中文';
   await page.getByLabel('新密码', { exact: true }).fill(next);
   await page.getByLabel('确认新密码', { exact: true }).fill(next);
-  await page.getByRole('button', { name: '确认', exact: true }).click();
+  await page.getByRole('button', { name: '设置新密码', exact: true }).click();
   await expect(page.getByRole('status')).toContainText('密码已重置');
   expect((await old.request.get('/api/me')).status()).toBe(401);
   await expect
@@ -163,7 +183,7 @@ test('真实数据库与API：验证码、重发、自动登录、找回及重�
   await page.goto('/member/login');
   await page.getByLabel('用户名或邮箱', { exact: true }).fill(username);
   await page.getByLabel('密码', { exact: true }).fill(next);
-  await page.getByRole('button', { name: '确认', exact: true }).click();
+  await page.getByRole('button', { name: '登录', exact: true }).click();
   await expect(
     page.getByRole('heading', { name: '账户安全', exact: true }),
   ).toBeVisible();
@@ -178,12 +198,80 @@ test('提供商真实失败响应不能显示邮件发送成功', async ({ page 
     .fill(name + '@example.invalid');
   await page.getByLabel('密码', { exact: true }).fill(password);
   await page.getByLabel('确认密码', { exact: true }).fill(password);
+  await page.getByRole('checkbox', { name: /我已阅读并同意/ }).check();
   await page.getByRole('button', { name: '发送验证码', exact: true }).click();
   await expect(page.getByRole('alert')).toContainText('邮件服务暂时无法发送');
   await expect(
     page.getByRole('button', { name: '发送验证码', exact: true }),
   ).toBeEnabled();
   await expect(
-    page.getByRole('button', { name: '确认', exact: true }),
+    page.getByRole('button', { name: '验证邮箱并创建账户', exact: true }),
   ).toBeDisabled();
+});
+
+test('认证交互：密码可见性、记住状态和协议入口', async ({ page }) => {
+  await page.goto('/member/login');
+  const input = page.getByLabel('密码', { exact: true });
+  await input.fill('synthetic visibility password');
+  await expect(input).toHaveAttribute('type', 'password');
+  await page.getByRole('button', { name: '显示密码', exact: true }).click();
+  await expect(input).toHaveAttribute('type', 'text');
+  await page.getByRole('button', { name: '隐藏密码', exact: true }).click();
+  await expect(input).toHaveAttribute('type', 'password');
+  await expect(
+    page.getByRole('checkbox', { name: '记住登录状态' }),
+  ).not.toBeChecked();
+  await page.getByRole('checkbox', { name: '记住登录状态' }).check();
+  await expect(
+    page.getByRole('checkbox', { name: '记住登录状态' }),
+  ).toBeChecked();
+  await expect(
+    page.getByRole('link', { name: '使用 Google 登录' }),
+  ).toHaveAttribute('href', '/auth/google');
+  await page.getByRole('link', { name: '隐私政策', exact: true }).click();
+  await expect(
+    page.getByRole('heading', { name: '隐私政策', exact: true }),
+  ).toBeVisible();
+});
+test('不同意协议时不发送注册邮件', async ({ page }) => {
+  await page.goto('/member/register');
+  await page.getByLabel('用户名', { exact: true }).fill('consent_layout');
+  await page
+    .getByLabel('邮箱', { exact: true })
+    .fill('consent_layout@example.invalid');
+  await page.getByLabel('密码', { exact: true }).fill(password);
+  await page.getByLabel('确认密码', { exact: true }).fill(password);
+  let sent = 0;
+  page.on('request', (r) => {
+    if (r.url().endsWith('/auth/member/registration/start')) sent++;
+  });
+  await page.getByRole('button', { name: '发送验证码', exact: true }).click();
+  expect(sent).toBe(0);
+  await expect(
+    page.getByRole('checkbox', { name: /我已阅读并同意/ }),
+  ).not.toBeChecked();
+  expect(
+    await page
+      .getByRole('checkbox', { name: /我已阅读并同意/ })
+      .evaluate((input: HTMLInputElement) => input.validity.valueMissing),
+  ).toBe(true);
+});
+
+test('认证页面视觉与手机溢出检查', async ({ page }, testInfo) => {
+  for (const mode of ['login', 'register', 'forgot']) {
+    await page.goto('/member/' + mode);
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    ).toBe(true);
+    await page.screenshot({
+      path: '/evidence/auth-' + mode + '-' + testInfo.project.name + '.jpg',
+      type: 'jpeg',
+      quality: 60,
+      fullPage: true,
+      animations: 'disabled',
+    });
+  }
 });

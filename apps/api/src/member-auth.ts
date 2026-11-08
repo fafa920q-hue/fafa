@@ -60,6 +60,7 @@ export async function registerMemberAuth(
       reply: FastifyReply,
       user: User,
       expectedPasswordHash?: string,
+      remember?: boolean,
     ) => Promise<unknown>;
     startGoogleLink: (reply: FastifyReply, id: string) => Promise<string>;
   },
@@ -291,6 +292,7 @@ export async function registerMemberAuth(
             .max(254)
             .transform((value) => value.toLowerCase()),
           password,
+          remember: z.boolean().optional().default(false),
         })
         .strict()
         .parse(req.body);
@@ -300,7 +302,12 @@ export async function registerMemberAuth(
           'UPDATE sessions SET revoked_at=now() WHERE token_hash=$1 AND revoked_at IS NULL',
           [hash(req.cookies.fafa_session)],
         );
-      return options.setSession(reply, result.user, result.passwordHash);
+      return options.setSession(
+        reply,
+        result.user,
+        result.passwordHash,
+        data.remember,
+      );
     },
   );
   app.post(
