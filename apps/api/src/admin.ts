@@ -79,11 +79,9 @@ export async function registerAdmin(app: FastifyInstance) {
     if (!u) throw notFound();
     if (
       u.role !== 'Member' &&
-      [
-        d.nodeAccessEnabled,
-        d.serverConnectEnabled,
-        d.codexTasksEnabled,
-      ].some((value) => value !== undefined)
+      [d.nodeAccessEnabled, d.serverConnectEnabled, d.codexTasksEnabled].some(
+        (value) => value !== undefined,
+      )
     )
       throw new AppError(
         403,
