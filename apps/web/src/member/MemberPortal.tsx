@@ -4,7 +4,13 @@ import { AuthBrand, AuthLegal, GoogleSignIn, PasswordField } from './AuthUI';
 import { CodeRegistration } from './CodeRegistration';
 import './member.css';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { Link, Route, Routes, useLocation } from 'react-router-dom';
+import {
+  Link,
+  Route,
+  Routes,
+  useLocation,
+  useNavigate,
+} from 'react-router-dom';
 
 type Config = {
   csrf: string;
@@ -40,7 +46,14 @@ const titles: Record<string, string> = {
   reset: '设置新密码',
   resend: '重新发送激活邮件',
 };
-function CredentialForm({ mode }: { mode: string }) {
+function CredentialForm({
+  mode,
+  onAuthenticated,
+}: {
+  mode: string;
+  onAuthenticated?: (session: any) => void;
+}) {
+  const navigate = useNavigate();
   const [config, setConfig] = useState<Config>();
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState(
@@ -105,10 +118,12 @@ function CredentialForm({ mode }: { mode: string }) {
         config.csrf,
       );
       form.reset();
-      if (mode === 'login') window.location.assign('/');
-      else if (mode === 'reset') {
+      if (mode === 'login') {
+        onAuthenticated?.(result);
+        navigate('/', { replace: true });
+      } else if (mode === 'reset') {
         action.current = '';
-        window.location.assign('/member/login?reset=success');
+        navigate('/member/login?reset=success', { replace: true });
       } else {
         if (mode === 'verify' || mode === 'reset') action.current = '';
         setMessage(result.message);
@@ -473,7 +488,9 @@ function AccountSecurity() {
     </div>
   );
 }
-export function MemberPortal() {
+export function MemberPortal({
+  onAuthenticated,
+}: { onAuthenticated?: (session: any) => void } = {}) {
   const location = useLocation();
   return (
     <main className="member-portal">
@@ -491,12 +508,24 @@ export function MemberPortal() {
                   key={mode}
                   path={'/member/' + mode}
                   element={
-                    <CredentialForm key={location.pathname} mode={mode} />
+                    <CredentialForm
+                      key={location.pathname}
+                      mode={mode}
+                      onAuthenticated={onAuthenticated}
+                    />
                   }
                 />
               ))}
             <Route path="/member/account" element={<AccountSecurity />} />
-            <Route path="*" element={<CredentialForm mode="login" />} />
+            <Route
+              path="*"
+              element={
+                <CredentialForm
+                  mode="login"
+                  onAuthenticated={onAuthenticated}
+                />
+              }
+            />
           </Routes>
         </section>
       </div>

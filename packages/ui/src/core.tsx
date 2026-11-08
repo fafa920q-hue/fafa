@@ -76,7 +76,7 @@ export function Provider({
   loginPage,
 }: {
   children: ReactNode;
-  loginPage?: ReactNode;
+  loginPage?: ReactNode | ((onLogin: (session: Session) => void) => ReactNode);
 }) {
   const [session, setSession] = useState<Session | null>();
   const [error, setError] = useState('');
@@ -99,7 +99,15 @@ export function Provider({
         <div className="skeleton" />
       </div>
     );
-  if (!session) return <Login onLogin={setSession} publicPage={loginPage} />;
+  if (!session)
+    return (
+      <Login
+        onLogin={setSession}
+        publicPage={
+          typeof loginPage === 'function' ? loginPage(setSession) : loginPage
+        }
+      />
+    );
   const request = async <T,>(path: string, method = 'GET', body?: unknown) => {
     try {
       return await api<T>(path, method, body, session.csrf);

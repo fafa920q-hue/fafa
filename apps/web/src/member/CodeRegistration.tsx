@@ -1,6 +1,6 @@
 import { AuthLegal, GoogleSignIn, PasswordField } from './AuthUI';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 
 type Config = {
   csrf: string;
@@ -23,6 +23,7 @@ async function request(path: string, body?: unknown, csrf?: string) {
   return data;
 }
 export function CodeRegistration() {
+  const navigate = useNavigate();
   const [config, setConfig] = useState<Config>();
   const [busy, setBusy] = useState(false),
     [error, setError] = useState(''),
@@ -106,7 +107,7 @@ export function CodeRegistration() {
       if (kind === 'complete') {
         formRef.current!.reset();
         challenge.current = '';
-        window.location.assign('/');
+        navigate('/', { replace: true });
         return;
       }
       setMessage(result.message);

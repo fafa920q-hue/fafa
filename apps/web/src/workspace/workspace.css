@@ -211,3 +211,8 @@
 .v3-workspace .v3-welcome {
   background: linear-gradient(110deg, var(--surface), var(--input));
 }
+
+.v3-node,
+.v3-stat {
+  backdrop-filter: none;
+}

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import {
   Globe2,
   Code2,
@@ -26,6 +26,7 @@ const actionNames: Record<string, string> = {
   'subscription.profile_updated': '调整订阅范围',
 };
 export function MemberWorkbench() {
+  const navigate = useNavigate();
   const { session, request } = useApp();
   const [loggingOut, setLoggingOut] = useState(false);
   const data = useData<any>('/api/workspace');
@@ -62,7 +63,7 @@ export function MemberWorkbench() {
                 onClick={() => {
                   setLoggingOut(true);
                   void request('/api/logout', 'POST')
-                    .then(() => window.location.assign('/member/login'))
+                    .then(() => navigate('/member/login', { replace: true }))
                     .catch(() => setLoggingOut(false));
                 }}
               >

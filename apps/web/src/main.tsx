@@ -1,7 +1,13 @@
 import { MySubscriptions } from './workspace/MySubscriptions';
 import { lazy, Suspense } from 'react';
 import { createRoot } from 'react-dom/client';
-import { BrowserRouter, Routes, Route, Link } from 'react-router-dom';
+import {
+  BrowserRouter,
+  Routes,
+  Route,
+  Link,
+  useLocation,
+} from 'react-router-dom';
 import {
   LayoutDashboard,
   Globe2,
@@ -37,37 +43,43 @@ const nav = [
   { to: '/locations', label: '位置中心', icon: MapPin },
   { to: '/account', label: '我的账户', icon: UserRound },
 ];
+function WebApplication() {
+  const location = useLocation();
+  return location.pathname.startsWith('/member/') ? (
+    <MemberPortal />
+  ) : (
+    <Provider
+      loginPage={(onLogin) => <MemberPortal onAuthenticated={onLogin} />}
+    >
+      <Shell nav={nav} bottom={[nav[0], nav[1], nav[3], nav[4], nav[6]]}>
+        <Suspense
+          fallback={<div className="skeleton" aria-label="正在加载页面" />}
+        >
+          <Routes>
+            <Route path="/" element={<Dashboard />} />
+            <Route path="/subscriptions" element={<Subscriptions />} />
+            <Route path="/my-subscriptions" element={<MySubscriptions />} />
+            <Route path="/codex" element={<Codex />} />
+            <Route path="/servers" element={<Servers />} />
+            <Route path="/locations" element={<Locations />} />
+            <Route path="/account" element={<Account />} />
+            <Route
+              path="*"
+              element={
+                <Empty
+                  title="页面不存在"
+                  action={<Link to="/">返回仪表盘</Link>}
+                />
+              }
+            />
+          </Routes>
+        </Suspense>
+      </Shell>
+    </Provider>
+  );
+}
 createRoot(document.getElementById('root')!).render(
   <BrowserRouter>
-    {window.location.pathname.startsWith('/member/') ? (
-      <MemberPortal />
-    ) : (
-      <Provider loginPage={<MemberPortal />}>
-        <Shell nav={nav} bottom={[nav[0], nav[1], nav[3], nav[4], nav[6]]}>
-          <Suspense
-            fallback={<div className="skeleton" aria-label="正在加载页面" />}
-          >
-            <Routes>
-              <Route path="/" element={<Dashboard />} />
-              <Route path="/subscriptions" element={<Subscriptions />} />
-              <Route path="/my-subscriptions" element={<MySubscriptions />} />
-              <Route path="/codex" element={<Codex />} />
-              <Route path="/servers" element={<Servers />} />
-              <Route path="/locations" element={<Locations />} />
-              <Route path="/account" element={<Account />} />
-              <Route
-                path="*"
-                element={
-                  <Empty
-                    title="页面不存在"
-                    action={<Link to="/">返回仪表盘</Link>}
-                  />
-                }
-              />
-            </Routes>
-          </Suspense>
-        </Shell>
-      </Provider>
-    )}
+    <WebApplication />
   </BrowserRouter>,
 );
