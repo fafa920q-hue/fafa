@@ -1,3 +1,4 @@
+import { capabilityAllowed } from '../../../packages/auth/src/auto-grant';
 import type { TokenPayload } from 'google-auth-library';
 import Fastify, { type FastifyRequest } from 'fastify';
 import cookie from '@fastify/cookie';
@@ -75,13 +76,13 @@ function publicRow(row: any) {
 }
 export async function visibleNodes(owner: string) {
   const [user] =
-    await sql`select node_limit,subscription_enabled from users where id=${owner} and not disabled and deleted_at is null`;
-  if (!user?.subscription_enabled) return [];
+    await sql`select role,node_access_enabled,node_access_until,node_limit,subscription_enabled from users where id=${owner} and not disabled and deleted_at is null`;
+  if (!user?.subscription_enabled || !capabilityAllowed(user,'node')) return [];
   const [profile] =
     await sql`select data from subscription_profiles where owner_id=${owner} and revoked_at is null order by updated_at desc limit 1`;
   const filter = profile?.data || {};
   const rows =
-    await sql`select n.*,s.data as source_data from nodes n join node_sources s on s.id=n.source_id join users u on u.id=s.owner_id where n.revoked_at is null and s.revoked_at is null and not u.disabled and u.deleted_at is null and (s.owner_id=${owner} or ((s.data->>'kind'='OWNED_NODE' or (s.data->>'authorized'='true' and s.data->>'redistributionAuthorized'='true' and length(trim(coalesce(s.data->>'authorizationReference','')))>0)) and exists(select 1 from node_group_grants g where g.source_id=s.id and g.user_id=${owner} and g.revoked_at is null)))`;
+    await sql`select n.*,s.data as source_data from nodes n join node_sources s on s.id=n.source_id join users u on u.id=s.owner_id where n.revoked_at is null and s.revoked_at is null and not u.disabled and u.deleted_at is null and (s.owner_id=${owner} or ((s.data->>'kind'='OWNED_NODE' or (s.data->>'authorized'='true' and s.data->>'redistributionAuthorized'='true' and length(trim(coalesce(s.data->>'authorizationReference','')))>0)) and exists(select 1 from node_group_grants g where g.source_id=s.id and g.user_id=${owner} and g.revoked_at is null and (not (g.data ? 'expiresAt') or (g.data->>'expiresAt')::timestamptz>now()))))`;
   const nodes = rows
     .filter(
       (row) =>
@@ -187,6 +188,8 @@ export async function buildApp() {
     const actor = await authenticate(req.cookies.fafa_session);
     if (!actor) throw new AppError(401, 'UNAUTHENTICATED', '请先登录');
     req.actor = actor;
+    const capability = /^\/api\/(servers|server_connections)(\/|$)/.test(path) ? 'server' : /^\/api\/(ai|ai_accounts)(\/|$)/.test(path) ? 'codex' : /^\/api\/(subscription|node_sources|nodes|node-import|shared-sources)(\/|$)/.test(path) ? 'node' : undefined;
+    if(capability && !capabilityAllowed(actor,capability)) throw new AppError(403,'CAPABILITY_REQUIRED','此功能尚未授权或试用已到期，请联系管理员');
     if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
       if (
         !origins.includes(req.headers.origin || '') ||
@@ -685,7 +688,7 @@ export async function buildApp() {
   });
   app.get('/api/shared-sources', async (req) =>
     (
-      await sql`select s.* from node_sources s join node_group_grants g on g.source_id=s.id join users u on u.id=s.owner_id where g.user_id=${req.actor.id} and g.revoked_at is null and s.revoked_at is null and not u.disabled and u.deleted_at is null and (s.data->>'kind'='OWNED_NODE' or (s.data->>'authorized'='true' and s.data->>'redistributionAuthorized'='true' and length(trim(coalesce(s.data->>'authorizationReference','')))>0))`
+      await sql`select s.* from node_sources s join node_group_grants g on g.source_id=s.id join users u on u.id=s.owner_id where g.user_id=${req.actor.id} and g.revoked_at is null and (not (g.data ? 'expiresAt') or (g.data->>'expiresAt')::timestamptz>now()) and s.revoked_at is null and not u.disabled and u.deleted_at is null and (s.data->>'kind'='OWNED_NODE' or (s.data->>'authorized'='true' and s.data->>'redistributionAuthorized'='true' and length(trim(coalesce(s.data->>'authorizationReference','')))>0))`
     ).map((r) => ({ ...publicRow(r), shared: true })),
   );
   app.get(
@@ -721,8 +724,9 @@ export async function buildApp() {
       async (req, reply) => {
         const raw = params(req).token;
         const [t] =
-          await sql`select t.* from subscription_tokens t join users u on u.id=t.owner_id where t.token_hash=${hash(raw)} and t.revoked_at is null and not u.disabled and u.deleted_at is null and u.subscription_enabled and t.data->>'enabled'='true'`;
-        if (!t) throw notFound();
+          await sql`select t.*,u.role,u.node_access_enabled,u.node_access_until from subscription_tokens t join users u on u.id=t.owner_id where t.token_hash=${hash(raw)} and t.revoked_at is null and not u.disabled and u.deleted_at is null and u.subscription_enabled and t.data->>'enabled'='true'`;
+        if(t && !capabilityAllowed(t,'node')) throw new AppError(403,'CAPABILITY_REQUIRED','订阅授权已撤销或到期');
+      if (!t) throw notFound();
         const { format } = z
           .object({
             format: z

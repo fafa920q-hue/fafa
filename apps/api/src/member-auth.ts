@@ -21,6 +21,9 @@ import {
   settleAccountMail,
 } from '../../../packages/auth/src/member-mail';
 
+import { startCodeRegistration, resumeCodeRegistration, resendRegistrationCode, verifyRegistrationCode, changeMemberPassword } from '../../../packages/auth/src/member-codes';
+import { AUTO_GRANT_POLICY_KEYS, autoGrantPolicySchema, readAutoGrantPolicy, backfillAutoGrants } from './auto-grant';
+
 const email = z
   .email()
   .max(254)
@@ -100,6 +103,51 @@ export async function registerMemberAuth(
       mailConfigured: mailConfigured(),
     };
   });
+
+  app.post('/auth/member/registration/start',{...limit(15),preHandler:guard},async(req,reply)=>{
+   const data=z.object({username,email,password,confirmPassword:password}).strict().parse(req.body);
+   return reply.code(202).send(await startCodeRegistration(data));
+  });
+  app.post('/auth/member/registration/resend',{...limit(10),preHandler:guard},async req=>{
+   const data=z.object({challenge:actionToken,password}).strict().parse(req.body);
+   return resendRegistrationCode(data.challenge,data.password);
+  });
+  app.post('/auth/member/registration/recover',{...limit(10),preHandler:guard},async req=>{
+   const data=z.object({email,password}).strict().parse(req.body);return resumeCodeRegistration(data.email,data.password);
+  });
+  app.post('/auth/member/registration/complete',{...limit(15),preHandler:guard},async(req,reply)=>{
+   const data=z.object({challenge:actionToken,code:z.string().regex(/^\d{6}$/),password}).strict().parse(req.body);
+   const result=await verifyRegistrationCode(data.challenge,data.code,data.password);
+   return options.setSession(reply,result.user,result.passwordHash);
+  });
+  app.post('/api/member/password',limit(10),async(req,reply)=>{
+   const data=z.object({currentPassword:password,newPassword:password}).strict().parse(req.body);
+   await changeMemberPassword(req.actor.id,data.currentPassword,data.newPassword);
+   clearSession(reply);return {message:'密码已修改，旧会话已撤销，请重新登录'};
+  });
+  app.get('/api/admin/member-mail',async()=>sql.unsafe('SELECT id,owner_id,purpose,status,failure_code,provider_status,created_at,updated_at FROM member_mail_events ORDER BY created_at DESC LIMIT 100'));
+  app.get('/api/admin/auto-grant-policy',async()=>readAutoGrantPolicy());
+  app.patch('/api/admin/auto-grant-policy',async req=>{
+   if(req.actor.role!=='Owner') throw new AppError(403,'OWNER_REQUIRED','仅Owner可修改首次三天授权策略');
+   const data=autoGrantPolicySchema.parse(req.body);
+   if(data.nodeSourceId){
+    const [source]=await sql.unsafe('SELECT id FROM node_sources WHERE id=$1 AND owner_id=$2 AND revoked_at IS NULL',[data.nodeSourceId,req.actor.id]);
+    if(!source) throw new AppError(404,'NOT_FOUND','节点源不存在或无权设置');
+   }
+   const values=[data.enabled,data.windowStart,data.windowEnd,data.nodeSourceId,data.nodeLimit,data.trialValidDays];
+   await sql.begin(async tx=>{
+    await tx.unsafe('SELECT pg_advisory_xact_lock(77702)');
+    for(let i=0;i<AUTO_GRANT_POLICY_KEYS.length;i++) await tx.unsafe('UPDATE settings SET value=$2::jsonb,updated_at=now() WHERE key=$1',[AUTO_GRANT_POLICY_KEYS[i],JSON.stringify(values[i])]);
+    await tx.unsafe("INSERT INTO audit_events(owner_id,action,target_id) VALUES($1,'auto_grant.policy_updated',$2)",[req.actor.id,JSON.stringify(data)]);
+   });
+   return {ok:true};
+  });
+  app.post('/api/admin/auto-grant/backfill',async req=>{
+   if(req.actor.role!=='Owner') throw new AppError(403,'OWNER_REQUIRED','仅Owner可补处理授权');
+   return backfillAutoGrants(req.actor.id);
+  });
+  app.get('/api/admin/auto-grant-records',async()=>sql.unsafe('SELECT user_id,kind,resource_id,status,reason,granted_at,expires_at,created_at FROM auto_grant_records ORDER BY created_at DESC LIMIT 100'));
+
   app.post(
     '/auth/member/register',
     { ...limit(15), preHandler: guard },

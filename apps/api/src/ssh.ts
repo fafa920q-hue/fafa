@@ -1,3 +1,4 @@
+import { capabilityAllowed } from '../../../packages/auth/src/auto-grant';
 import { Client } from 'ssh2';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
@@ -183,14 +184,14 @@ export async function registerSsh(app: FastifyInstance, origins: string[]) {
       const [session] =
         await sql`select id from sessions where id=${actor.session_id} and revoked_at is null and expires_at>now()`;
       const [u] =
-        await sql`select id from users where id=${actor.id} and not disabled`;
+        await sql`select * from users where id=${actor.id} and not disabled`;
       let permitted = true;
       try {
         await accessible((req.params as any).id, actor.id);
       } catch {
         permitted = false;
       }
-      if (Date.now() - idle > 300000 || !session || !u || !permitted)
+      if (Date.now() - idle > 300000 || !session || !u || !capabilityAllowed(u,'server') || !permitted)
         ws.close(1008, '会话已过期');
     }, 10000);
     ws.on('message', async (raw: Buffer) => {

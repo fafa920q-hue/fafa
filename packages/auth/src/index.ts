@@ -1,3 +1,4 @@
+import { applyAutoGrant } from './auto-grant';
 import { assertPublicUrls, googleRedirectUri } from './urls';
 import { OAuth2Client } from 'google-auth-library';
 import { sql } from '../../db/src';
@@ -80,6 +81,7 @@ export async function activateGoogle(payload: {
     await tx`insert into subscription_tokens(owner_id,token_hash,data) values(${u.id},${hash(token())},${tx.json({ enabled: true })})`;
     if (invite)
       await tx`update invitations set data=data || ${tx.json({ usedAt: new Date().toISOString() })} where id=${invite.id}`;
+    await applyAutoGrant(u.id,tx);
     return u as User;
   });
 }
