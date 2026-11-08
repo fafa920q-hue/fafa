@@ -1,0 +1,44 @@
+name: Member delivery failure evidence
+on:
+  push:
+    branches: [codex/member-delivery-evidence]
+permissions: { contents: read, actions: read }
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Download only the isolated synthetic browser evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api repos/fafa920q-hue/fafa/actions/artifacts/13609164298/zip > "$RUNNER_TEMP/member-evidence.zip"
+      - name: Read first failed assertion and accessible page snapshot
+        env:
+          EVIDENCE_ZIP: ${{ runner.temp }}/member-evidence.zip
+        run: |
+          python3 - <<'PY'
+          import json,os,re,zipfile
+          with zipfile.ZipFile(os.environ['EVIDENCE_ZIP']) as archive:
+            reports=[name for name in archive.namelist() if name.endswith('member-delivery-browser.json')]
+            def visit(node):
+              if isinstance(node,dict):
+                for item in node.get('tests',[]):
+                  for result in item.get('results',[]):
+                    if result.get('status') not in ('passed','skipped'):
+                      errors=result.get('errors',[])
+                      if errors:
+                        print(json.dumps({'title':node.get('title'),'status':result.get('status'),'message':errors[0].get('message','')[:3500]},ensure_ascii=False))
+                        return True
+                for key,value in node.items():
+                  if key not in ('tests','results') and visit(value): return True
+              elif isinstance(node,list):
+                for value in node:
+                  if visit(value): return True
+              return False
+            for name in reports: visit(json.loads(archive.read(name)))
+            snapshots=[name for name in archive.namelist() if name.endswith('error-context.md')]
+            if snapshots:
+              text=archive.read(snapshots[0]).decode()
+              print('FIRST_SYNTHETIC_PAGE_SNAPSHOT')
+              print(text[:7000])
+          PY
