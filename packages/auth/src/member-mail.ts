@@ -16,6 +16,7 @@ export type AccountMail = {
   ownerId?: string;
 };
 const pending = new Set<Promise<void>>();
+let transmitting = 0;
 export function mailConfigured() {
   return (
     process.env.MAIL_PROVIDER === 'resend' &&
@@ -94,8 +95,14 @@ export async function deliverAccountMail(mail: AccountMail) {
     [id, mail.ownerId || null, mail.purpose],
   );
   let status: number | null = null;
+  let active = false;
   try {
-    requireAccountMail();
+    if (!mailConfigured())
+      throw new AppError(503, 'MAIL_UNCONFIGURED', '邮件服务尚未配置');
+    if (transmitting >= 32)
+      throw new AppError(503, 'MAIL_BUSY', '邮件服务繁忙');
+    transmitting++;
+    active = true;
     const response = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       redirect: 'error',
@@ -119,12 +126,16 @@ export async function deliverAccountMail(mail: AccountMail) {
       [id, status],
     );
     return { id, status: 'ACCEPTED' as const };
-  } catch {
+  } catch (caught) {
     await sql.unsafe(
       "UPDATE member_mail_events SET status='FAILED',failure_code=$2,provider_status=$3,updated_at=now() WHERE id=$1",
       [
         id,
-        status === null ? 'MAIL_NETWORK_ERROR' : 'PROVIDER_REJECTED',
+        caught instanceof AppError
+          ? caught.code
+          : status === null
+            ? 'MAIL_NETWORK_ERROR'
+            : 'PROVIDER_REJECTED',
         status,
       ],
     );
@@ -133,6 +144,8 @@ export async function deliverAccountMail(mail: AccountMail) {
       'MAIL_SEND_FAILED',
       '邮件服务暂时无法发送，请稍后重试；此次不表示发送成功',
     );
+  } finally {
+    if (active) transmitting--;
   }
 }
 export function queueAccountMail(

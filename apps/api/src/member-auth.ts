@@ -383,7 +383,7 @@ export async function registerMemberAuth(
       "SELECT key,value FROM settings WHERE key IN ('member_registration_open','seat_limit')",
     );
     const [failures] = await sql.unsafe(
-      "SELECT count(*)::int AS total FROM audit_events WHERE action='member.mail_failed' AND created_at>now()-interval '1 hour'",
+      "SELECT count(*)::int AS total FROM member_mail_events WHERE status='FAILED' AND created_at>now()-interval '1 hour'",
     );
     return {
       enabled:

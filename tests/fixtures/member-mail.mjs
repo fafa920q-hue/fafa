@@ -1,3 +1,5 @@
+import process from 'node:process';
+import { URL } from 'node:url';
 // CI-only outbound transport fixture. Excluded from every production Docker build.
 import { appendFileSync } from 'node:fs';
 const original = globalThis.fetch;
@@ -22,7 +24,7 @@ if (process.env.FAFA_TEST_MAIL_FILE) {
       JSON.stringify(mail) + '\n',
       { mode: 0o600 },
     );
-    return new Response('{}', {
+    return new globalThis.Response('{}', {
       status: mail.to.some((to) => to.startsWith('fail_')) ? 503 : 200,
     });
   };

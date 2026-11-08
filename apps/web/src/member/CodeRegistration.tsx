@@ -152,6 +152,7 @@ export function CodeRegistration() {
           maxLength={32}
           pattern="[a-zA-Z0-9_]{3,32}"
         />
+        <small>用户名为3至32位英文字母、数字或下划线，大小写统一处理。</small>
       </label>
       <label>
         <span>邮箱</span>
