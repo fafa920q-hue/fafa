@@ -54,7 +54,13 @@ export async function hashPassword(password: string) {
 }
 export async function verifyPassword(password: string, encoded?: string) {
   if (!encoded) {
-    dummy ||= hashPassword('fictional-dummy-password-for-timing');
+    if (!dummy) {
+      dummy = hashPassword('fictional-dummy-password-for-timing');
+      dummy = dummy.catch((error) => {
+        dummy = undefined;
+        throw error;
+      });
+    }
     await verifyPassword(password, await dummy);
     return false;
   }

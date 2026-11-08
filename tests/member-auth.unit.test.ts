@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   hashPassword,
   validatePassword,
@@ -80,4 +80,16 @@ describe('授权到期与中文邮件模板', () => {
     expect(mail.text).toContain('10分钟');
     expect(mail.html).not.toMatch(/<img|<iframe|<script/);
   });
+});
+
+it('冷启动认证并发繁忙后恢复未知账户的统一密码校验', async () => {
+  vi.resetModules();
+  const cold = await import('../packages/auth/src/password');
+  const password = 'synthetic cold start password 中文';
+  const active = Array.from({ length: 4 }, () => cold.hashPassword(password));
+  await expect(cold.verifyPassword(password)).rejects.toMatchObject({
+    code: 'AUTH_BUSY',
+  });
+  await Promise.all(active);
+  expect(await cold.verifyPassword(password)).toBe(false);
 });
