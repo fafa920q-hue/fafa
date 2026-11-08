@@ -12,9 +12,13 @@ if docker volume inspect "${project}_pg" >/dev/null 2>&1; then
   exit 1
 fi
 export IMAGE_TAG="$(git rev-parse HEAD)"
-compose=(docker compose -p "$project" --env-file .env.production -f infra/docker/compose.production.yaml)
+mail_secret_directory="$(mktemp -d /tmp/fafa-startup-mail-XXXXXXXX)"
+export FAFA_RESEND_SECRET_FILE="$mail_secret_directory/resend_api_key"
+compose=(docker compose -p "$project" --env-file .env.production -f infra/docker/compose.production.yaml -f infra/docker/compose.mail-secret.yaml)
 cleanup() {
   "${compose[@]}" down --volumes --remove-orphans >/dev/null 2>&1 || true
+  sudo rm -f -- "$FAFA_RESEND_SECRET_FILE"
+  rmdir -- "$mail_secret_directory"
 }
 trap cleanup EXIT
 node --input-type=module <<'JS'
@@ -30,14 +34,14 @@ const fields = {
   GOOGLE_CLIENT_ID: 'ci-startup.apps.googleusercontent.com',
   GOOGLE_CLIENT_SECRET: randomBytes(24).toString('base64url'),
   COOKIE_DOMAIN: '', POSTGRES_PASSWORD: password,
-  MAIL_PROVIDER: 'resend', MAIL_API_KEY: randomBytes(24).toString('base64url'),
-  MAIL_FROM: 'ci-mail@example.invalid',
   DATABASE_URL: 'postgres://fafa:' + password + '@postgres:5432/fafa',
   ENCRYPTION_KEY: randomBytes(32).toString('base64'), IMAGE_TAG: process.env.IMAGE_TAG,
 };
 writeFileSync('.env.production', Object.entries(fields).map(([k,v]) =>
   k + '=' + JSON.stringify(v)).join('\n') + '\n', { mode: 0o600, flag: 'wx' });
+writeFileSync(process.env.FAFA_RESEND_SECRET_FILE, randomBytes(24).toString('base64url'), { mode: 0o400, flag: 'wx' });
 JS
+sudo chown 1000:1000 "$FAFA_RESEND_SECRET_FILE"
 for target in runtime web admin; do
   git archive "$IMAGE_TAG" | docker build -f infra/docker/Dockerfile --target "$target" -t "fafa-one-$target:$IMAGE_TAG" -
 done
@@ -53,9 +57,11 @@ for(const name of ["api","worker"]) {
   if(env.POSTGRES_PASSWORD || env.DATABASE_URL) throw Error("Unexpected privileged runtime credential");
 }
 const apiEnv=config.services.api.environment;
-if(apiEnv.MAIL_PROVIDER!=="resend" || !apiEnv.MAIL_API_KEY || apiEnv.MAIL_FROM!=="ci-mail@example.invalid")
-  throw Error("API mail environment was not forwarded");
-for(const key of ["MAIL_PROVIDER","MAIL_API_KEY","MAIL_FROM"])
+if(apiEnv.MAIL_PROVIDER!=="resend" || apiEnv.MAIL_API_KEY || apiEnv.MAIL_API_KEY_FILE!=="/run/secrets/resend_api_key" || apiEnv.MAIL_FROM!=="accounts@fafa888.uk")
+  throw Error("API file-secret configuration was not forwarded safely");
+if(!config.services.api.secrets?.some(s=>s.source==="resend_api_key")) throw Error("API mail secret mount missing");
+if(config.services.worker.secrets?.length) throw Error("Worker received a secret mount");
+for(const key of ["MAIL_PROVIDER","MAIL_API_KEY","MAIL_FROM","MAIL_API_KEY_FILE"])
   if(config.services.worker.environment[key]!==undefined) throw Error("Mail environment leaked into worker");
 if(config.services.ops.logging.driver!=="none") throw Error("Ops logging enabled");
 console.log("First-deployment compose contract passed with no runtime file.");'
@@ -156,7 +162,7 @@ writeFileSync('docs/evidence/production-startup.json', JSON.stringify({
   actualPortBindingsChecked: true, stoppedApiDistinguishedFromPortPublishing: true,
   privilegedDatabasePasswordExcluded: true, runtimeRole: 'fafa_app',
   encryptedPreMigrationBackupVerified: true, migrationsApplied: ['001','002','003','004','005','006','007'],
-  memberRuntimeGrantsVerified: true, mailEnvironmentApiOnlyVerified: true,
+  memberRuntimeGrantsVerified: true, mailEnvironmentApiOnlyVerified: true, mailSecretFileApiOnlyVerified: true,
   mailConfiguredWhileRegistrationRemainsClosed: true, realMailDelivery: 'NOT_TESTED',
   restoreToSeparateDatabase: true, postgresRestartPersistence: true,
   demoLoginDisabled: true, apiReady: true, independentWebAndAdmin: true,

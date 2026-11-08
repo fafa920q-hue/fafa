@@ -26,6 +26,14 @@ if [[ "$deployment_action" == check ]]; then
   "${compose[@]}" ps --all --format json
   exit 0
 fi
+# The new mail credential must come from the audited AWS-to-tmpfs staging step.
+# Do not interpolate it into Compose environment metadata or production env files.
+[[ "${FAFA_RESEND_SECRET_FILE:-}" == /run/fafa-one/secrets/resend_api_key ]]
+[[ -f "$FAFA_RESEND_SECRET_FILE" && ! -L "$FAFA_RESEND_SECRET_FILE" ]]
+[[ "$(stat -c %a "$FAFA_RESEND_SECRET_FILE")" == 400 ]]
+[[ "$(stat -c %u "$FAFA_RESEND_SECRET_FILE")" == 1000 ]]
+[[ "$(findmnt -n -o FSTYPE -T "$FAFA_RESEND_SECRET_FILE")" == tmpfs ]]
+compose+=(-f infra/docker/compose.mail-secret.yaml)
 # Only source changes require rebuilding; no installation, disk, swap or key regeneration.
 for target in runtime web admin; do
   repository_git archive "$deployment_sha" | docker build -f infra/docker/Dockerfile --target "$target" -t "fafa-one-$target:$deployment_sha" -

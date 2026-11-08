@@ -28,6 +28,7 @@ try {
       'tests/member-auth.integration.test.ts',
       'tests/member-auth.upgrade.test.ts',
       'tests/member-mail-acceptance.test.ts',
+      'tests/mail-secret.test.ts',
     ],
   ]) {
     const result = spawnSync('pnpm', args, {

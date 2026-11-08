@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { sql } from '../../packages/db/src';
 
@@ -31,8 +31,13 @@ async function code(email: string) {
 }
 test.beforeAll(async () => {
   const url = new URL(process.env.DATABASE_URL!);
+  const localDocker =
+    process.env.FAFA_LOCAL_MAIL_FIXTURE === 'disposable-docker' &&
+    existsSync('/.dockerenv') &&
+    /^\/fafa_member_browser_[a-f0-9]{12}_test$/.test(url.pathname) &&
+    process.env.FAFA_TEST_MAIL_FILE?.startsWith('/tmp/');
   if (
-    process.env.GITHUB_ACTIONS !== 'true' ||
+    (process.env.GITHUB_ACTIONS !== 'true' && !localDocker) ||
     process.env.DEMO_MODE !== 'true' ||
     !['localhost', '127.0.0.1'].includes(url.hostname) ||
     !process.env.FAFA_TEST_MAIL_FILE

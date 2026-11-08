@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { sql } from '../../db/src';
 import { AppError } from '../../shared/src';
 import { publicOrigin } from './urls';
+import { mailApiKey } from './mail-secret';
 
 export type AccountMail = {
   to: string;
@@ -20,7 +21,7 @@ let transmitting = 0;
 export function mailConfigured() {
   return (
     process.env.MAIL_PROVIDER === 'resend' &&
-    !!process.env.MAIL_API_KEY?.trim() &&
+    !!mailApiKey() &&
     /^[^\s<>@]+@[^\s<>@]+\.[^\s<>@]+$/.test(process.env.MAIL_FROM || '')
   );
 }
@@ -108,7 +109,7 @@ export async function deliverAccountMail(mail: AccountMail) {
       redirect: 'error',
       signal: AbortSignal.timeout(8000),
       headers: {
-        authorization: 'Bearer ' + process.env.MAIL_API_KEY,
+        authorization: 'Bearer ' + mailApiKey(),
         'content-type': 'application/json',
         'idempotency-key': id,
       },
