@@ -208,8 +208,12 @@ export async function registerMemberAuth(
     ];
     await sql.begin(async (tx) => {
       await tx.unsafe('SELECT pg_advisory_xact_lock(77702)');
-      for (let i = 0; i < AUTO_GRANT_POLICY_KEYS.length; i++)
-        await tx`update settings set value=${tx.json(values[i])},updated_at=now() where key=${AUTO_GRANT_POLICY_KEYS[i]}`;
+      for (let i = 0; i < AUTO_GRANT_POLICY_KEYS.length; i++) {
+        if (values[i] === null)
+          await tx`update settings set value='null'::jsonb,updated_at=now() where key=${AUTO_GRANT_POLICY_KEYS[i]}`;
+        else
+          await tx`update settings set value=${tx.json(values[i])},updated_at=now() where key=${AUTO_GRANT_POLICY_KEYS[i]}`;
+      }
       await tx.unsafe(
         "INSERT INTO audit_events(owner_id,action,target_id) VALUES($1,'auto_grant.policy_updated',$2)",
         [req.actor.id, JSON.stringify(data)],

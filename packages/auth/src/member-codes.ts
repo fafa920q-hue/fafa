@@ -20,6 +20,12 @@ function codeDigest(challenge: string, code: string) {
     .update('member-otp-v1:' + challenge + ':' + code)
     .digest('hex');
 }
+async function invalidateCode(id: string, challenge: string, code: string) {
+  await sql.unsafe(
+    'UPDATE member_registrations SET consumed_at=now() WHERE id=$1 AND challenge_hash=$2 AND code_hash=$3 AND consumed_at IS NULL',
+    [id, hash(challenge), codeDigest(challenge, code)],
+  );
+}
 async function capacity(db: any) {
   const rows = await db.unsafe(
     "SELECT key,value FROM settings WHERE key IN ('member_registration_open','seat_limit')",
@@ -76,10 +82,7 @@ export async function startCodeRegistration(data: {
   try {
     await deliverAccountMail({ to: data.email, purpose: 'CODE', raw: code });
   } catch (caught) {
-    await sql.unsafe(
-      'UPDATE member_registrations SET consumed_at=now() WHERE id=$1',
-      [registration.id],
-    );
+    await invalidateCode(registration.id, challenge, code);
     throw caught;
   }
   return {
@@ -106,18 +109,15 @@ export async function resendRegistrationCode(
   while (codeDigest(challenge, code) === row.code_hash)
     code = String(randomInt(0, 1000000)).padStart(6, '0');
   const changed = await sql.unsafe(
-    "UPDATE member_registrations SET code_hash=$2,code_attempts=0,code_expires_at=now()+interval '10 minutes' WHERE id=$1 AND consumed_at IS NULL RETURNING id",
-    [row.id, codeDigest(challenge, code)],
+    "UPDATE member_registrations SET code_hash=$2,code_attempts=0,code_expires_at=now()+interval '10 minutes' WHERE id=$1 AND consumed_at IS NULL AND challenge_hash=$3 AND code_hash=$4 RETURNING id",
+    [row.id, codeDigest(challenge, code), row.challenge_hash, row.code_hash],
   );
   if (!changed.length)
     throw error('REGISTRATION_INVALID', '注册请求已失效，请重新注册');
   try {
     await deliverAccountMail({ to: row.email_key, purpose: 'CODE', raw: code });
   } catch (caught) {
-    await sql.unsafe(
-      'UPDATE member_registrations SET consumed_at=now() WHERE id=$1',
-      [row.id],
-    );
+    await invalidateCode(row.id, challenge, code);
     throw caught;
   }
   return { message: '新的验证码邮件已由邮件服务接受，旧验证码已失效' };
@@ -271,17 +271,20 @@ export async function resumeCodeRegistration(email: string, password: string) {
   const challenge = token(),
     code = String(randomInt(0, 1000000)).padStart(6, '0');
   const changed = await sql.unsafe(
-    "UPDATE member_registrations SET challenge_hash=$2,code_hash=$3,code_attempts=0,code_expires_at=now()+interval '10 minutes' WHERE id=$1 AND consumed_at IS NULL RETURNING id",
-    [row.id, hash(challenge), codeDigest(challenge, code)],
+    "UPDATE member_registrations SET challenge_hash=$2,code_hash=$3,code_attempts=0,code_expires_at=now()+interval '10 minutes' WHERE id=$1 AND consumed_at IS NULL AND challenge_hash=$4 AND code_hash=$5 RETURNING id",
+    [
+      row.id,
+      hash(challenge),
+      codeDigest(challenge, code),
+      row.challenge_hash,
+      row.code_hash,
+    ],
   );
   if (!changed.length) throw error('REGISTRATION_INVALID', '注册请求已失效');
   try {
     await deliverAccountMail({ to: email, purpose: 'CODE', raw: code });
   } catch (caught) {
-    await sql.unsafe(
-      'UPDATE member_registrations SET consumed_at=now() WHERE id=$1',
-      [row.id],
-    );
+    await invalidateCode(row.id, challenge, code);
     throw caught;
   }
   return {

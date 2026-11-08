@@ -1102,6 +1102,57 @@ describe('验证码、真实API邮件状态和限时授权集成', () => {
     expect(binding.owner_id).toBe(owner.id);
     expect(binding.closed).toBe(true);
   });
+
+  it('较早邮件请求失败不会作废后来已成功重发的验证码', async () => {
+    client++;
+    await privateRequest(ownerSession, '/api/admin/member-registration', 'PATCH', {
+      enabled: true,
+      seatLimit: 1000,
+    });
+    const username = 'race_' + randomUUID().replaceAll('-', '').slice(0, 10);
+    const email = username + '@example.invalid';
+    let first = true;
+    let entered!: () => void;
+    let release!: () => void;
+    const waiting = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: string, options: any) => {
+        const message = JSON.parse(options.body);
+        outbox.push(message);
+        if (message.to[0] === email && first) {
+          first = false;
+          entered();
+          return new Promise<Response>((resolve) => {
+            release = () => resolve(new Response('{}', { status: 503 }));
+          });
+        }
+        return new Response('{}', { status: 200 });
+      }),
+    );
+    const original = post('/auth/member/registration/start', {
+      username,
+      email,
+      password,
+      confirmPassword: password,
+    });
+    await waiting;
+    const recovered = await post('/auth/member/registration/recover', {
+      email,
+      password,
+    });
+    expect(recovered.statusCode).toBe(200);
+    const currentCode = codeFor(email);
+    release();
+    expect((await original).statusCode).toBe(503);
+    const session = await finish({
+      challenge: recovered.json().challenge,
+      code: currentCode,
+    });
+    expect((await privateRequest(session, '/api/me')).statusCode).toBe(200);
+  });
 });
 
 describe('节点授权资源边界', () => {
