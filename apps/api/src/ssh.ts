@@ -191,7 +191,13 @@ export async function registerSsh(app: FastifyInstance, origins: string[]) {
       } catch {
         permitted = false;
       }
-      if (Date.now() - idle > 300000 || !session || !u || !capabilityAllowed(u,'server') || !permitted)
+      if (
+        Date.now() - idle > 300000 ||
+        !session ||
+        !u ||
+        !capabilityAllowed(u, 'server') ||
+        !permitted
+      )
         ws.close(1008, '会话已过期');
     }, 10000);
     ws.on('message', async (raw: Buffer) => {

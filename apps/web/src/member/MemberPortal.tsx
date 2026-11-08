@@ -79,7 +79,12 @@ function CredentialForm({ mode }: { mode: string }) {
     setMessage('');
     const form = event.currentTarget;
     const data = Object.fromEntries(new FormData(form).entries());
-    if(mode==='reset'&&data.password!==data.confirmPassword){setError('两次输入的密码不一致');submitting.current=false;setBusy(false);return;}
+    if (mode === 'reset' && data.password !== data.confirmPassword) {
+      setError('两次输入的密码不一致');
+      submitting.current = false;
+      setBusy(false);
+      return;
+    }
     delete data.confirmPassword;
     if (mode === 'verify' || mode === 'reset') data.token = action.current;
     try {
@@ -182,7 +187,19 @@ function CredentialForm({ mode }: { mode: string }) {
           />
         </label>
       )}
-      {mode==='reset'&&<label><span>确认新密码</span><input name="confirmPassword" type="password" autoComplete="new-password" required minLength={15} maxLength={128}/></label>}
+      {mode === 'reset' && (
+        <label>
+          <span>确认新密码</span>
+          <input
+            name="confirmPassword"
+            type="password"
+            autoComplete="new-password"
+            required
+            minLength={15}
+            maxLength={128}
+          />
+        </label>
+      )}
       {['register', 'reset'].includes(mode) && (
         <small>密码为15至128个字符，可使用空格和中文；请使用独立密码。</small>
       )}
@@ -263,17 +280,68 @@ function AccountSecurity() {
             {profile?.googleLinked ? 'Google 已绑定' : 'Google 未绑定'}
           </p>
 
-          {profile?.passwordConfigured&&<form className="fields" onSubmit={event=>{
-           event.preventDefault();const form=event.currentTarget;const data=Object.fromEntries(new FormData(form));
-           if(data.newPassword!==data.confirmPassword){setError('两次输入的密码不一致');return;}
-           void run(async()=>{await send('/api/member/password','POST',{currentPassword:data.currentPassword,newPassword:data.newPassword},session.csrf);form.reset();window.location.assign('/member/login');});
-          }}>
-           <h2>修改密码</h2>
-           <label><span>当前密码</span><input name="currentPassword" type="password" autoComplete="current-password" required maxLength={128}/></label>
-           <label><span>新密码</span><input name="newPassword" type="password" autoComplete="new-password" required minLength={15} maxLength={128}/></label>
-           <label><span>确认新密码</span><input name="confirmPassword" type="password" autoComplete="new-password" required minLength={15} maxLength={128}/></label>
-           <button disabled={busy}>修改密码并撤销旧会话</button>
-          </form>}
+          {profile?.passwordConfigured && (
+            <form
+              className="fields"
+              onSubmit={(event) => {
+                event.preventDefault();
+                const form = event.currentTarget;
+                const data = Object.fromEntries(new FormData(form));
+                if (data.newPassword !== data.confirmPassword) {
+                  setError('两次输入的密码不一致');
+                  return;
+                }
+                void run(async () => {
+                  await send(
+                    '/api/member/password',
+                    'POST',
+                    {
+                      currentPassword: data.currentPassword,
+                      newPassword: data.newPassword,
+                    },
+                    session.csrf,
+                  );
+                  form.reset();
+                  window.location.assign('/member/login');
+                });
+              }}
+            >
+              <h2>修改密码</h2>
+              <label>
+                <span>当前密码</span>
+                <input
+                  name="currentPassword"
+                  type="password"
+                  autoComplete="current-password"
+                  required
+                  maxLength={128}
+                />
+              </label>
+              <label>
+                <span>新密码</span>
+                <input
+                  name="newPassword"
+                  type="password"
+                  autoComplete="new-password"
+                  required
+                  minLength={15}
+                  maxLength={128}
+                />
+              </label>
+              <label>
+                <span>确认新密码</span>
+                <input
+                  name="confirmPassword"
+                  type="password"
+                  autoComplete="new-password"
+                  required
+                  minLength={15}
+                  maxLength={128}
+                />
+              </label>
+              <button disabled={busy}>修改密码并撤销旧会话</button>
+            </form>
+          )}
 
           <h2>有效会话</h2>
           {sessions.map((item) => (
@@ -366,13 +434,15 @@ export function MemberPortal() {
       <section className="login-card glass">
         <Routes>
           <Route path="/member/register" element={<CodeRegistration />} />
-          {Object.keys(titles).filter(mode=>mode!=='register').map((mode) => (
-            <Route
-              key={mode}
-              path={'/member/' + mode}
-              element={<CredentialForm key={location.pathname} mode={mode} />}
-            />
-          ))}
+          {Object.keys(titles)
+            .filter((mode) => mode !== 'register')
+            .map((mode) => (
+              <Route
+                key={mode}
+                path={'/member/' + mode}
+                element={<CredentialForm key={location.pathname} mode={mode} />}
+              />
+            ))}
           <Route path="/member/account" element={<AccountSecurity />} />
           <Route path="*" element={<CredentialForm mode="login" />} />
         </Routes>

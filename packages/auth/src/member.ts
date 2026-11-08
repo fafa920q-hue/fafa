@@ -161,7 +161,10 @@ export async function verifyRegistration(raw: string, password: string) {
     await applyAutoGrant(created.id, tx);
     return memberUser(created);
   });
-  queueAccountMail({to:user.email,purpose:'VERIFIED',ownerId:user.id},async()=>{});
+  queueAccountMail(
+    { to: user.email, purpose: 'VERIFIED', ownerId: user.id },
+    async () => {},
+  );
   return user;
 }
 export async function loginMember(identifier: string, password: string) {
@@ -213,15 +216,18 @@ export async function requestPasswordReset(email: string) {
 }
 export async function resetMemberPassword(raw: string, password: string) {
   const passwordHash = await hashPassword(password);
-  let recipient: {id:string,email_key:string}|undefined;
+  let recipient: { id: string; email_key: string } | undefined;
   await sql.begin(async (tx) => {
     const [action] = await tx.unsafe(
       "SELECT t.* FROM member_action_tokens t JOIN users u ON u.id=t.user_id WHERE t.token_hash=$1 AND t.purpose='PASSWORD_RESET' AND t.consumed_at IS NULL AND t.expires_at>now() AND NOT u.disabled AND u.deleted_at IS NULL AND u.role<>'Owner' FOR UPDATE OF u,t",
       [hash(raw)],
     );
     if (!action) throw invalidAction();
-    const [credential]=await tx.unsafe('SELECT email_key FROM member_credentials WHERE user_id=$1',[action.user_id]);
-    recipient={id:action.user_id,email_key:credential.email_key};
+    const [credential] = await tx.unsafe(
+      'SELECT email_key FROM member_credentials WHERE user_id=$1',
+      [action.user_id],
+    );
+    recipient = { id: action.user_id, email_key: credential.email_key };
     await tx.unsafe(
       'UPDATE member_credentials SET password_hash=$1,password_changed_at=now() WHERE user_id=$2',
       [passwordHash, action.user_id],
@@ -243,7 +249,15 @@ export async function resetMemberPassword(raw: string, password: string) {
       [action.user_id],
     );
   });
-  if(recipient) queueAccountMail({to:recipient.email_key,purpose:'RESET_SUCCESS',ownerId:recipient.id},async()=>{});
+  if (recipient)
+    queueAccountMail(
+      {
+        to: recipient.email_key,
+        purpose: 'RESET_SUCCESS',
+        ownerId: recipient.id,
+      },
+      async () => {},
+    );
 }
 export async function confirmMemberPassword(id: string, password: string) {
   const [user] = await sql.unsafe(

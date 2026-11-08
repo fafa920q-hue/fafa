@@ -75,7 +75,8 @@ function mailToken(email: string, purpose: 'VERIFY' | 'RESET') {
     .filter(
       (mail) =>
         mail.to[0] === email &&
-        mail.subject.includes(purpose === 'VERIFY' ? '激活' : '重置') && mail.text.split('\n').some((line) => line.startsWith('http')),
+        mail.subject.includes(purpose === 'VERIFY' ? '激活' : '重置') &&
+        mail.text.split('\n').some((line) => line.startsWith('http')),
     )
     .at(-1)!;
   const link = message.text

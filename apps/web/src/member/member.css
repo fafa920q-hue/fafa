@@ -1,8 +1,38 @@
-.member-portal { min-height:100dvh; padding:24px 12px; align-items:flex-start; }
-.member-portal .login-card { width:min(100%,560px); max-height:none; min-width:0; margin-block:auto; }
-.member-portal input { min-width:0; max-width:100%; font-size:16px; }
-.member-portal .fields { min-width:0; overflow-wrap:anywhere; }
-.member-actions { display:flex; flex-wrap:wrap; gap:8px; }
-.member-submit { position:sticky; bottom:0; padding-block:8px; z-index:1; }
-.member-submit button { width:100%; min-height:44px; }
-.member-portal button { min-height:44px; }
+.member-portal {
+  min-height: 100dvh;
+  padding: 24px 12px;
+  align-items: flex-start;
+}
+.member-portal .login-card {
+  width: min(100%, 560px);
+  max-height: none;
+  min-width: 0;
+  margin-block: auto;
+}
+.member-portal input {
+  min-width: 0;
+  max-width: 100%;
+  font-size: 16px;
+}
+.member-portal .fields {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.member-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.member-submit {
+  position: sticky;
+  bottom: 0;
+  padding-block: 8px;
+  z-index: 1;
+}
+.member-submit button {
+  width: 100%;
+  min-height: 44px;
+}
+.member-portal button {
+  min-height: 44px;
+}
