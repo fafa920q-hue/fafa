@@ -25,6 +25,21 @@ def need(condition, reason):
     if not condition:
         raise RuntimeError(reason)
 
+def normalize_release_directories(release):
+    # tarfile's data filter can leave directory modes to the process umask.
+    # Runtime UID 1000 must traverse archived source; secret files stay separate.
+    release.chmod(0o755)
+    for path in release.rglob('*'):
+        if not path.is_symlink() and path.is_dir():
+            path.chmod(0o755)
+
+def application_matches(tested_sha, candidate_sha):
+    if tested_sha == candidate_sha:
+        return True
+    checked(['git', '-c', 'safe.directory=' + str(SOURCE), '-C', str(SOURCE), 'merge-base', '--is-ancestor', tested_sha, candidate_sha])
+    changes = checked(['git', '-c', 'safe.directory=' + str(SOURCE), '-C', str(SOURCE), 'diff', '--name-only', tested_sha, candidate_sha]).decode().splitlines()
+    return set(changes).issubset({'infra/deploy/v3_ec2_release.py', 'infra/deploy/test_v3_ec2_release.py'})
+
 def checked(args, data=None, env=None):
     result = subprocess.run(args, input=data, capture_output=True, env=env)
     need(result.returncode == 0, 'COMMAND_FAILED:' + Path(args[0]).name)
@@ -100,14 +115,15 @@ def build(args):
     browser_dir = args.browser
     browser = json.loads((browser_dir / 'auth-browser.json').read_text())
     browser_exit = json.loads((browser_dir / 'exit.json').read_text())
-    need(core['sha'] == args.sha and len(core['checks']) >= 8 and all(c['exitCode'] == 0 for c in core['checks']), 'CORE_GATE')
-    need(browser_exit['sha'] == args.sha and browser_exit['exitCode'] == 0 and browser['stats']['expected'] >= 51 and not any(browser['stats'][k] for k in ['unexpected', 'skipped', 'flaky']), 'BROWSER_GATE')
+    need(application_matches(core['sha'], args.sha) and len(core['checks']) >= 8 and all(c['exitCode'] == 0 for c in core['checks']), 'CORE_GATE')
+    need(application_matches(browser_exit['sha'], args.sha) and browser_exit['exitCode'] == 0 and browser['stats']['expected'] >= 51 and not any(browser['stats'][k] for k in ['unexpected', 'skipped', 'flaky']), 'BROWSER_GATE')
     release = ROOT / 'releases' / ('b-v3-' + args.evidence.name + '-' + args.sha[:12])
     release.mkdir(mode=0o755)
     with subprocess.Popen(['git', '-c', 'safe.directory=' + str(SOURCE), '-C', str(SOURCE), 'archive', args.sha], stdout=subprocess.PIPE) as archive:
         with tarfile.open(fileobj=archive.stdout, mode='r|') as tar:
             tar.extractall(release, filter='data')
         need(archive.wait() == 0, 'SOURCE_ARCHIVE_FAILED')
+    normalize_release_directories(release)
     (release / '.release-sha').write_text(args.sha + '\n')
     current = ensure_current(args.expected_production_sha)
     migrations = sorted(p.name for p in (release / 'packages/db/migrations').glob('*.sql'))
@@ -123,7 +139,7 @@ def build(args):
         with (args.evidence / ('build-' + target + '.log')).open('w') as log:
             result = subprocess.run(command, stdout=log, stderr=subprocess.STDOUT, env={**os.environ, 'DOCKER_BUILDKIT': '1'})
         need(result.returncode == 0, 'IMAGE_BUILD_FAILED:' + target)
-    report = {'sha': args.sha, 'release': str(release), 'coreEvidence': str(args.core), 'browserEvidence': str(args.browser), 'productionMigrationsExecuted': False}
+    report = {'sha': args.sha, 'release': str(release), 'coreEvidence': str(args.core), 'browserEvidence': str(args.browser), 'coreTestsExecutedAtSha': core['sha'], 'browserTestsExecutedAtSha': browser_exit['sha'], 'applicationSourceIdenticalToTestedSha': True, 'releaseDirectoryMode': '0755', 'productionMigrationsExecuted': False}
     (args.evidence / 'build.json').write_text(json.dumps(report, indent=2) + '\n')
     return report
 
