@@ -971,7 +971,11 @@ describe('验证码、真实API邮件状态和限时授权集成', () => {
         )
       ).statusCode,
     ).toBe(200);
-    expect((await privateRequest(ownerSession, '/api/admin/auto-grant-policy')).json()).toEqual(policy);
+    expect(
+      (
+        await privateRequest(ownerSession, '/api/admin/auto-grant-policy')
+      ).json(),
+    ).toEqual(policy);
     const account = await start(),
       session = await finish(account);
     const profile = (
