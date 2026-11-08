@@ -16,6 +16,8 @@ export function MemberAccessControls({
   const { request, toast } = useApp();
   const [busy, setBusy] = useState(false);
   const pending = useRef(false);
+  if (user.role !== 'Member')
+    return <small>管理角色与只读访客继续使用原角色权限</small>;
   return (
     <div className="actions">
       {(['node', 'server', 'codex'] as const).map((kind, i) => (

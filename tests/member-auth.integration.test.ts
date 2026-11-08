@@ -1096,6 +1096,16 @@ describe('验证码、真实API邮件状态和限时授权集成', () => {
     expect(list.body).not.toContain(process.env.MAIL_API_KEY!);
     expect(list.body).not.toContain(account.code);
     expect(list.body).not.toContain(account.email);
+    expect(
+      (
+        await privateRequest(
+          ownerSession,
+          '/api/admin/users/' + owner.id,
+          'PATCH',
+          { nodeAccessEnabled: false },
+        )
+      ).statusCode,
+    ).toBe(403);
     const [binding] = await sql.unsafe(
       'SELECT owner_id,google_sub,closed FROM owner_initialization WHERE singleton',
     );
@@ -1105,10 +1115,15 @@ describe('验证码、真实API邮件状态和限时授权集成', () => {
 
   it('较早邮件请求失败不会作废后来已成功重发的验证码', async () => {
     client++;
-    await privateRequest(ownerSession, '/api/admin/member-registration', 'PATCH', {
-      enabled: true,
-      seatLimit: 1000,
-    });
+    await privateRequest(
+      ownerSession,
+      '/api/admin/member-registration',
+      'PATCH',
+      {
+        enabled: true,
+        seatLimit: 1000,
+      },
+    );
     const username = 'race_' + randomUUID().replaceAll('-', '').slice(0, 10);
     const email = username + '@example.invalid';
     let first = true;

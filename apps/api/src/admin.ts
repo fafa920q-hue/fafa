@@ -78,6 +78,19 @@ export async function registerAdmin(app: FastifyInstance) {
     const [u] = await sql`select * from users where id=${id}`;
     if (!u) throw notFound();
     if (
+      u.role !== 'Member' &&
+      [
+        d.nodeAccessEnabled,
+        d.serverConnectEnabled,
+        d.codexTasksEnabled,
+      ].some((value) => value !== undefined)
+    )
+      throw new AppError(
+        403,
+        'MEMBER_CAPABILITY_ONLY',
+        '功能开关适用于 Member；管理角色与只读访客继续使用原角色权限',
+      );
+    if (
       u.role === 'Owner' ||
       id === req.actor.id ||
       (d.role && req.actor.role !== 'Owner') ||
