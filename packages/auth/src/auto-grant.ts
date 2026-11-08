@@ -31,10 +31,7 @@ export type AutoGrantPolicy = z.infer<typeof autoGrantPolicySchema>;
 export async function readAutoGrantPolicy(
   db: any = sql,
 ): Promise<AutoGrantPolicy> {
-  const rows = await db.unsafe(
-    'SELECT key,value FROM settings WHERE key=ANY($1::text[])',
-    [[...AUTO_GRANT_POLICY_KEYS]],
-  );
+  const rows = await db`select key,value from settings where key in ${db([...AUTO_GRANT_POLICY_KEYS])}`;
   const map = new Map<string, any>(rows.map((r: any) => [r.key, r.value]));
   return {
     enabled: map.get('auto_grant_enabled') === true,
@@ -132,11 +129,11 @@ export async function applyAutoGrant(userId: string, db: any = sql) {
           source.owner_id,
           source.id,
           userId,
-          JSON.stringify({
+          {
             scope: 'USE',
             autoGranted: true,
             expiresAt: expires,
-          }),
+          },
         ],
       );
       nodeStatus = 'GRANTED';
