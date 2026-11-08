@@ -185,17 +185,9 @@ export async function registerMemberAuth(
   );
   app.get('/api/admin/auto-grant-policy', async () => {
     const policy = await readAutoGrantPolicy();
-    return process.env.MEMBER_SELF_SERVICE === 'true'
-      ? { ...policy, enabled: false, retired: true }
-      : policy;
+    return policy;
   });
   app.patch('/api/admin/auto-grant-policy', async (req) => {
-    if (process.env.MEMBER_SELF_SERVICE === 'true')
-      throw new AppError(
-        409,
-        'AUTO_GRANT_RETIRED',
-        '当前注册不附带自动试用授权',
-      );
     if (req.actor.role !== 'Owner')
       throw new AppError(
         403,

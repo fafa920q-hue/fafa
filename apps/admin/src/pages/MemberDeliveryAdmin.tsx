@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react';
+import { MemberAiQuota, ServicePolicyAdmin } from './ServicePolicyAdmin';
 import {
   Card,
   DataState,
@@ -20,6 +21,10 @@ export function MemberAccessControls({
     return <small>管理角色与只读访客继续使用原角色权限</small>;
   return (
     <div className="actions">
+      <details>
+        <summary>AI 额度管理</summary>
+        <MemberAiQuota userId={user.id} />
+      </details>
       {(['node', 'server', 'codex'] as const).map((kind, i) => (
         <button
           key={kind}
@@ -66,6 +71,7 @@ export function MemberDeliveryAdmin() {
   };
   return (
     <>
+      <ServicePolicyAdmin />
       {policy.data && !policy.data.retired && (
         <Card
           title="首次三天自动授权"

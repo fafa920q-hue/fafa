@@ -1,4 +1,5 @@
 import { capabilityAllowed } from '../../../packages/auth/src/auto-grant';
+import { assertServiceOpen } from '../../../packages/auth/src/service-policy';
 import { Client } from 'ssh2';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
@@ -187,6 +188,7 @@ export async function registerSsh(app: FastifyInstance, origins: string[]) {
         await sql`select * from users where id=${actor.id} and not disabled`;
       let permitted = true;
       try {
+        if (u) await assertServiceOpen(u);
         await accessible((req.params as any).id, actor.id);
       } catch {
         permitted = false;
@@ -208,6 +210,7 @@ export async function registerSsh(app: FastifyInstance, origins: string[]) {
           ws.close(1008, '服务器授权已撤销或到期');
           return;
         }
+        await assertServiceOpen(live);
         idle = Date.now();
         if (!initialized) {
           initialized = true;

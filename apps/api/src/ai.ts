@@ -2,7 +2,22 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { sql, own, audit } from '../../../packages/db/src';
 import { AppError, notFound } from '../../../packages/shared/src';
+import {
+  assertServiceOpen,
+  readServicePolicy,
+  readAiQuota,
+} from '../../../packages/auth/src/service-policy';
 export async function registerAi(app: FastifyInstance, origins: string[]) {
+  app.get('/api/ai/service', async (req) => {
+    const policy = await readServicePolicy();
+    const quota = await readAiQuota(req.actor.id);
+    return {
+      enabled: policy.ai.enabled,
+      quota,
+      personalCodex: 'UNAVAILABLE',
+      personalApi: 'AVAILABLE',
+    };
+  });
   app.post('/api/ai/select', async (req) => {
     const { accountId } = z.object({ accountId: z.uuid() }).parse(req.body);
     if (!(await own('ai_accounts', accountId, req.actor.id))) throw notFound();
@@ -25,12 +40,25 @@ export async function registerAi(app: FastifyInstance, origins: string[]) {
   app.post('/api/ai/tasks', async (req) => {
     const d = z
       .object({
-        accountId: z.uuid(),
+        accountId: z.uuid().optional(),
+        service: z.boolean().default(false),
         prompt: z.string().min(1).max(16000),
         workspace: z.string().max(300).default(''),
       })
       .parse(req.body);
-    const account = await own('ai_accounts', d.accountId, req.actor.id);
+    const policy = await readServicePolicy();
+    const quota = await readAiQuota(req.actor.id);
+    const [serviceAccount] =
+      d.service && policy.ai.enabled && policy.ai.accountId
+        ? await sql`SELECT a.* FROM ai_accounts a JOIN users u ON u.id=a.owner_id WHERE a.id=${policy.ai.accountId} AND a.revoked_at IS NULL AND u.role='Owner' AND NOT u.disabled AND u.deleted_at IS NULL`
+        : [];
+    if (d.service && !serviceAccount)
+      throw new AppError(409, 'AI_SERVICE_CLOSED', '管理员 AI 服务暂未开放');
+    const account = d.service
+      ? serviceAccount
+      : d.accountId
+        ? await own('ai_accounts', d.accountId, req.actor.id)
+        : null;
     if (!account) throw notFound();
     if (process.env.DEMO_MODE === 'true' || !account.secret)
       throw new AppError(
@@ -40,18 +68,25 @@ export async function registerAi(app: FastifyInstance, origins: string[]) {
       );
     const task = await sql.begin(async (tx) => {
       await tx`select pg_advisory_xact_lock(hashtext(${req.actor.id}))`;
+      await assertServiceOpen(req.actor, tx);
       const [count] =
         await tx`select count(*)::int as n from ai_tasks where owner_id=${req.actor.id} and created_at>now()-interval '1 day'`;
       const [active] =
         await tx`select count(*)::int as n from ai_tasks where owner_id=${req.actor.id} and data->>'status' in ('QUEUED','RUNNING')`;
-      if (count.n >= 20 || active.n >= 2)
+      const dailyLimit = d.service
+        ? Math.min(quota.dailyLimit, policy.ai.dailyLimit)
+        : quota.dailyLimit;
+      const concurrency = d.service
+        ? Math.min(quota.concurrency, policy.ai.concurrency)
+        : quota.concurrency;
+      if (count.n >= dailyLimit || active.n >= concurrency)
         throw new AppError(
           429,
           'AI_BUDGET',
-          '已达到每日 20 次或并发 2 个任务限制',
+          '已达到管理员设置的每日额度或并发限制',
         );
       const [r] =
-        await tx`insert into ai_tasks(owner_id,account_id,data) values(${req.actor.id},${d.accountId},${tx.json({ prompt: d.prompt, workspace: d.workspace, status: 'QUEUED', output: '', maxOutputTokens: 2000 })}) returning id`;
+        await tx`insert into ai_tasks(owner_id,account_id,data) values(${req.actor.id},${account.id},${tx.json({ prompt: d.prompt, workspace: d.workspace, service: d.service, status: 'QUEUED', output: '', maxOutputTokens: d.service ? policy.ai.maxOutputTokens : 2000 })}) returning id`;
       return r;
     });
     await audit(req.actor.id, 'ai.task_created', task.id);

@@ -374,3 +374,71 @@ test('用户工作台：节点展示、管理员授权、独立订阅和撤销',
     await sql`UPDATE nodes SET revoked_at=now() WHERE id=${nodeId}`;
   }
 });
+
+test('后台统一管理：服务时段、注册体验策略与普通用户AI额度', async ({
+  page,
+}) => {
+  const admin = 'http://localhost:5174';
+  await page.goto(admin);
+  await page.getByRole('button', { name: '管理员演示', exact: true }).click();
+  await expect(
+    page.getByRole('heading', { name: '管理概览', exact: true }),
+  ).toBeVisible();
+  const original = await (
+    await page.request.get(admin + '/api/admin/service-policy')
+  ).json();
+  const me = await (await page.request.get(admin + '/api/me')).json();
+  try {
+    await page.goto(admin + '/member-registration');
+    await expect(
+      page.getByRole('heading', {
+        name: '全站开放时间与管理员 AI 服务',
+        exact: true,
+      }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole('heading', { name: '首次三天自动授权', exact: true }),
+    ).toBeVisible();
+    await page
+      .getByLabel('服务开始时间（UTC ISO）', { exact: true })
+      .fill('2026-11-08T00:00:00Z');
+    await page
+      .getByLabel('服务结束时间（UTC ISO）', { exact: true })
+      .fill('2026-11-09T00:00:00Z');
+    await page
+      .getByLabel('每任务输出 token 上限', { exact: true })
+      .fill('2100');
+    await page
+      .getByRole('button', { name: '保存服务策略', exact: true })
+      .click();
+    await expect(page.getByRole('status')).toContainText('服务策略已保存');
+    const saved = await (
+      await page.request.get(admin + '/api/admin/service-policy')
+    ).json();
+    expect(saved.ai.maxOutputTokens).toBe(2100);
+    expect(saved.ai.enabled).toBe(false);
+    expect(saved.schedule.enabled).toBe(false);
+    await expect(
+      page.getByLabel('每任务输出 token 上限', { exact: true }),
+    ).toHaveValue('2100');
+    await page.goto(admin + '/users');
+    const details = page
+      .locator('details')
+      .filter({ has: page.getByText('AI 额度管理', { exact: true }) })
+      .first();
+    await details.locator('summary').click();
+    await expect(
+      details.getByLabel('AI 每日次数（0停用）', { exact: true }),
+    ).toBeVisible();
+    await details.getByLabel('AI 每日次数（0停用）', { exact: true }).fill('3');
+    await details
+      .getByRole('button', { name: '保存用户 AI 额度', exact: true })
+      .click();
+    await expect(page.getByRole('status')).toContainText('用户 AI 额度已保存');
+  } finally {
+    await page.request.patch(admin + '/api/admin/service-policy', {
+      data: original,
+      headers: { Origin: admin, 'x-csrf-token': me.csrf },
+    });
+  }
+});

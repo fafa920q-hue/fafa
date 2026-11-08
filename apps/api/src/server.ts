@@ -1,4 +1,5 @@
 import { capabilityAllowed } from '../../../packages/auth/src/auto-grant';
+import { assertServiceOpen } from '../../../packages/auth/src/service-policy';
 import type { TokenPayload } from 'google-auth-library';
 import Fastify, { type FastifyRequest } from 'fastify';
 import cookie from '@fastify/cookie';
@@ -202,6 +203,11 @@ export async function buildApp() {
             )
           ? 'node'
           : undefined;
+    if (
+      capability ||
+      /^\/api\/(location-tools|location_presets)(\/|$)/.test(path)
+    )
+      await assertServiceOpen(actor);
     if (capability && !capabilityAllowed(actor, capability))
       throw new AppError(
         403,
@@ -752,6 +758,7 @@ export async function buildApp() {
             '订阅授权已撤销或到期',
           );
         if (!t) throw notFound();
+        await assertServiceOpen(t);
         const { format } = z
           .object({
             format: z

@@ -17,6 +17,7 @@ export function Codex() {
   const { request, toast, session } = useApp();
   const accounts = useData<Row[]>('/api/ai_accounts');
   const tasks = useData<Row[]>('/api/ai/tasks');
+  const service = useData<any>('/api/ai/service');
   const [add, setAdd] = useState(false);
   const [remove, setRemove] = useState<Row>();
   const [selected, setSelected] = useState('');
@@ -74,6 +75,12 @@ export function Codex() {
           API 模式独立计费，不使用 ChatGPT Plus
           订阅额度。命令输出仅作建议，本工作台不会自动执行 shell、写文件或部署。
         </div>
+        <Card
+          title="个人 Codex 授权 · 暂未开放"
+          description="本站尚未完成官方个人授权接入。请勿上传 ChatGPT 登录令牌、Cookie 或 Codex 凭据文件。个人 API 账户与管理员 AI 服务使用各自的 API 额度。"
+        >
+          <p>当前可使用个人 OpenAI API 账户，或由管理员开放的 AI 服务。</p>
+        </Card>
         <div className="two-col">
           <Card
             title="账户中心"
@@ -163,7 +170,7 @@ export function Codex() {
           </Card>
           <Card
             title="API 助手"
-            description="每日 20 次 · 并发 2 个 · 单任务最多 2000 输出 token"
+            description={`个人每日额度 ${service.data?.quota?.dailyLimit ?? '加载中'} 次 · 并发 ${service.data?.quota?.concurrency ?? '加载中'} 个；管理员服务另受全站额度限制`}
             icon={Send}
           >
             <form
@@ -173,7 +180,9 @@ export function Codex() {
                 setBusy(true);
                 try {
                   const r = await request('/api/ai/tasks', 'POST', {
-                    accountId: selected,
+                    ...(selected === 'platform'
+                      ? { service: true }
+                      : { accountId: selected }),
                     prompt,
                     workspace,
                   });
@@ -198,6 +207,9 @@ export function Codex() {
                   <option value="" disabled>
                     请选择 API 账户
                   </option>
+                  {service.data?.enabled && (
+                    <option value="platform">管理员 AI 服务</option>
+                  )}
                   {accounts.data?.map((a) => (
                     <option key={a.id} value={a.id}>
                       {a.name}
@@ -230,14 +242,16 @@ export function Codex() {
                 disabled={
                   busy ||
                   !writable ||
-                  !account?.credentialConfigured ||
+                  !(selected === 'platform'
+                    ? service.data?.enabled
+                    : account?.credentialConfigured) ||
                   session.demo
                 }
               >
                 <Send size={16} />
                 {session.demo
                   ? '演示模式 · 不调用 API'
-                  : account?.credentialConfigured
+                  : selected === 'platform' || account?.credentialConfigured
                     ? '创建真实 API 任务'
                     : '请先配置 API Key'}
               </button>

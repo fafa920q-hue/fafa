@@ -1,4 +1,9 @@
 import { capabilityAllowed } from '../../../packages/auth/src/auto-grant';
+import {
+  assertServiceOpen,
+  readServicePolicy,
+  readAiQuota,
+} from '../../../packages/auth/src/service-policy';
 import OpenAI from 'openai';
 import { sql, audit } from '../../../packages/db/src';
 import { seal, unseal } from '../../../packages/shared/src/crypto';
@@ -138,6 +143,18 @@ export async function runAiTask(task: any) {
     try {
       const [user] =
         await sql`select * from users where id=${task.owner_id} and not disabled and deleted_at is null`;
+      if (user) await assertServiceOpen(user);
+      const policy = await readServicePolicy();
+      const quota = await readAiQuota(task.owner_id);
+      const [account] =
+        await sql`SELECT a.id FROM ai_accounts a JOIN users u ON u.id=a.owner_id WHERE a.id=${task.account_id} AND a.revoked_at IS NULL AND NOT u.disabled AND u.deleted_at IS NULL`;
+      if (
+        !account ||
+        quota.dailyLimit === 0 ||
+        (task.data.service &&
+          (!policy.ai.enabled || policy.ai.accountId !== task.account_id))
+      )
+        throw Error('ACCESS_REVOKED');
       if (!user || !capabilityAllowed(user, 'codex')) {
         accessRevoked = true;
         controller.abort();
@@ -152,8 +169,17 @@ export async function runAiTask(task: any) {
       await sql`select * from users where id=${task.owner_id} and not disabled and deleted_at is null`;
     if (!user || !capabilityAllowed(user, 'codex'))
       throw Error('CAPABILITY_REQUIRED');
+    await assertServiceOpen(user);
+    const policy = await readServicePolicy();
+    const quota = await readAiQuota(task.owner_id);
+    if (quota.dailyLimit === 0) throw Error('AI_QUOTA_REVOKED');
+    if (
+      task.data.service &&
+      (!policy.ai.enabled || policy.ai.accountId !== task.account_id)
+    )
+      throw Error('AI_SERVICE_CLOSED');
     const [account] =
-      await sql`select * from ai_accounts where id=${task.account_id} and owner_id=${task.owner_id} and revoked_at is null`;
+      await sql`select a.* from ai_accounts a join users u on u.id=a.owner_id where a.id=${task.account_id} and (a.owner_id=${task.owner_id} or (${task.data.service === true} and u.role='Owner')) and not u.disabled and u.deleted_at is null and a.revoked_at is null`;
     if (process.env.DEMO_MODE === 'true' || !account?.secret)
       throw Error('未配置');
     const client = new OpenAI({
@@ -165,7 +191,10 @@ export async function runAiTask(task: any) {
       {
         model: process.env.OPENAI_MODEL || 'gpt-4.1-mini',
         input: task.data.prompt,
-        max_output_tokens: 2000,
+        max_output_tokens: Math.min(
+          Number(task.data.maxOutputTokens) || 2000,
+          task.data.service ? policy.ai.maxOutputTokens : 2000,
+        ),
         stream: true,
         store: false,
       },
@@ -185,6 +214,8 @@ export async function runAiTask(task: any) {
         break;
       }
       if (event.type === 'response.output_text.delta') output += event.delta;
+      if (event.type === 'response.failed' || event.type === 'error')
+        throw Error('PROVIDER_RESPONSE_FAILED');
       if (Date.now() - last > 200) {
         await sql`update ai_tasks set data=data || ${sql.json({ output })},updated_at=now() where id=${task.id} and data->>'status'='RUNNING'`;
         last = Date.now();

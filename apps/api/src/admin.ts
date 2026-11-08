@@ -2,8 +2,52 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { sql, audit } from '../../../packages/db/src';
 import { capabilityAllowed } from '../../../packages/auth/src/auto-grant';
+import {
+  aiQuotaSchema,
+  readServicePolicy,
+  servicePolicySchema,
+  readAiQuota,
+} from '../../../packages/auth/src/service-policy';
 import { AppError, notFound } from '../../../packages/shared/src';
 export async function registerAdmin(app: FastifyInstance) {
+  app.get('/api/admin/service-policy', async () => readServicePolicy());
+  app.patch('/api/admin/service-policy', async (req) => {
+    if (req.actor.role !== 'Owner')
+      throw new AppError(403, 'OWNER_REQUIRED', '仅 Owner 可修改全站服务策略');
+    const policy = servicePolicySchema.parse(req.body);
+    await sql.begin(async (tx) => {
+      if (policy.ai.enabled) {
+        const [account] =
+          await tx`SELECT id FROM ai_accounts WHERE id=${policy.ai.accountId} AND owner_id=${req.actor.id} AND revoked_at IS NULL AND secret IS NOT NULL FOR UPDATE`;
+        if (!account)
+          throw new AppError(
+            400,
+            'AI_UNCONFIGURED',
+            '请选择本人已配置凭据的 API 账户',
+          );
+      }
+      await tx`INSERT INTO settings(key,value) VALUES('service_policy_v3',${tx.json(policy)}) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=now()`;
+      await tx`INSERT INTO audit_events(owner_id,action,target_id) VALUES(${req.actor.id},'service.policy_updated',${JSON.stringify(policy)})`;
+    });
+    return { ok: true };
+  });
+  app.get('/api/admin/users/:id/ai-quota', async (req) => {
+    const { id } = z.object({ id: z.uuid() }).parse(req.params);
+    return readAiQuota(id);
+  });
+  app.patch('/api/admin/users/:id/ai-quota', async (req) => {
+    const { id } = z.object({ id: z.uuid() }).parse(req.params);
+    const quota = aiQuotaSchema.parse(req.body);
+    await sql.begin(async (tx) => {
+      const [user] =
+        await tx`SELECT role FROM users WHERE id=${id} AND deleted_at IS NULL FOR UPDATE`;
+      if (!user || user.role !== 'Member')
+        throw new AppError(403, 'MEMBER_REQUIRED', '额度管理仅适用于普通用户');
+      await tx`INSERT INTO settings(key,value) VALUES(${'ai_quota_' + id},${tx.json(quota)}) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=now()`;
+      await tx`INSERT INTO audit_events(owner_id,action,target_id) VALUES(${req.actor.id},'ai.quota_updated',${JSON.stringify({ userId: id, ...quota })})`;
+    });
+    return { ok: true };
+  });
   app.get('/api/admin/users', async () =>
     (
       await sql`select u.id,u.name,u.email,u.role,u.disabled,u.node_limit,u.subscription_enabled,u.traffic_limit_bytes,u.created_at,u.node_access_enabled,u.node_access_until,u.server_connect_enabled,u.server_connect_until,u.codex_tasks_enabled,u.codex_tasks_until,(exists(select 1 from member_credentials c where c.user_id=u.id) or exists(select 1 from google_identities g where g.user_id=u.id)) as email_verified from users u where u.deleted_at is null order by u.created_at`

@@ -1,5 +1,4 @@
 import { z } from 'zod';
-import { selfServiceRegistration } from './self-service';
 import { sql } from '../../db/src';
 import { hash, token } from '../../shared/src/crypto';
 import { AppError } from '../../shared/src';
@@ -55,6 +54,7 @@ export function capabilityAllowed(
   user: any,
   kind: 'node' | 'server' | 'codex',
 ) {
+  if (!user || user.disabled || user.deleted_at) return false;
   if (user.role === 'Owner' || user.role === 'Admin') return true;
   const prefix = {
     node: 'node_access',
@@ -68,8 +68,6 @@ export function capabilityAllowed(
   );
 }
 export async function applyAutoGrant(userId: string, db: any = sql) {
-  if (selfServiceRegistration())
-    return { applied: false, reason: 'SELF_SERVICE_NO_TRIAL' };
   const policy = await readAutoGrantPolicy(db);
   const [user] = await db.unsafe(
     'SELECT * FROM users WHERE id=$1 AND deleted_at IS NULL FOR UPDATE',
@@ -101,7 +99,7 @@ export async function applyAutoGrant(userId: string, db: any = sql) {
   );
   if (existing.length) return { applied: false, reason: 'ALREADY_PROCESSED' };
   await db.unsafe(
-    'UPDATE users SET node_access_enabled=true,node_access_until=$2,server_connect_enabled=true,server_connect_until=$2,codex_tasks_enabled=true,codex_tasks_until=$2,updated_at=now() WHERE id=$1',
+    'UPDATE users SET node_access_until=CASE WHEN node_access_enabled AND node_access_until IS NULL THEN NULL ELSE greatest(node_access_until,$2::timestamptz) END,node_access_enabled=true,server_connect_until=CASE WHEN server_connect_enabled AND server_connect_until IS NULL THEN NULL ELSE greatest(server_connect_until,$2::timestamptz) END,server_connect_enabled=true,codex_tasks_until=CASE WHEN codex_tasks_enabled AND codex_tasks_until IS NULL THEN NULL ELSE greatest(codex_tasks_until,$2::timestamptz) END,codex_tasks_enabled=true,updated_at=now() WHERE id=$1',
     [userId, expires],
   );
   if (policy.nodeLimit !== null)

@@ -1,6 +1,10 @@
 import type { FastifyInstance } from 'fastify';
 import { sql } from '../../../packages/db/src';
 import { capabilityAllowed } from '../../../packages/auth/src/auto-grant';
+import {
+  readServicePolicy,
+  serviceOpen,
+} from '../../../packages/auth/src/service-policy';
 
 const activeAt = (value: unknown) =>
   !value ||
@@ -8,6 +12,7 @@ const activeAt = (value: unknown) =>
     Number.isFinite(Date.parse(value)) &&
     Date.parse(value) > Date.now());
 export async function memberNodeCatalog(actor: any) {
+  const open = serviceOpen(await readServicePolicy(), actor);
   const rows = await sql`
   SELECT n.id,n.source_id,n.data,s.data AS source_data,
    EXISTS(SELECT 1 FROM node_group_grants g WHERE g.source_id=s.id AND g.user_id=${actor.id}
@@ -30,6 +35,7 @@ export async function memberNodeCatalog(actor: any) {
         source.redistributionAuthorized === true &&
         Boolean(source.authorizationReference?.trim()));
     const authorized =
+      open &&
       enabled &&
       sourceActive &&
       legal &&
@@ -67,6 +73,8 @@ export async function registerWorkspace(app: FastifyInstance) {
   }));
   app.get('/api/workspace', async (req) => {
     const id = req.actor.id;
+    const policy = await readServicePolicy();
+    const open = serviceOpen(policy, req.actor);
     const [identity] =
       await sql`SELECT c.username,c.email_verified_at,EXISTS(SELECT 1 FROM google_identities g WHERE g.user_id=u.id) AS google_linked FROM users u LEFT JOIN member_credentials c ON c.user_id=u.id WHERE u.id=${id}`;
     const [counts] = await sql`SELECT
@@ -93,13 +101,15 @@ export async function registerWorkspace(app: FastifyInstance) {
         servers: counts.servers,
       },
       capabilities: {
-        node: capabilityAllowed(req.actor, 'node'),
+        node: open && capabilityAllowed(req.actor, 'node'),
         subscribe:
+          open &&
           req.actor.subscription_enabled === true &&
           capabilityAllowed(req.actor, 'node'),
-        server: capabilityAllowed(req.actor, 'server'),
-        codex: capabilityAllowed(req.actor, 'codex'),
+        server: open && capabilityAllowed(req.actor, 'server'),
+        codex: open && capabilityAllowed(req.actor, 'codex'),
       },
+      service: { open, schedule: policy.schedule },
       history,
       serverTime: new Date().toISOString(),
     };

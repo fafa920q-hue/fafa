@@ -45,6 +45,16 @@ export function MemberWorkbench() {
       />
       {w && (
         <>
+          {w.service?.schedule?.enabled && (
+            <div className="callout" role="status">
+              {w.service.open ? '服务开放中' : '服务尚未开放或已结束'} ·
+              开放时间：
+              {new Date(w.service.schedule.startsAt).toLocaleString(
+                'zh-CN',
+              )} 至{' '}
+              {new Date(w.service.schedule.endsAt).toLocaleString('zh-CN')}
+            </div>
+          )}
           <div className="glass v3-welcome">
             <div>
               <span className="v3-eyebrow">WELCOME BACK</span>
