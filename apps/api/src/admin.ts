@@ -29,6 +29,12 @@ export async function registerAdmin(app: FastifyInstance) {
       sql`select id,data,created_at,revoked_at from invitations order by created_at desc`,
   );
   app.post('/api/admin/invitations', async (req) => {
+    if (process.env.MEMBER_SELF_SERVICE === 'true')
+      throw new AppError(
+        409,
+        'INVITATIONS_RETIRED',
+        '已改为用户自行注册，不再创建邀请',
+      );
     const d = z
       .object({
         email: z.email(),

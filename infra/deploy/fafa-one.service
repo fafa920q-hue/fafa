@@ -1,0 +1,21 @@
+[Unit]
+Description=FAFA ONE verified EC2 release
+Requires=docker.service
+Wants=network-online.target
+After=docker.service network-online.target
+PartOf=docker.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStartPre=/bin/bash /opt/fafa-one/tools/run-current-release.sh stage
+ExecStart=/bin/bash /opt/fafa-one/tools/run-current-release.sh up
+ExecStop=/bin/bash /opt/fafa-one/tools/run-current-release.sh stop
+Restart=on-failure
+RestartSec=15
+TimeoutStartSec=240
+TimeoutStopSec=60
+
+[Install]
+WantedBy=multi-user.target docker.service

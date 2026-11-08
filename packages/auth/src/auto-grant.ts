@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { selfServiceRegistration } from './self-service';
 import { sql } from '../../db/src';
 import { hash, token } from '../../shared/src/crypto';
 import { AppError } from '../../shared/src';
@@ -67,6 +68,8 @@ export function capabilityAllowed(
   );
 }
 export async function applyAutoGrant(userId: string, db: any = sql) {
+  if (selfServiceRegistration())
+    return { applied: false, reason: 'SELF_SERVICE_NO_TRIAL' };
   const policy = await readAutoGrantPolicy(db);
   const [user] = await db.unsafe(
     'SELECT * FROM users WHERE id=$1 AND deleted_at IS NULL FOR UPDATE',

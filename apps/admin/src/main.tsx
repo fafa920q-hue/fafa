@@ -11,7 +11,6 @@ import {
   ListTodo,
   ShieldCheck,
   Settings,
-  Plus,
   RefreshCw,
 } from 'lucide-react';
 import {
@@ -33,7 +32,7 @@ import { SubscriptionWorkspace } from '../../../packages/ui/src/subscriptions';
 import { MemberRegistrationPolicy } from './pages/MemberRegistrationPolicy';
 const nav = [
   { to: '/', label: '概览', icon: LayoutDashboard },
-  { to: '/users', label: '用户 / 邀请', icon: Users },
+  { to: '/users', label: '用户管理', icon: Users },
   { to: '/sources', label: '节点源 / 分配', icon: Globe2 },
   { to: '/servers', label: '服务器授权', icon: Server },
   { to: '/ai', label: 'AI 连接状态', icon: Code2 },
@@ -113,7 +112,7 @@ function Overview() {
         >
           <div className="list">
             {[
-              'Google OIDC + 邀请激活',
+              'Google OIDC + 邮箱验证',
               '角色与对象级服务端鉴权',
               '凭据 AES-256-GCM 信封加密',
               'SSH 固定指纹 + 授权目标',
@@ -145,20 +144,12 @@ function Overview() {
 function UserManagement() {
   const { request, toast } = useApp();
   const users = useData<Row[]>('/api/admin/users');
-  const invitations = useData<Row[]>('/api/admin/invitations');
-  const [invite, setInvite] = useState(false);
   const [action, setAction] = useState<{ user: Row; type: string }>();
   return (
     <>
       <PageTitle
-        title="用户与邀请"
-        description="普通账户须验证邮箱；Google 登录继续保留邀请及注册策略。禁用与角色变更会撤销会话。"
-        action={
-          <button className="primary" onClick={() => setInvite(true)}>
-            <Plus size={16} />
-            邀请用户
-          </button>
-        }
+        title="用户管理"
+        description="用户自行注册并验证邮箱；禁用与角色变更会撤销会话。"
       />
       <div className="stack">
         <Card title="已注册用户" icon={Users}>
@@ -251,84 +242,7 @@ function UserManagement() {
             </table>
           </div>
         </Card>
-        <Card
-          title="邀请记录"
-          description="邀请由 Google verified email 匹配，绑定后以 Google sub 为不变身份"
-        >
-          <div className="list">
-            {invitations.data?.map((i) => (
-              <div className="list-item" key={i.id}>
-                <div>
-                  <strong>{i.data.email}</strong>
-                  <small>
-                    {i.data.role} · 到期{' '}
-                    {new Date(i.data.expiresAt).toLocaleDateString('zh-CN')}
-                  </small>
-                </div>
-                <Badge>
-                  {i.revoked_at
-                    ? '已撤销'
-                    : i.data.usedAt
-                      ? '已使用'
-                      : '待激活'}
-                </Badge>
-                {!i.revoked_at && !i.data.usedAt && (
-                  <button
-                    onClick={() =>
-                      request('/api/admin/invitations/' + i.id, 'DELETE')
-                        .then(() => {
-                          invitations.refresh();
-                          toast('邀请已撤销');
-                        })
-                        .catch(() => {})
-                    }
-                  >
-                    撤销
-                  </button>
-                )}
-              </div>
-            ))}
-          </div>
-          {!invitations.data?.length && <Empty title="暂无邀请" />}
-        </Card>
       </div>
-      <FormDialog
-        open={invite}
-        onClose={() => setInvite(false)}
-        title="邀请 Google 用户"
-        fields={[
-          {
-            name: 'email',
-            label: 'Google 账号邮箱',
-            type: 'email',
-            required: true,
-          },
-          {
-            name: 'role',
-            label: '角色',
-            options: [
-              { label: '成员 Member', value: 'Member' },
-              { label: '只读 Viewer', value: 'Viewer' },
-              { label: '管理员 Admin（仅 Owner 可分配）', value: 'Admin' },
-            ],
-          },
-          {
-            name: 'days',
-            label: '有效天数',
-            type: 'number',
-            value: '7',
-            min: 1,
-            max: 30,
-            required: true,
-          },
-        ]}
-        notice="只登记邀请，不自动发送邮件。将面板地址自行提供给受邀用户。"
-        onSubmit={async (d) => {
-          await request('/api/admin/invitations', 'POST', d);
-          invitations.refresh();
-          toast('邀请已登记');
-        }}
-      />
       <FormDialog
         open={action?.type === 'quota'}
         onClose={() => setAction(undefined)}
