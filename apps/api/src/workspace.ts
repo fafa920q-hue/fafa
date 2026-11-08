@@ -1,0 +1,107 @@
+import type { FastifyInstance } from 'fastify';
+import { sql } from '../../../packages/db/src';
+import { capabilityAllowed } from '../../../packages/auth/src/auto-grant';
+
+const activeAt = (value: unknown) =>
+  !value ||
+  (typeof value === 'string' &&
+    Number.isFinite(Date.parse(value)) &&
+    Date.parse(value) > Date.now());
+export async function memberNodeCatalog(actor: any) {
+  const rows = await sql`
+  SELECT n.id,n.source_id,n.data,s.data AS source_data,
+   EXISTS(SELECT 1 FROM node_group_grants g WHERE g.source_id=s.id AND g.user_id=${actor.id}
+    AND g.revoked_at IS NULL
+    AND (NOT(g.data ? 'expiresAt') OR (g.data->>'expiresAt')::timestamptz>now())
+    AND (NOT(g.data ? 'endsAt') OR g.data->>'endsAt' IS NULL OR (g.data->>'endsAt')::timestamptz>now())) AS has_grant
+  FROM nodes n JOIN node_sources s ON s.id=n.source_id JOIN users u ON u.id=s.owner_id
+  WHERE n.revoked_at IS NULL AND s.revoked_at IS NULL AND u.role IN ('Owner','Admin')
+   AND NOT u.disabled AND u.deleted_at IS NULL AND n.data->>'catalogVisible' IS DISTINCT FROM 'false'
+   AND s.data->>'demo' IS DISTINCT FROM 'true' AND n.data->>'demo' IS DISTINCT FROM 'true'
+  ORDER BY n.created_at LIMIT 5000`;
+  return rows.map((row) => {
+    const node = row.data,
+      source = row.source_data;
+    const enabled = node.enabled !== false && source.enabled !== false;
+    const sourceActive = activeAt(source.expiresAt);
+    const legal =
+      source.kind === 'OWNED_NODE' ||
+      (source.authorized === true &&
+        source.redistributionAuthorized === true &&
+        Boolean(source.authorizationReference?.trim()));
+    const authorized =
+      enabled &&
+      sourceActive &&
+      legal &&
+      row.has_grant &&
+      capabilityAllowed(actor, 'node');
+    return {
+      id: row.id,
+      sourceId: row.source_id,
+      name: String(node.name || '未命名节点'),
+      country: String(node.country || '未标注'),
+      region: String(node.region || ''),
+      protocol: String(node.protocol || ''),
+      group: String(node.group || source.group || ''),
+      enabled,
+      health:
+        enabled && sourceActive
+          ? 'NOT_CHECKED'
+          : !enabled
+            ? 'DISABLED'
+            : 'EXPIRED',
+      latency: null,
+      lastCheckedAt: null,
+      authorized,
+      canSubscribe:
+        authorized &&
+        actor.subscription_enabled === true &&
+        Number(actor.node_limit) > 0,
+    };
+  });
+}
+export async function registerWorkspace(app: FastifyInstance) {
+  app.get('/api/catalog/nodes', async (req) => ({
+    nodes: await memberNodeCatalog(req.actor),
+    serverTime: new Date().toISOString(),
+  }));
+  app.get('/api/workspace', async (req) => {
+    const id = req.actor.id;
+    const [identity] =
+      await sql`SELECT c.username,c.email_verified_at,EXISTS(SELECT 1 FROM google_identities g WHERE g.user_id=u.id) AS google_linked FROM users u LEFT JOIN member_credentials c ON c.user_id=u.id WHERE u.id=${id}`;
+    const [counts] = await sql`SELECT
+   (SELECT count(*)::int FROM subscription_profiles WHERE owner_id=${id} AND revoked_at IS NULL) AS subscriptions,
+   (SELECT count(*)::int FROM ai_accounts WHERE owner_id=${id} AND revoked_at IS NULL) AS ai_accounts,
+   (SELECT count(*)::int FROM server_connections WHERE owner_id=${id} AND revoked_at IS NULL) AS servers`;
+    const nodes = await memberNodeCatalog(req.actor);
+    const history =
+      await sql`SELECT id,action,created_at FROM audit_events WHERE owner_id=${id} ORDER BY created_at DESC LIMIT 8`;
+    return {
+      user: {
+        name: req.actor.name,
+        role: req.actor.role,
+        username: identity?.username || null,
+        emailVerified:
+          Boolean(identity?.email_verified_at) ||
+          identity?.google_linked === true,
+      },
+      statistics: {
+        visibleNodes: nodes.length,
+        authorizedNodes: nodes.filter((n) => n.authorized).length,
+        subscriptions: counts.subscriptions,
+        aiAccounts: counts.ai_accounts,
+        servers: counts.servers,
+      },
+      capabilities: {
+        node: capabilityAllowed(req.actor, 'node'),
+        subscribe:
+          req.actor.subscription_enabled === true &&
+          capabilityAllowed(req.actor, 'node'),
+        server: capabilityAllowed(req.actor, 'server'),
+        codex: capabilityAllowed(req.actor, 'codex'),
+      },
+      history,
+      serverTime: new Date().toISOString(),
+    };
+  });
+}

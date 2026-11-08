@@ -106,7 +106,7 @@ export function CodeRegistration() {
       if (kind === 'complete') {
         formRef.current!.reset();
         challenge.current = '';
-        window.location.assign('/member/account');
+        window.location.assign('/');
         return;
       }
       setMessage(result.message);

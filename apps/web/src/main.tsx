@@ -1,3 +1,4 @@
+import { MySubscriptions } from './workspace/MySubscriptions';
 import { lazy, Suspense } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter, Routes, Route, Link } from 'react-router-dom';
@@ -30,7 +31,8 @@ const Account = lazy(() =>
 const nav = [
   { to: '/', label: '仪表盘', icon: LayoutDashboard },
   { to: '/subscriptions', label: '节点订阅', icon: Globe2 },
-  { to: '/codex', label: 'Codex', icon: Code2 },
+  { to: '/my-subscriptions', label: '我的订阅', icon: Globe2 },
+  { to: '/codex', label: 'AI 账户', icon: Code2 },
   { to: '/servers', label: '服务器', icon: Server },
   { to: '/locations', label: '位置中心', icon: MapPin },
   { to: '/account', label: '我的账户', icon: UserRound },
@@ -41,13 +43,14 @@ createRoot(document.getElementById('root')!).render(
       <MemberPortal />
     ) : (
       <Provider loginPage={<MemberPortal />}>
-        <Shell nav={nav} bottom={[nav[0], nav[1], nav[2], nav[3], nav[5]]}>
+        <Shell nav={nav} bottom={[nav[0], nav[1], nav[3], nav[4], nav[6]]}>
           <Suspense
             fallback={<div className="skeleton" aria-label="正在加载页面" />}
           >
             <Routes>
               <Route path="/" element={<Dashboard />} />
               <Route path="/subscriptions" element={<Subscriptions />} />
+              <Route path="/my-subscriptions" element={<MySubscriptions />} />
               <Route path="/codex" element={<Codex />} />
               <Route path="/servers" element={<Servers />} />
               <Route path="/locations" element={<Locations />} />

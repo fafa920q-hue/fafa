@@ -40,6 +40,7 @@ import {
 } from '../../../packages/subscription/src/network';
 import { registerLocationTools } from './location-tools';
 import { registerNodes } from './nodes';
+import { registerWorkspace } from './workspace';
 import { registerSsh } from './ssh';
 import { registerAdmin } from './admin';
 import { registerAi } from './ai';
@@ -95,6 +96,9 @@ export async function visibleNodes(owner: string) {
         (!filter.country ||
           (row.data.country || row.source_data.country) === filter.country) &&
         (!filter.protocol || row.data.protocol === filter.protocol) &&
+        (!Array.isArray(filter.nodeIds) ||
+          !filter.nodeIds.length ||
+          filter.nodeIds.includes(row.id)) &&
         (!filter.group ||
           (row.data.group || row.source_data.group || row.source_data.kind) ===
             filter.group),
@@ -692,6 +696,7 @@ export async function buildApp() {
           .enum(['', 'ss', 'vmess', 'vless', 'trojan', 'hysteria2'])
           .default(''),
         group: z.string().max(80).default(''),
+        nodeIds: z.array(z.uuid()).max(5000).optional(),
       })
       .parse(req.body);
     await sql.begin(async (tx) => {
@@ -791,6 +796,7 @@ export async function buildApp() {
   });
   await registerLocationTools(app);
   await registerNodes(app);
+  await registerWorkspace(app);
   await registerAdmin(app);
   await registerAi(app, origins);
   await registerSsh(app, origins);

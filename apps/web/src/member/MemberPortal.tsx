@@ -105,7 +105,7 @@ function CredentialForm({ mode }: { mode: string }) {
         config.csrf,
       );
       form.reset();
-      if (mode === 'login') window.location.assign('/member/account');
+      if (mode === 'login') window.location.assign('/');
       else if (mode === 'reset') {
         action.current = '';
         window.location.assign('/member/login?reset=success');

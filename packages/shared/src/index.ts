@@ -7,6 +7,9 @@ export type User = {
   email: string;
   role: Role;
   disabled: boolean;
+  node_limit?: number;
+  subscription_enabled?: boolean;
+  traffic_limit_bytes?: string | number | null;
   node_access_enabled?: boolean;
   node_access_until?: Date | string | null;
   server_connect_enabled?: boolean;

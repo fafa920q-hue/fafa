@@ -31,6 +31,7 @@ function summary(row: any, actorId: string) {
     tags: row.data.tags || [],
     aliases: row.data.aliases || [],
     editable: row.owner_id === actorId,
+    catalogVisible: row.data.catalogVisible !== false,
     shared: row.owner_id !== actorId,
     enabled: row.data.enabled !== false && row.source_data?.enabled !== false,
     status:
@@ -136,6 +137,7 @@ export async function registerNodes(app: FastifyInstance) {
         country: z.string().max(32).optional(),
         group: z.string().max(80).optional(),
         enabled: z.boolean().optional(),
+        catalogVisible: z.boolean().optional(),
         tags: z.array(z.string().min(1).max(200)).max(100).optional(),
       })
       .parse(req.body);

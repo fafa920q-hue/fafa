@@ -127,7 +127,7 @@ test('真实数据库与API：验证码、重发、自动登录、找回及重�
     .getByRole('button', { name: '验证邮箱并创建账户', exact: true })
     .click();
   await expect(
-    page.getByRole('heading', { name: '账户安全', exact: true }),
+    page.getByRole('heading', { name: '我的工作台', exact: true }),
   ).toBeVisible();
   await expect(page.getByText('邮箱已验证', { exact: false })).toBeVisible();
   expect((await page.request.get('/api/admin/users')).status()).toBe(403);
@@ -141,7 +141,7 @@ test('真实数据库与API：验证码、重发、自动登录、找回及重�
   await page.getByLabel('密码', { exact: true }).fill(password);
   await page.getByRole('button', { name: '登录', exact: true }).click();
   await expect(
-    page.getByRole('heading', { name: '账户安全', exact: true }),
+    page.getByRole('heading', { name: '我的工作台', exact: true }),
   ).toBeVisible();
   expect(
     (await context.cookies()).find((c) => c.name === 'fafa_session')?.expires,
@@ -152,7 +152,7 @@ test('真实数据库与API：验证码、重发、自动登录、找回及重�
   await page.getByRole('checkbox', { name: '记住登录状态' }).check();
   await page.getByRole('button', { name: '登录', exact: true }).click();
   await expect(
-    page.getByRole('heading', { name: '账户安全', exact: true }),
+    page.getByRole('heading', { name: '我的工作台', exact: true }),
   ).toBeVisible();
   expect(
     (await context.cookies()).find((c) => c.name === 'fafa_session')!.expires,
@@ -185,7 +185,7 @@ test('真实数据库与API：验证码、重发、自动登录、找回及重�
   await page.getByLabel('密码', { exact: true }).fill(next);
   await page.getByRole('button', { name: '登录', exact: true }).click();
   await expect(
-    page.getByRole('heading', { name: '账户安全', exact: true }),
+    page.getByRole('heading', { name: '我的工作台', exact: true }),
   ).toBeVisible();
   await old.close();
 });
@@ -276,5 +276,101 @@ test('认证页面视觉与手机溢出检查', async ({ page }, testInfo) => {
       fullPage: true,
       animations: 'disabled',
     });
+  }
+});
+
+test('用户工作台：节点展示、管理员授权、独立订阅和撤销', async ({ page }) => {
+  const { seal } = await import('../../packages/shared/src/crypto');
+  const name = 'catalog_' + randomUUID().replaceAll('-', '').slice(0, 12),
+    email = name + '@example.invalid';
+  const sourceId = randomUUID(),
+    nodeId = randomUUID(),
+    nodeName = 'platform_' + randomUUID().slice(0, 8);
+  const [owner] =
+    await sql`SELECT id FROM users WHERE role='Owner' AND deleted_at IS NULL LIMIT 1`;
+  expect(owner).toBeTruthy();
+  await sql`INSERT INTO node_sources(id,owner_id,data) VALUES(${sourceId},${owner.id},${sql.json({ name: nodeName, kind: 'OWNED_NODE', authorized: true, enabled: true })})`;
+  const node = {
+    name: nodeName,
+    protocol: 'ss',
+    host: '203.0.113.77',
+    port: 443,
+    cipher: 'aes-128-gcm',
+    credential: 'synthetic-not-real-password',
+    country: '日本',
+    tls: false,
+    transport: 'tcp',
+  };
+  await sql`INSERT INTO nodes(id,owner_id,source_id,data,secret) VALUES(${nodeId},${owner.id},${sourceId},${sql.json({ name: nodeName, protocol: 'ss', country: '日本', enabled: true })},${sql.json(seal(JSON.stringify(node)))})`;
+  try {
+    await page.goto('/member/register');
+    await page.getByLabel('用户名', { exact: true }).fill(name);
+    await page.getByLabel('邮箱', { exact: true }).fill(email);
+    await page.getByLabel('密码', { exact: true }).fill(password);
+    await page.getByLabel('确认密码', { exact: true }).fill(password);
+    await page.getByRole('checkbox', { name: /我已阅读并同意/ }).check();
+    await page.getByRole('button', { name: '发送验证码', exact: true }).click();
+    await page
+      .getByLabel('邮箱验证码', { exact: true })
+      .fill(await code(email));
+    await page
+      .getByRole('button', { name: '验证邮箱并创建账户', exact: true })
+      .click();
+    await expect(
+      page.getByRole('heading', { name: '我的工作台', exact: true }),
+    ).toBeVisible();
+    const me = await (await page.request.get('/api/me')).json();
+    expect(me.user.role).toBe('Member');
+    await page.goto('/subscriptions');
+    const card = page.getByRole('article').filter({ hasText: nodeName });
+    await expect(card).toBeVisible();
+    await expect(
+      card.getByRole('button', { name: '未开放订阅', exact: true }),
+    ).toBeDisabled();
+    await expect(
+      page.getByRole('button', { name: '添加节点', exact: true }),
+    ).toHaveCount(0);
+    await sql`UPDATE users SET node_access_enabled=true,node_access_until=now()+interval '1 hour',subscription_enabled=true,node_limit=20 WHERE id=${me.user.id}`;
+    await sql`INSERT INTO node_group_grants(owner_id,source_id,user_id,data) VALUES(${owner.id},${sourceId},${me.user.id},${sql.json({ scope: 'USE', expiresAt: new Date(Date.now() + 3600000).toISOString() })})`;
+    await page.getByRole('button', { name: '刷新节点', exact: true }).click();
+    await expect(
+      card.getByRole('link', { name: '管理订阅', exact: true }),
+    ).toBeVisible();
+    await card.getByRole('link', { name: '管理订阅', exact: true }).click();
+    await expect(
+      page.getByRole('heading', { name: '我的订阅', exact: true }),
+    ).toBeVisible();
+    await page.getByRole('checkbox', { name: new RegExp(nodeName) }).check();
+    await page
+      .getByRole('button', { name: '生成独立订阅链接', exact: true })
+      .click();
+    const link = page.getByLabel('你的独立订阅链接', { exact: true });
+    await expect(link).toHaveValue(/\/api\/subscription\/download\//);
+    const value = await link.inputValue();
+    const downloaded = await page.request.get(value);
+    expect(downloaded.status()).toBe(200);
+    page.once('dialog', (dialog) => void dialog.accept());
+    await page
+      .getByRole('button', { name: '撤销现有订阅链接', exact: true })
+      .click();
+    await expect(page.getByRole('status')).toContainText('订阅链接已撤销');
+    expect((await page.request.get(value)).status()).toBe(404);
+    await page
+      .getByRole('button', { name: '生成独立订阅链接', exact: true })
+      .click();
+    await expect(link).toHaveValue(/\/api\/subscription\/download\//);
+    const next = await link.inputValue();
+    await sql`UPDATE users SET node_access_until=now()-interval '1 second' WHERE id=${me.user.id}`;
+    expect((await page.request.get(next)).status()).toBe(403);
+    await page.goto('/subscriptions');
+    await expect(
+      page
+        .getByRole('article')
+        .filter({ hasText: nodeName })
+        .getByRole('button', { name: '未开放订阅', exact: true }),
+    ).toBeDisabled();
+  } finally {
+    await sql`UPDATE node_sources SET revoked_at=now() WHERE id=${sourceId}`;
+    await sql`UPDATE nodes SET revoked_at=now() WHERE id=${nodeId}`;
   }
 });

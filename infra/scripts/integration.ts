@@ -30,6 +30,7 @@ for (const args of [
     'tests/integration.test.ts',
     'tests/wloc.integration.test.ts',
     'tests/self-service.integration.test.ts',
+    'tests/v3-workspace.integration.test.ts',
   ],
 ]) {
   const result = spawnSync('pnpm', args, { stdio: 'inherit', env });

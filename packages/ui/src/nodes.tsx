@@ -211,6 +211,21 @@ export function NodeManager({
                   >
                     {node.enabled ? '停用' : '启用'}
                   </button>
+                  {['Owner', 'Admin'].includes(session.user.role) && (
+                    <button
+                      onClick={() =>
+                        void request('/api/nodes/' + node.id, 'PATCH', {
+                          catalogVisible: !node.catalogVisible,
+                        })
+                          .then(reload)
+                          .catch(() => {})
+                      }
+                    >
+                      {node.catalogVisible
+                        ? '停止公开展示'
+                        : '开放给注册用户查看'}
+                    </button>
+                  )}
                   <button
                     className="danger"
                     onClick={() => {

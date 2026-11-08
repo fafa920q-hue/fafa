@@ -1,3 +1,4 @@
+import { MemberWorkbench } from '../workspace/MemberWorkbench';
 import { Link } from 'react-router-dom';
 import {
   Activity,
@@ -35,7 +36,7 @@ export const flag = (country: string) =>
     英国: '🇬🇧',
     德国: '🇩🇪',
   })[country] || '🌐';
-export function Dashboard() {
+function LegacyDashboard() {
   const { session, request } = useApp();
   const summary = useData<any>('/api/summary');
   const sources = useData<Row[]>('/api/node_sources');
@@ -390,5 +391,14 @@ export function Dashboard() {
         </section>
       </div>
     </>
+  );
+}
+
+export function Dashboard() {
+  const { session } = useApp();
+  return session.user.role === 'Member' ? (
+    <MemberWorkbench />
+  ) : (
+    <LegacyDashboard />
   );
 }
