@@ -67,7 +67,11 @@ it('005 增量迁移保留既有 Owner、Google sub、会话、设置和加密�
     await apply('003_owner_setup.sql');
     await apply('004_traffic_policy.sql');
     await apply('005_member_auth.sql');
+    await apply('006_auto_grant_policy.sql');
+    await apply('007_member_delivery.sql');
     await apply('005_member_auth.sql');
+    await apply('006_auto_grant_policy.sql');
+    await apply('007_member_delivery.sql');
     const [owner] = await db.unsafe(
       'SELECT id,role,disabled,deleted_at FROM users WHERE id=$1',
       [ownerId],

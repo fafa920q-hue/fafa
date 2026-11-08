@@ -30,3 +30,18 @@ describe('普通账户 Argon2id', () => {
     ).not.toThrow();
   });
 });
+
+describe('授权到期与中文邮件模板',()=>{
+ it('到期不因boolean仍为true而继续生效，Owner不改变绑定',async()=>{
+  const {capabilityAllowed,autoGrantPolicySchema}=await import('../packages/auth/src/auto-grant');
+  expect(capabilityAllowed({role:'Member',server_connect_enabled:true,server_connect_until:new Date(Date.now()-1000)},'server')).toBe(false);
+  expect(capabilityAllowed({role:'Member',server_connect_enabled:true,server_connect_until:null},'server')).toBe(true);
+  expect(capabilityAllowed({role:'Owner'},'server')).toBe(true);
+  expect(autoGrantPolicySchema.safeParse({enabled:true,windowStart:'2026-11-01T00:00:00Z',windowEnd:'2026-11-10T00:00:00Z',nodeSourceId:null,nodeLimit:null,trialValidDays:3}).success).toBe(false);
+ });
+ it('模板不插入外部资源，敏感内容HTML转义，保留中文正文',async()=>{
+  const {renderAccountMail}=await import('../packages/auth/src/member-mail');
+  const mail=renderAccountMail({to:'synthetic@example.invalid',purpose:'CODE',raw:'<script>fictional</script>'});
+  expect(mail.html).not.toContain('<script>');expect(mail.html).toContain('&lt;script&gt;');expect(mail.text).toContain('10分钟');expect(mail.html).not.toMatch(/<img|<iframe|<script/);
+ });
+});

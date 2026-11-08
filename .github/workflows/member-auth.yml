@@ -1,9 +1,9 @@
 name: Member authentication checks
 on:
   push:
-    branches: [feat/member-auth-registration]
+    branches: [feat/member-auth-registration, feat/member-auth-delivery]
   pull_request:
-    branches: [feat/fafa-one-control-panel]
+    branches: [feat/fafa-one-control-panel, feat/member-auth-integration-b4dd0cea]
     paths:
       - 'packages/auth/**'
       - 'apps/api/src/member-auth.ts'
@@ -177,3 +177,45 @@ jobs:
           path: |
             docs/evidence/production-startup.json
             docs/evidence/production-startup-containers.json
+
+  member-delivery-browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:17.7-alpine
+        env: { POSTGRES_DB: fafa, POSTGRES_USER: fafa, POSTGRES_PASSWORD: fafa_dev_only }
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U fafa" --health-interval 5s --health-timeout 3s --health-retries 20
+    env:
+      DATABASE_URL: postgres://fafa:fafa_dev_only@localhost:5432/fafa
+      NODE_ENV: development
+      DEMO_MODE: 'true'
+      DEV_MOCK_LOGIN: 'true'
+      MAIL_PROVIDER: resend
+      MAIL_API_KEY: synthetic-browser-resend-fixture
+      MAIL_FROM: accounts@example.invalid
+      FAFA_TEST_MAIL_FILE: ${{ runner.temp }}/member-synthetic-mail.ndjson
+    steps:
+      - uses: actions/checkout@v4
+        with: { persist-credentials: false, ref: '${{ github.event.pull_request.head.sha || github.sha }}' }
+      - uses: actions/setup-node@v4
+        with: { node-version: '24' }
+      - run: npm install -g pnpm@11.25.0
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec tsx infra/scripts/init-env.ts
+      - run: pnpm db:migrate && pnpm db:seed
+      - run: pnpm exec playwright install --with-deps chromium webkit
+      - name: Real application and database with CI-only outbound mail transport
+        env:
+          NODE_OPTIONS: --import ${{ github.workspace }}/tests/fixtures/member-mail.mjs
+        run: pnpm exec playwright test --config playwright.member-delivery.config.ts
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: member-delivery-browser-evidence
+          path: |
+            docs/evidence/member-delivery-browser.json
+            member-browser-report/
+            test-results/

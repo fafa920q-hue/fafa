@@ -12,6 +12,12 @@ export const users = pgTable('users', {
   name: text('name').notNull(),
   role: text('role').notNull(),
   disabled: boolean('disabled').notNull().default(false),
+  nodeAccessEnabled: boolean('node_access_enabled').notNull().default(false),
+  nodeAccessUntil: timestamp('node_access_until'),
+  serverConnectEnabled: boolean('server_connect_enabled').notNull().default(false),
+  serverConnectUntil: timestamp('server_connect_until'),
+  codexTasksEnabled: boolean('codex_tasks_enabled').notNull().default(false),
+  codexTasksUntil: timestamp('codex_tasks_until'),
   createdAt: timestamp('created_at').defaultNow(),
 });
 const resource = (name: string) =>

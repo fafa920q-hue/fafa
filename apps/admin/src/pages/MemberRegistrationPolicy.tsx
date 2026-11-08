@@ -1,3 +1,4 @@
+import { MemberDeliveryAdmin } from './MemberDeliveryAdmin';
 import { useState } from 'react';
 import {
   Card,
@@ -83,6 +84,7 @@ export function MemberRegistrationPolicy() {
           </form>
         )}
       </Card>
+      <MemberDeliveryAdmin />
     </>
   );
 }

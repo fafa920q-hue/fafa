@@ -134,10 +134,8 @@ export async function runAiTask(task: any) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 120000);
   try {
-    const [user] =
-      await sql`select * from users where id=${task.owner_id} and not disabled and deleted_at is null`;
-    if (!user || !capabilityAllowed(user, 'codex'))
-      throw Error('CAPABILITY_REQUIRED');
+    const [user]=await sql`select * from users where id=${task.owner_id} and not disabled and deleted_at is null`;
+    if(!user||!capabilityAllowed(user,'codex')) throw Error('CAPABILITY_REQUIRED');
     const [account] =
       await sql`select * from ai_accounts where id=${task.account_id} and owner_id=${task.owner_id} and revoked_at is null`;
     if (process.env.DEMO_MODE === 'true' || !account?.secret)
@@ -161,11 +159,7 @@ export async function runAiTask(task: any) {
     for await (const event of stream) {
       const [state] =
         await sql`select t.data->>'status' as status,u.disabled,u.role,u.codex_tasks_enabled,u.codex_tasks_until from ai_tasks t join users u on u.id=t.owner_id where t.id=${task.id}`;
-      if (
-        state.status === 'CANCELLED' ||
-        state.disabled ||
-        !capabilityAllowed(state, 'codex')
-      ) {
+      if (state.status === 'CANCELLED' || state.disabled || !capabilityAllowed(state,'codex')) {
         status = 'CANCELLED';
         controller.abort();
         break;

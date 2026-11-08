@@ -58,7 +58,7 @@ beforeAll(async () => {
   app = await buildApp();
   for (const [i, role] of ['Owner', 'Member', 'Member', 'Viewer'].entries()) {
     const [u] =
-      await sql`insert into users(id,email,name,role) values(${ids[i]},${token() + '@example.invalid'},${'测试' + i},${role}) returning *`;
+      await sql`insert into users(id,email,name,role,node_access_enabled,server_connect_enabled,codex_tasks_enabled) values(${ids[i]},${token() + '@example.invalid'},${'测试' + i},${role},true,true,true) returning *`;
     sessions.push(await createSession(u as any));
   }
 });
