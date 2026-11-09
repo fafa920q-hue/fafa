@@ -197,6 +197,9 @@ export async function buildApp() {
     },
   });
   await app.register(rateLimit, {
+    ...(process.env.NODE_ENV === 'development' && process.env.API_PREVIEW_SOCKET
+      ? { keyGenerator: (req: FastifyRequest) => req.ip ?? 'private-preview' }
+      : {}),
     max: process.env.NODE_ENV === 'development' ? 3000 : 120,
     timeWindow: '1 minute',
   });
