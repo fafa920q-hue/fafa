@@ -22,7 +22,9 @@ import {
   queryDevice,
   saveDevice,
   clearDevice,
+  diagnoseDevices,
   type DeviceHost,
+  type DeviceDiagnosis,
 } from './device';
 import { SetupGuide } from './SetupGuide';
 import './wloc.css';
@@ -65,6 +67,7 @@ export function LocationCenter({
   const [status, setStatus] = useState('');
   const [clearOpen, setClearOpen] = useState(false);
   const [deviceStatus, setDeviceStatus] = useState('尚未查询设备配置');
+  const [diagnosis, setDiagnosis] = useState<DeviceDiagnosis[] | null>(null);
   function select(next: Point, known = true) {
     const clean = coordinate(next.latitude, next.longitude);
     setPoint(clean);
@@ -384,6 +387,29 @@ export function LocationCenter({
             查询设备配置
           </button>
           <button
+            disabled={!!busy}
+            onClick={() =>
+              void action('诊断', async () => {
+                setDeviceStatus('正在诊断两个模块接口…');
+                const results = await diagnoseDevices();
+                setDiagnosis(results);
+                setDeviceStatus(
+                  results.every((r) => r.detected)
+                    ? '模块诊断完成：两个接口均已检测到'
+                    : '模块诊断完成：' +
+                        results
+                          .map(
+                            (r) =>
+                              r.host + ' ' + (r.detected ? '已检测到' : '未检测到'),
+                          )
+                          .join('；'),
+                );
+              })
+            }
+          >
+            {busy === '诊断' ? '诊断中…' : '诊断模块连接'}
+          </button>
+          <button
             className="primary"
             disabled={!!busy || !confirmed}
             onClick={() =>
@@ -456,6 +482,18 @@ export function LocationCenter({
         <p role="status" data-testid="device-status">
           {deviceStatus}
         </p>
+        {diagnosis && (
+          <div className="wloc-diagnosis" data-testid="device-diagnosis">
+            {diagnosis.map((d) => (
+              <p key={d.host}>
+                <strong>{d.host}</strong>：{d.detected ? '✓ ' : '✗ '}
+                {d.summary}
+                <br />
+                <small>{d.detail}</small>
+              </p>
+            ))}
+          </div>
+        )}
         <SetupGuide />
       </Card>
       <Card
