@@ -432,7 +432,7 @@ test('后台统一管理：服务时段、注册体验策略与普通用户AI额
       page.getByRole('heading', { name: '用户权限中心', exact: true }),
     ).toBeVisible();
     await page
-      .getByLabel('选择普通用户', { exact: true })
+      .getByRole('combobox', { name: '选择普通用户', exact: true })
       .selectOption({ index: 1 });
     await expect(
       page.getByRole('button', { name: '保存用户权限', exact: true }),
