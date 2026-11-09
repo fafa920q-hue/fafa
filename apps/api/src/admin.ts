@@ -28,7 +28,7 @@ export async function registerAdmin(app: FastifyInstance) {
         policy.schedule = current.schedule;
       if (policy.ai.enabled) {
         const [account] =
-          await tx`SELECT id FROM ai_accounts WHERE id=${policy.ai.accountId} AND owner_id=${req.actor.id} AND revoked_at IS NULL AND secret IS NOT NULL FOR UPDATE`;
+          await tx`SELECT id FROM ai_accounts WHERE id=${policy.ai.accountId} AND owner_id=${req.actor.id} AND revoked_at IS NULL AND secret IS NOT NULL AND coalesce(data->>'provider','OPENAI_API')='OPENAI_API' FOR UPDATE`;
         if (!account)
           throw new AppError(
             400,

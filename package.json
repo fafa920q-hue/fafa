@@ -26,6 +26,7 @@
     "test:member": "tsx infra/scripts/test-member-auth.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "1.6.0",
     "@fastify/cookie": "11.1.5",
     "@fastify/cors": "11.4.0",
     "@fastify/helmet": "13.2.0",

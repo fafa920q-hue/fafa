@@ -97,6 +97,156 @@ it('网页 ChatGPT 授权开关缺省关闭，打开后仍等待托管授权，A
     vi.unstubAllEnvs();
   }
 });
+it('Claude 账户密文、默认配置、任务计费与流式执行按用户和提供商隔离', async () => {
+  const provider = 'ANTHROPIC_API';
+  const sampleKey = 'synthetic-claude-first-not-a-real-key';
+  const payload = { provider, name: 'Claude 一', apiKey: sampleKey };
+  vi.stubEnv('DEMO_MODE', 'false');
+  vi.stubEnv('ANTHROPIC_API_ENABLED', 'false');
+  try {
+    expect(
+      (await send(1, '/api/ai_accounts', 'POST', payload)).statusCode,
+    ).toBe(503);
+    vi.stubEnv('ANTHROPIC_API_ENABLED', 'true');
+    vi.stubEnv(
+      'ANTHROPIC_AUTH_TOKEN',
+      'synthetic-environment-token-must-not-be-used',
+    );
+    const first = await send(1, '/api/ai_accounts', 'POST', payload);
+    expect(first.statusCode).toBe(200);
+    expect(first.body).not.toContain(sampleKey);
+    expect(first.json()).toMatchObject({
+      provider,
+      credentialConfigured: true,
+    });
+    const { id } = first.json();
+    const [stored] =
+      await sql`SELECT secret IS NULL AS legacy_empty, anthropic_secret IS NOT NULL AS configured FROM ai_accounts WHERE id=${id}`;
+    expect(stored).toMatchObject({ legacy_empty: true, configured: true });
+    const second = await send(1, '/api/ai_accounts', 'POST', {
+      ...payload,
+      name: 'Claude 二',
+      apiKey: 'synthetic-claude-second-key',
+    });
+    expect(second.statusCode).toBe(200);
+    const select = (who: number, accountId: string) =>
+      send(who, '/api/ai/select', 'POST', { accountId });
+    expect((await select(1, id)).statusCode).toBe(200);
+    expect((await select(1, accounts[1])).statusCode).toBe(200);
+    expect((await select(2, id)).statusCode).toBe(404);
+    const list = await send(1, '/api/ai_accounts');
+    expect(
+      list.json().filter((a: { selected?: boolean }) => a.selected),
+    ).toHaveLength(2);
+    expect((await send(2, '/api/ai_accounts/' + id)).statusCode).toBe(404);
+    expect(
+      (
+        await send(1, '/api/ai_accounts/' + id, 'PUT', {
+          ...payload,
+          provider: 'OPENAI_API',
+        })
+      ).statusCode,
+    ).toBe(400);
+    const taskPayload = {
+      provider,
+      accountId: id,
+      prompt: 'stream fixture only',
+    };
+    expect(
+      (await send(2, '/api/ai/tasks', 'POST', taskPayload)).statusCode,
+    ).toBe(404);
+    expect(
+      (
+        await send(1, '/api/ai/tasks', 'POST', {
+          ...taskPayload,
+          provider: 'OPENAI_API',
+        })
+      ).statusCode,
+    ).toBe(400);
+    const submitted = await send(1, '/api/ai/tasks', 'POST', taskPayload);
+    expect(submitted.statusCode).toBe(200);
+    expect((await select(1, second.json().id)).statusCode).toBe(200);
+    const [running] =
+      await sql`UPDATE ai_tasks SET data=data || '{"status":"RUNNING"}'::jsonb WHERE id=${submitted.json().id} RETURNING *`;
+    const streamEvents = [
+      {
+        type: 'message_start',
+        message: { usage: { input_tokens: 3, output_tokens: 0 } },
+      },
+      {
+        type: 'content_block_delta',
+        index: 0,
+        delta: { type: 'text_delta', text: 'Claude fixture reply' },
+      },
+      { type: 'message_delta', usage: { output_tokens: 5 } },
+      { type: 'message_stop' },
+    ];
+    const request = vi.fn(async (url: string, init: RequestInit) => {
+      expect(String(url)).toBe('https://api.anthropic.com/v1/messages');
+      expect(new Headers(init.headers).get('authorization')).toBe(
+        'Bearer ' + sampleKey,
+      );
+      return new Response(
+        streamEvents
+          .map(
+            (e) => 'event: ' + e.type + '\ndata: ' + JSON.stringify(e) + '\n\n',
+          )
+          .join(''),
+        { headers: { 'content-type': 'text/event-stream' } },
+      );
+    });
+    vi.stubGlobal('fetch', request);
+    await runAiTask(running);
+    expect(request).toHaveBeenCalledTimes(1);
+    const [finished] =
+      await sql`SELECT data FROM ai_tasks WHERE id=${running.id}`;
+    expect(finished.data).toMatchObject({
+      provider,
+      status: 'COMPLETED',
+      output: 'Claude fixture reply',
+      usage: { input_tokens: 3, output_tokens: 5 },
+    });
+    const pending = await send(1, '/api/ai/tasks', 'POST', {
+      ...taskPayload,
+      accountId: second.json().id,
+    });
+    expect(pending.statusCode).toBe(200);
+    const [active] =
+      await sql`UPDATE ai_tasks SET data=data || '{"status":"RUNNING"}'::jsonb WHERE id=${pending.json().id} RETURNING *`;
+    let aborted = false;
+    const stalled = vi.fn(
+      (_url: string, init: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          init.signal!.addEventListener(
+            'abort',
+            () => {
+              aborted = true;
+              reject(new DOMException('cancelled', 'AbortError'));
+            },
+            { once: true },
+          );
+        }),
+    );
+    vi.stubGlobal('fetch', stalled);
+    const activeWorker = runAiTask(active);
+    await vi.waitFor(() => expect(stalled).toHaveBeenCalledTimes(1));
+    expect(
+      (await send(1, '/api/ai/tasks/' + active.id + '/cancel', 'POST'))
+        .statusCode,
+    ).toBe(200);
+    await activeWorker;
+    expect(aborted).toBe(true);
+    const others = await send(2, '/api/ai/tasks');
+    expect(others.json()).toEqual([]);
+    expect(
+      (await send(2, '/api/ai/tasks/' + running.id + '/cancel', 'POST'))
+        .statusCode,
+    ).toBe(404);
+  } finally {
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+  }
+});
 it('服务窗口左闭右开、管理员可管理、禁用账户不可绕过，错误时间拒绝', () => {
   const p = policy(1000, 2000);
   expect(serviceOpen(p, { role: 'Member' }, 999)).toBe(false);

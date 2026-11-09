@@ -24,6 +24,8 @@ import {
   writable,
   sourceSchema,
   aiSchema,
+  aiProviderSchema,
+  anthropicApiEnabled,
   serverSchema,
   locationSchema,
   type User,
@@ -79,7 +81,7 @@ function publicRow(row: any) {
     id: row.id,
     ownerId: row.owner_id,
     ...row.data,
-    credentialConfigured: !!row.secret,
+    credentialConfigured: !!(row.secret ?? row.anthropic_secret),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -585,14 +587,33 @@ export async function buildApp() {
         data.syncRevision = token();
       }
       if (table === 'ai_accounts') {
+        const provider = aiProviderSchema.parse(
+          existing
+            ? (existing.data.provider ?? 'OPENAI_API')
+            : (data.provider ?? 'OPENAI_API'),
+        );
+        if (data.provider && data.provider !== provider)
+          throw new AppError(
+            400,
+            'AI_PROVIDER_MISMATCH',
+            '现有账户不能更换提供商',
+          );
+        if (provider === 'ANTHROPIC_API' && !anthropicApiEnabled())
+          throw new AppError(503, 'CLAUDE_API_DISABLED', 'Claude API 暂未开放');
         secret = seal(data.apiKey);
         data.status = 'UNVERIFIED';
-        data.provider = 'OPENAI_API';
+        data.provider = provider;
+        data.selected = existing?.data.selected === true;
       }
       if (table === 'server_connections') {
         secret = seal(data.credential);
         data.status = 'UNKNOWN';
       }
+      const anthropicSecret =
+        table === 'ai_accounts' && data.provider === 'ANTHROPIC_API'
+          ? secret
+          : null;
+      if (anthropicSecret) secret = null;
       const content = data.content;
       let parsed: Node[] | null;
       try {
@@ -621,6 +642,10 @@ export async function buildApp() {
         } else {
           [row] =
             await tx`insert into ${tx(table)}(owner_id,data,secret) values(${req.actor.id},${tx.json(data)},${secret ? tx.json(secret) : null}) returning *`;
+        }
+        if (anthropicSecret) {
+          [row] =
+            await tx`update ai_accounts set anthropic_secret=${tx.json(anthropicSecret)} where id=${row.id} and owner_id=${req.actor.id} returning *`;
         }
         if (table === 'node_sources') {
           await tx`update background_jobs set data=data || '{"status":"CANCELLED"}'::jsonb,updated_at=now() where source_id=${row.id} and data->>'status' in ('QUEUED','RUNNING')`;

@@ -33,7 +33,12 @@ export const sourceSchema = z.object({
   authorized: z.literal(true),
   expiresAt: z.iso.datetime().optional(),
 });
+export const aiProviderSchema = z.enum(['OPENAI_API', 'ANTHROPIC_API']);
+export type AiProvider = z.infer<typeof aiProviderSchema>;
+export const anthropicApiEnabled = () =>
+  process.env.ANTHROPIC_API_ENABLED === 'true';
 export const aiSchema = z.object({
+  provider: aiProviderSchema.optional(),
   name: z.string().min(1).max(80),
   apiKey: z.string().min(10).max(1024),
 });

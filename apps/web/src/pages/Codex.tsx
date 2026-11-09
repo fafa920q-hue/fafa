@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import type { AiProvider } from '../../../../packages/shared/src';
 import { backendUrl } from '../../../../packages/ui/src/endpoints';
 import { Code2, Plus, ExternalLink, Send, Square } from 'lucide-react';
 import {
@@ -19,9 +20,11 @@ export function Codex() {
   const tasks = useData<Row[]>('/api/ai/tasks');
   const service = useData<{
     enabled: boolean;
+    claudeApi?: 'AVAILABLE' | 'UNAVAILABLE';
     quota: { dailyLimit: number; concurrency: number };
     chatgptAuthorization?: 'DISABLED' | 'AWAITING_PROVIDER_APPROVAL';
   }>('/api/ai/service');
+  const [provider, setProvider] = useState<AiProvider>('OPENAI_API');
   const [add, setAdd] = useState(false);
   const [remove, setRemove] = useState<Row>();
   const [selected, setSelected] = useState('');
@@ -30,12 +33,27 @@ export function Codex() {
   const [task, setTask] = useState<Row>();
   const [busy, setBusy] = useState(false);
   const writable = session.user.role !== 'Viewer';
+  const isClaude = provider === 'ANTHROPIC_API';
+  const engine = isClaude ? 'Claude' : 'Codex';
+  const apiName = isClaude ? 'Anthropic' : 'OpenAI';
+  const available = !isClaude || service.data?.claudeApi === 'AVAILABLE';
+  const providerAccounts = useMemo(
+    () =>
+      accounts.data?.filter((a) => (a.provider ?? 'OPENAI_API') === provider),
+    [accounts.data, provider],
+  );
+  const providerTasks = tasks.data?.filter(
+    (t) => (t.provider ?? 'OPENAI_API') === provider,
+  );
   useEffect(() => {
-    if (!selected && accounts.data?.length)
+    if (selected === 'platform' && provider === 'OPENAI_API') return;
+    if (providerAccounts && !providerAccounts.some((a) => a.id === selected))
       setSelected(
-        accounts.data.find((a) => a.selected)?.id || accounts.data[0].id,
+        providerAccounts.find((a) => a.selected)?.id ||
+          (provider === 'OPENAI_API' ? providerAccounts[0]?.id : '') ||
+          '',
       );
-  }, [accounts.data, selected]);
+  }, [provider, providerAccounts, selected]);
   useEffect(() => {
     if (!task?.id || !['QUEUED', 'RUNNING'].includes(task.status)) return;
     const events = new EventSource(
@@ -59,14 +77,15 @@ export function Codex() {
     };
     return () => events.close();
   }, [task?.id]);
-  const account = accounts.data?.find((a) => a.id === selected);
+  const account = providerAccounts?.find((a) => a.id === selected);
   return (
     <>
       <PageTitle
-        title="Codex 工作台"
-        description="查看个人 Codex 授权状态和可用 AI 服务。"
+        title={engine + ' 工作台'}
+        description="在 AI 工作台选择引擎、个人账户和任务。"
         action={
-          writable && (
+          writable &&
+          available && (
             <button className="primary" onClick={() => setAdd(true)}>
               <Plus size={16} />
               添加 API 账户
@@ -75,39 +94,69 @@ export function Codex() {
         }
       />
       <div className="stack">
-        <div className="callout">
-          API 模式独立计费，不使用 ChatGPT Plus
-          订阅额度。命令输出仅作建议，本工作台不会自动执行 shell、写文件或部署。
-        </div>
-        <Card
-          title="个人 Codex 授权 · 暂未开放"
-          description="通过 OpenAI 官方授权连接自己的 ChatGPT 账户。"
-        >
-          <p role="status">
-            {service.error
-              ? '暂时无法读取 ChatGPT 授权状态。'
-              : !service.data
-                ? '正在读取 ChatGPT 授权状态。'
-                : service.data.chatgptAuthorization ===
-                    'AWAITING_PROVIDER_APPROVAL'
-                  ? '等待 OpenAI 托管应用授权。'
-                  : '本站的 ChatGPT 网页授权尚未启用。'}
-          </p>
-          <div className="actions">
-            <button type="button" disabled>
-              Continue with ChatGPT
-            </button>
-            <a
-              className="button"
-              href="https://chatgpt.com/codex"
-              target="_blank"
-              rel="noopener noreferrer"
+        <div className="actions" role="group" aria-label="AI 引擎">
+          {(['OPENAI_API', 'ANTHROPIC_API'] as const).map((choice) => (
+            <button
+              key={choice}
+              type="button"
+              aria-pressed={provider === choice}
+              className={provider === choice ? 'primary' : ''}
+              onClick={() => {
+                if (provider === choice) return;
+                setProvider(choice);
+                setSelected('');
+                setTask(undefined);
+              }}
             >
-              打开官方 Codex Cloud
-              <ExternalLink size={13} />
-            </a>
-          </div>
-        </Card>
+              {choice === 'OPENAI_API' ? 'Codex' : 'Claude'}
+            </button>
+          ))}
+        </div>
+        <div className="callout">
+          {isClaude
+            ? 'Claude API 费用由所选 Anthropic 账户承担。'
+            : 'API 模式独立计费，不使用 ChatGPT Plus 订阅额度。'}
+          命令输出仅作建议，本工作台不会自动执行 shell、写文件或部署。
+        </div>
+        {isClaude ? (
+          <Card title="Claude 原生 CLI · 暂未开放">
+            <p>
+              {available
+                ? '可添加个人 Anthropic API Key。'
+                : 'Claude API 当前未启用。'}
+            </p>
+          </Card>
+        ) : (
+          <Card
+            title="个人 Codex 授权 · 暂未开放"
+            description="通过 OpenAI 官方授权连接自己的 ChatGPT 账户。"
+          >
+            <p role="status">
+              {service.error
+                ? '暂时无法读取 ChatGPT 授权状态。'
+                : !service.data
+                  ? '正在读取 ChatGPT 授权状态。'
+                  : service.data.chatgptAuthorization ===
+                      'AWAITING_PROVIDER_APPROVAL'
+                    ? '等待 OpenAI 托管应用授权。'
+                    : '本站的 ChatGPT 网页授权尚未启用。'}
+            </p>
+            <div className="actions">
+              <button type="button" disabled>
+                Continue with ChatGPT
+              </button>
+              <a
+                className="button"
+                href="https://chatgpt.com/codex"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                打开官方 Codex Cloud
+                <ExternalLink size={13} />
+              </a>
+            </div>
+          </Card>
+        )}
         <div className="two-col">
           <Card
             title="账户中心"
@@ -120,7 +169,7 @@ export function Codex() {
               onRetry={accounts.refresh}
             />
             <div className="list">
-              {accounts.data?.map((a) => (
+              {providerAccounts?.map((a) => (
                 <div className="resource-card" key={a.id}>
                   <div className="resource-top">
                     <h3>{a.name}</h3>
@@ -136,7 +185,7 @@ export function Codex() {
                   </div>
                   <div className="resource-meta">
                     <span>
-                      接入方式：OpenAI API · 凭据
+                      接入方式：{apiName} API · 凭据
                       {a.credentialConfigured ? '已加密配置' : '未配置'}
                     </span>
                     <span>
@@ -149,18 +198,18 @@ export function Codex() {
                   <div className="actions">
                     <button
                       disabled={!writable}
-                      className={selected === a.id ? 'primary' : ''}
+                      className={a.selected ? 'primary' : ''}
                       onClick={() =>
                         request('/api/ai/select', 'POST', { accountId: a.id })
                           .then(() => {
                             setSelected(a.id);
                             accounts.refresh();
-                            toast('已切换当前 API 账户');
+                            toast('已设为此引擎的默认账户');
                           })
                           .catch(() => {})
                       }
                     >
-                      {selected === a.id ? '当前账户' : '切换账户'}
+                      {a.selected ? '默认账户' : '设为默认并切换'}
                     </button>
                     {writable && (
                       <button className="danger" onClick={() => setRemove(a)}>
@@ -171,7 +220,7 @@ export function Codex() {
                 </div>
               ))}
             </div>
-            {accounts.data?.length === 0 && (
+            {providerAccounts?.length === 0 && (
               <Empty
                 title="尚未连接 API 账户"
                 description="添加自己的 API Key 后即可创建真实任务。"
@@ -193,10 +242,18 @@ export function Codex() {
                     ...(selected === 'platform'
                       ? { service: true }
                       : { accountId: selected }),
+                    provider,
                     prompt,
                     workspace,
                   });
-                  setTask({ id: r.id, status: 'QUEUED', output: '' });
+                  setTask({
+                    id: r.id,
+                    status: 'QUEUED',
+                    output: '',
+                    provider,
+                    accountId: selected === 'platform' ? undefined : selected,
+                    service: selected === 'platform',
+                  });
                   setPrompt('');
                   tasks.refresh();
                 } catch {
@@ -217,10 +274,10 @@ export function Codex() {
                   <option value="" disabled>
                     请选择 API 账户
                   </option>
-                  {service.data?.enabled && (
+                  {!isClaude && service.data?.enabled && (
                     <option value="platform">管理员 AI 服务</option>
                   )}
-                  {accounts.data?.map((a) => (
+                  {providerAccounts?.map((a) => (
                     <option key={a.id} value={a.id}>
                       {a.name}
                     </option>
@@ -251,6 +308,7 @@ export function Codex() {
                 className="primary"
                 disabled={
                   busy ||
+                  !available ||
                   !writable ||
                   !(selected === 'platform'
                     ? service.data?.enabled
@@ -286,8 +344,22 @@ export function Codex() {
                     </button>
                   )}
                 </div>
+                <p>
+                  {engine} ·{' '}
+                  {task.service
+                    ? '管理员 AI 服务'
+                    : (providerAccounts?.find((a) => a.id === task.accountId)
+                        ?.name ?? '历史账户')}
+                </p>
+                {task.usage && (
+                  <p>
+                    输入 {task.usage.input_tokens ?? '—'} tokens · 输出{' '}
+                    {task.usage.output_tokens ?? '—'} tokens
+                  </p>
+                )}
+                {task.error && <p role="alert">{task.error}</p>}
                 <div className="task-output" aria-live="polite">
-                  {task.output || task.error || '等待任务输出…'}
+                  {task.output || (!task.error && '等待任务输出…')}
                 </div>
               </div>
             )}
@@ -298,7 +370,7 @@ export function Codex() {
           description="点击已保存任务查看输出，不共享其他用户的会话"
         >
           <div className="list">
-            {tasks.data?.map((t) => (
+            {providerTasks?.map((t) => (
               <button
                 className="list-item"
                 key={t.id}
@@ -312,7 +384,7 @@ export function Codex() {
               </button>
             ))}
           </div>
-          {!tasks.data?.length && (
+          {!providerTasks?.length && (
             <Empty
               title="暂无任务"
               description="配置凭据并关闭演示模式后，任务将通过后台 Worker 执行。"
@@ -323,7 +395,7 @@ export function Codex() {
       <FormDialog
         open={add}
         onClose={() => setAdd(false)}
-        title="添加 OpenAI API 账户"
+        title={'添加 ' + apiName + ' API 账户'}
         notice="仅接受你有权使用的 API Key。后端信封加密保存；不在浏览器缓存密钥。"
         fields={[
           {
@@ -334,13 +406,13 @@ export function Codex() {
           },
           {
             name: 'apiKey',
-            label: 'OpenAI API Key',
+            label: apiName + ' API Key',
             type: 'password',
             required: true,
           },
         ]}
         onSubmit={async (d) => {
-          await request('/api/ai_accounts', 'POST', d);
+          await request('/api/ai_accounts', 'POST', { ...d, provider });
           accounts.refresh();
           toast('账户已保存，尚未执行真实验证');
         }}

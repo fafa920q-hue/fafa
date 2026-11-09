@@ -83,11 +83,13 @@ export function ServicePolicyAdmin({
                 defaultValue={policy.data.ai.accountId || ''}
               >
                 <option value="">未配置 · 暂未开放</option>
-                {accounts.data?.map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.name}
-                  </option>
-                ))}
+                {accounts.data
+                  ?.filter((a) => (a.provider ?? 'OPENAI_API') === 'OPENAI_API')
+                  .map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.name}
+                    </option>
+                  ))}
               </select>
             </label>
             <label>

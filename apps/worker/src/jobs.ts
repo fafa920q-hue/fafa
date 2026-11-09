@@ -9,6 +9,11 @@ import {
   readAiQuota,
 } from '../../../packages/auth/src/service-policy';
 import OpenAI from 'openai';
+import Anthropic from '@anthropic-ai/sdk';
+import {
+  aiProviderSchema,
+  anthropicApiEnabled,
+} from '../../../packages/shared/src';
 import { sql, audit } from '../../../packages/db/src';
 import { seal, unseal } from '../../../packages/shared/src/crypto';
 import { safeFetch } from '../../../packages/subscription/src/network';
@@ -141,11 +146,19 @@ export async function runAiTask(task: any) {
   let output = '';
   let completed = false;
   let status = 'COMPLETED';
+  let failure = '请求失败，请检查 API Key、额度和模型权限';
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 120000);
   let accessRevoked = false;
   const accessWatchdog = setInterval(async () => {
     try {
+      const [running] =
+        await sql`select id from ai_tasks where id=${task.id} and owner_id=${task.owner_id} and data->>'status'='RUNNING'`;
+      if (
+        !running ||
+        (task.data.provider === 'ANTHROPIC_API' && !anthropicApiEnabled())
+      )
+        throw Error('ACCESS_REVOKED');
       const [rawUser] =
         await sql`select * from users where id=${task.owner_id} and not disabled and deleted_at is null`;
       const user = rawUser ? await resolveAccess(rawUser) : null;
@@ -189,26 +202,57 @@ export async function runAiTask(task: any) {
       throw Error('AI_SERVICE_CLOSED');
     const [account] =
       await sql`select a.* from ai_accounts a join users u on u.id=a.owner_id where a.id=${task.account_id} and (a.owner_id=${task.owner_id} or (${task.data.service === true} and u.role='Owner')) and not u.disabled and u.deleted_at is null and a.revoked_at is null`;
-    if (process.env.DEMO_MODE === 'true' || !account?.secret)
-      throw Error('未配置');
-    const client = new OpenAI({
-      apiKey: unseal(account.secret),
-      timeout: 120000,
-      maxRetries: 0,
-    });
-    const stream = await client.responses.create(
-      {
-        model: process.env.OPENAI_MODEL || 'gpt-4.1-mini',
-        input: task.data.prompt,
-        max_output_tokens: Math.min(
-          Number(task.data.maxOutputTokens) || 2000,
-          task.data.service ? policy.ai.maxOutputTokens : 2000,
-        ),
-        stream: true,
-        store: false,
-      },
-      { signal: controller.signal },
+    if (process.env.DEMO_MODE === 'true' || !account) throw Error('未配置');
+    const provider = aiProviderSchema.parse(task.data.provider ?? 'OPENAI_API');
+    if (
+      (account.data.provider ?? 'OPENAI_API') !== provider ||
+      (task.data.service && provider !== 'OPENAI_API')
+    )
+      throw Error('AI_PROVIDER_MISMATCH');
+    if (provider === 'ANTHROPIC_API' && !anthropicApiEnabled())
+      throw Error('CLAUDE_API_DISABLED');
+    const credential =
+      provider === 'ANTHROPIC_API' ? account.anthropic_secret : account.secret;
+    if (!credential) throw Error('未配置');
+    const apiKey = unseal(credential);
+    const maxTokens = Math.min(
+      Number(task.data.maxOutputTokens) || 2000,
+      task.data.service ? policy.ai.maxOutputTokens : 2000,
     );
+    const stream =
+      provider === 'ANTHROPIC_API'
+        ? await new Anthropic({
+            apiKey,
+            authToken: null,
+            logLevel: 'off',
+            baseURL: 'https://api.anthropic.com',
+            timeout: 120000,
+            maxRetries: 0,
+          }).messages.create(
+            {
+              model: process.env.ANTHROPIC_MODEL || 'claude-sonnet-5-5',
+              messages: [{ role: 'user', content: task.data.prompt }],
+              max_tokens: maxTokens,
+              stream: true,
+            },
+            { signal: controller.signal },
+          )
+        : await new OpenAI({
+            apiKey,
+            timeout: 120000,
+            maxRetries: 0,
+          }).responses.create(
+            {
+              model: process.env.OPENAI_MODEL || 'gpt-4.1-mini',
+              input: task.data.prompt,
+              max_output_tokens: maxTokens,
+              stream: true,
+              store: false,
+            },
+            { signal: controller.signal },
+          );
+    let claudeUsage:
+      { input_tokens: number; output_tokens: number } | undefined;
     let last = 0;
     for await (const event of stream) {
       const [rawState] =
@@ -225,10 +269,29 @@ export async function runAiTask(task: any) {
         break;
       }
       if (event.type === 'response.output_text.delta') output += event.delta;
-      if (event.type === 'response.completed') {
+      if (
+        event.type === 'content_block_delta' &&
+        event.delta.type === 'text_delta'
+      )
+        output += event.delta.text;
+      if (event.type === 'message_start')
+        claudeUsage = {
+          input_tokens: event.message.usage.input_tokens,
+          output_tokens: event.message.usage.output_tokens,
+        };
+      if (event.type === 'message_delta' && claudeUsage)
+        claudeUsage.output_tokens = event.usage.output_tokens;
+      if (
+        event.type === 'response.completed' ||
+        event.type === 'message_stop'
+      ) {
         completed = true;
-        if (event.response.usage)
-          await sql`UPDATE ai_tasks SET data=data || ${sql.json({ usage: event.response.usage })},updated_at=now() WHERE id=${task.id} AND data->>'status'='RUNNING'`;
+        const usage =
+          event.type === 'response.completed'
+            ? event.response.usage
+            : claudeUsage;
+        if (usage)
+          await sql`UPDATE ai_tasks SET data=data || ${sql.json({ usage })},updated_at=now() WHERE id=${task.id} AND data->>'status'='RUNNING'`;
       }
       if (event.type === 'response.failed' || event.type === 'error')
         throw Error('PROVIDER_RESPONSE_FAILED');
@@ -239,9 +302,18 @@ export async function runAiTask(task: any) {
     }
     if (status === 'COMPLETED' && (!completed || controller.signal.aborted))
       throw Error('PROVIDER_RESPONSE_INCOMPLETE');
-    if (status === 'COMPLETED')
-      await sql`update ai_accounts set data=data || ${sql.json({ status: 'VERIFIED', verifiedAt: new Date().toISOString() })} where id=${task.account_id} and revoked_at is null`;
-  } catch {
+    if (status === 'COMPLETED') {
+      const lastUsedAt = new Date().toISOString();
+      await sql`update ai_accounts set data=data || ${sql.json({ status: 'VERIFIED', verifiedAt: lastUsedAt, lastUsedAt })} where id=${task.account_id} and revoked_at is null`;
+    }
+  } catch (error) {
+    if (error instanceof Anthropic.APIError) {
+      if (error.status === 401 || error.status === 403)
+        failure = 'Claude API Key 无效或没有所选模型的访问权限';
+      if (error.status === 429) failure = 'Claude API 请求受到频率或额度限制';
+      if (error.status === 503 || error.status === 529)
+        failure = 'Claude API 暂时不可用';
+    }
     status = accessRevoked
       ? 'CANCELLED'
       : controller.signal.aborted
@@ -250,7 +322,7 @@ export async function runAiTask(task: any) {
   } finally {
     clearTimeout(timeout);
     clearInterval(accessWatchdog);
-    await sql`update ai_tasks set data=data || ${sql.json({ status, output, error: status === 'FAILED' ? '请求失败，请检查 API Key、额度和模型权限' : null })},updated_at=now() where id=${task.id} and data->>'status'='RUNNING'`;
+    await sql`update ai_tasks set data=data || ${sql.json({ status, output, error: status === 'FAILED' ? failure : null })},updated_at=now() where id=${task.id} and data->>'status'='RUNNING'`;
     await audit(task.owner_id, 'ai.task_finished', task.id);
   }
 }

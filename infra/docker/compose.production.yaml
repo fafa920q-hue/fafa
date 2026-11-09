@@ -23,6 +23,8 @@ x-runtime: &runtime
     SSH_INTERACTIVE_ENABLED: ${SSH_INTERACTIVE_ENABLED:-false}
     WLOC_SEARCH_ENABLED: ${WLOC_SEARCH_ENABLED:-true}
     WLOC_SEARCH_URL: ${WLOC_SEARCH_URL:-https://photon.komoot.io/api/}
+    ANTHROPIC_API_ENABLED: ${ANTHROPIC_API_ENABLED:-false}
+    ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-sonnet-5-5}
     OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4.1-mini}
   restart: unless-stopped
   logging: &logging
