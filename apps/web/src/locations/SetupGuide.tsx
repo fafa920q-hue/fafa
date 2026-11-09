@@ -3,10 +3,65 @@ export function SetupGuide() {
     <details className="wloc-guide">
       <summary>小火箭安装、验证与恢复真实定位</summary>
       <p className="callout">
-        实验性功能：网络定位响应调整不等于修改GPS。上游报告部分iOS
-        18/26设备拦截失败，iOS 27 beta
+        实验性功能：网络定位响应调整不等于修改GPS。2026-11-04
+        起，多台 iOS 18/26 设备突然无法拦截 gs-loc
+        域名（上游调查：系统 trustd 的 pinningrules 被热更新，要求 Apple
+        签发的证书；同一张证书拦截其他域名仍正常）；iOS 27 beta
         6及以上有证书限制；本站尚未完成真机兼容验收，不保证所有App生效。
       </p>
+      <details>
+        <summary>iOS 26.3 / 2026-11-04 拦截失效：先确认是不是这个问题</summary>
+        <ol>
+          <li>
+            在 Safari 直接打开 https://gs-loc.apple.com/ ：若提示“证书无效 /
+            未受信任”，即系统已拒绝该域名的 MITM
+            证书（模块、证书、代理本身都没有问题，是系统规则变了）。
+          </li>
+          <li>
+            查看“设置 → 通用 → 关于本机”中的受信任资产版本：1014
+            已确认受影响，1013 仍可用。两者都可能随系统后台更新而变化。
+          </li>
+          <li>
+            若确认是证书被拒：目前没有绕过办法。换代理工具、换软路由、换网关透明代理同样无效，因为校验发生在设备内部的
+            locationd / trustd，不在流量路径上。不要关闭系统安全设置、不要降低服务器
+            TLS 验证。Xcode 开发者模式可以临时虚拟定位，但系统会标记为模拟定位，部分
+            App 可以识别，本站不提供该方式。
+          </li>
+          <li>
+            即使模块拦截恢复：iOS 26
+            起系统会缓存真实定位结果并长时间复用，保存成功后仍可能显示旧坐标，需要重启设备清缓存。但
+            2026-11-04
+            后重启有风险——有用户反馈重启后拦截直接失效，重启前请先确认上面两步。
+          </li>
+        </ol>
+        <p>
+          参考：
+          <a
+            href="https://github.com/Yu9191/wloc"
+            target="_blank"
+            rel="noreferrer"
+          >
+            上游说明与更新
+          </a>
+          、
+          <a
+            href="https://github.com/Yu9191/wloc/issues/130"
+            target="_blank"
+            rel="noreferrer"
+          >
+            原因调查 #130
+          </a>
+          、
+          <a
+            href="https://github.com/Yu9191/wloc/issues/123"
+            target="_blank"
+            rel="noreferrer"
+          >
+            受影响版本反馈 #123
+          </a>
+          。本页“诊断模块连接”按钮可分别测试两个接口并给出结论。
+        </p>
+      </details>
       <ol>
         <li>
           仅在本人获授权的设备使用。阅读
