@@ -1,7 +1,7 @@
 name: WLOC branch diagnostics
 on:
   push:
-    branches: [feat/wloc-location-center]
+    branches: [feat/wloc-location-center, feat/wloc-ios26-diagnosis]
 concurrency:
   group: wloc-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
