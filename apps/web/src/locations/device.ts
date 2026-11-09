@@ -67,6 +67,16 @@ export function deviceUrl(
   } else url.searchParams.set('action', action);
   return url.toString();
 }
+type DevicePayload = {
+  success: boolean;
+  error?: unknown;
+  latitude?: unknown;
+  longitude?: unknown;
+  accuracy?: unknown;
+  randomRadius?: unknown;
+  updatedAt?: unknown;
+};
+
 async function request(
   host: DeviceHost,
   action: 'query' | 'clear' | 'save',
@@ -109,7 +119,7 @@ async function request(
     }
     if (!body || typeof (body as { success?: unknown }).success !== 'boolean')
       throw new DeviceRequestError('invalid', deviceFailure);
-    return body;
+    return body as DevicePayload;
   } catch (e) {
     if (e instanceof DeviceRequestError) throw e;
     throw new DeviceRequestError('network', deviceFailure);
@@ -178,8 +188,7 @@ export async function diagnoseDevice(
   try {
     data = await request(host, 'query');
   } catch (e) {
-    const kind =
-      e instanceof DeviceRequestError ? e.kind : 'network';
+    const kind = e instanceof DeviceRequestError ? e.kind : 'network';
     if (kind === 'network')
       return {
         host,
@@ -219,7 +228,8 @@ export async function diagnoseDevice(
       detected: true,
       kind: 'empty',
       summary: '模块已检测到，未保存坐标',
-      detail: '模块正在拦截并正常应答，只是尚未保存坐标。可以选点后保存到设备。',
+      detail:
+        '模块正在拦截并正常应答，只是尚未保存坐标。可以选点后保存到设备。',
     };
   if (
     body.success === true &&

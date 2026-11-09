@@ -1,4 +1,5 @@
-import { afterEach, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   deviceUrl,
   queryDevice,
@@ -147,7 +148,10 @@ it('diagnosis reports empty state as detected module without saved coordinates',
   });
 });
 it('diagnosis reports saved settings as detected module', async () => {
-  vi.stubGlobal('fetch', vi.fn(async () => json(settings)));
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () => json(settings)),
+  );
   const result = await diagnoseDevice(host);
   expect(result.detected).toBe(true);
   expect(result.kind).toBe('ok');
@@ -165,4 +169,55 @@ it('diagnosis covers both device hosts', async () => {
     'gs-loc-cn.apple.com',
   ]);
   expect(results.every((r) => r.detected)).toBe(true);
+});
+
+describe('WLOC 失效说明（2026-11-04 钉扎）', () => {
+  const setupGuide = readFileSync(
+    'apps/web/src/locations/SetupGuide.tsx',
+    'utf8',
+  );
+  const locationCenter = readFileSync(
+    'apps/web/src/locations/LocationCenter.tsx',
+    'utf8',
+  );
+
+  it('位置页常显提示写明核心原因与解决方法', () => {
+    expect(locationCenter).toContain('为什么 WLOC 突然失效了');
+    expect(locationCenter).toContain('pinningrules.sqlite3');
+    expect(locationCenter).toContain('-67880');
+    expect(locationCenter).toContain('恢复出厂设置回到 1013');
+    expect(locationCenter).toContain('updates.cdn-apple.com');
+  });
+
+  it('指南专节保留诊断清单并纠正 Safari 404 的判断口径', () => {
+    expect(setupGuide).toContain('先确认是不是这个问题');
+    expect(setupGuide).toContain('不能单独确认钉扎问题');
+    expect(setupGuide).toContain('受信任资产版本');
+    expect(setupGuide).toContain('1014');
+    expect(setupGuide).toContain('1013');
+  });
+
+  it('指南专节写明唯一可行的恢复路径与 6 个屏蔽域名', () => {
+    expect(setupGuide).toContain('恢复出厂设置');
+    expect(setupGuide).toContain('allowOTAPKIUpdates=false');
+    for (const domain of [
+      'gdmf.apple.com',
+      'gdmf-ados.apple.com',
+      'mesu.apple.com',
+      'updates.cdn-apple.com',
+      'updates-http.cdn-apple.com',
+      'appldnld.apple.com',
+    ]) {
+      expect(setupGuide).toContain(domain);
+    }
+  });
+
+  it('指南专节写明代价、不可行办法与切勿事项', () => {
+    expect(setupGuide).toContain('7 天');
+    expect(setupGuide).toContain('48 小时');
+    expect(setupGuide).toContain('iOS 27');
+    expect(setupGuide).toContain('停止签名');
+    expect(setupGuide).toContain('公开越狱：不存在');
+    expect(setupGuide).toContain('isSimulatedBySoftware=true');
+  });
 });

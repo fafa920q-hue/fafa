@@ -400,7 +400,9 @@ export function LocationCenter({
                         results
                           .map(
                             (r) =>
-                              r.host + ' ' + (r.detected ? '已检测到' : '未检测到'),
+                              r.host +
+                              ' ' +
+                              (r.detected ? '已检测到' : '未检测到'),
                           )
                           .join('；'),
                 );
@@ -494,6 +496,36 @@ export function LocationCenter({
             ))}
           </div>
         )}
+        <section
+          className="wloc-pinning-notice"
+          data-testid="wloc-pinning-notice"
+          aria-label="WLOC 失效原因与解决方法"
+        >
+          <h3>为什么 WLOC 突然失效了（2026-11-04）</h3>
+          <p>
+            <strong>原因：</strong>
+            2026-11-04，Apple 经系统 trustd 后台热更新了
+            pinningrules.sqlite3，对 gs-loc.apple.com / gs-loc-cn.apple.com 加了
+            AppleIssued 证书钉扎校验：只有 Apple 根签发的证书才被接受，非 Apple
+            CA 的 MITM 证书会被拒绝（错误 -67880）。这是 MobileAsset
+            PKITrustStore “受信任资产”更新，与 iOS
+            版本号无关，关自动更新也拦不住；受信任资产版本 1014
+            已确认受影响，1013 仍可用。
+          </p>
+          <p>
+            <strong>解决方法：</strong>
+            目前唯一真实可行的路，是恢复出厂设置回到 1013，再立刻屏蔽 6
+            个资产下发域名（gdmf.apple.com、gdmf-ados.apple.com、mesu.apple.com、updates.cdn-apple.com、updates-http.cdn-apple.com、appldnld.apple.com），否则会在
+            7 天检查周期内被重新推到 1014。详细步骤、代价与风险，见下方 iOS 26.3
+            专节。
+          </p>
+          <p>
+            决定性检查：打开“设置 → 通用 → 关于本机”，看“受信任资产版本”（1014
+            受影响、1013 仍可用）。Safari 打开 gs-loc.apple.com 显示 404“Not
+            Found”不能单独确认问题——那是 Apple 真实服务器的正常返回。
+          </p>
+        </section>
+
         <SetupGuide />
       </Card>
       <Card

@@ -121,3 +121,29 @@
     height: 300px;
   }
 }
+
+.wloc-pinning-notice {
+  border: 1px solid #b45309;
+  border-left-width: 4px;
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin: 16px 0;
+  line-height: 1.8;
+  overflow-wrap: anywhere;
+}
+
+.wloc-pinning-notice h3 {
+  margin: 0 0 8px;
+}
+
+.wloc-pinning-notice p {
+  margin: 8px 0;
+}
+
+.wloc-guide h4 {
+  margin: 20px 0 8px;
+}
+
+.wloc-guide ul {
+  padding-left: 24px;
+}
