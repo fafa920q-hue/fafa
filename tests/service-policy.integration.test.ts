@@ -71,6 +71,32 @@ afterAll(async () => {
   await sql.end();
   vi.unstubAllEnvs();
 });
+it('网页 ChatGPT 授权开关缺省关闭，打开后仍等待托管授权，API Key 模式独立可用', async () => {
+  const route = '/api/ai/service';
+  expect((await app.inject({ method: 'GET', url: route })).statusCode).toBe(
+    401,
+  );
+  try {
+    for (const [setting, expected] of [
+      [undefined, 'DISABLED'],
+      ['invalid', 'DISABLED'],
+      ['true', 'AWAITING_PROVIDER_APPROVAL'],
+    ] as const) {
+      vi.stubEnv('CHATGPT_WEB_AUTH_ENABLED', setting);
+      for (const who of [0, 1]) {
+        const response = await send(who, route);
+        expect(response.statusCode).toBe(200);
+        expect(response.json()).toMatchObject({
+          personalCodex: 'UNAVAILABLE',
+          chatgptAuthorization: expected,
+          personalApi: 'AVAILABLE',
+        });
+      }
+    }
+  } finally {
+    vi.unstubAllEnvs();
+  }
+});
 it('服务窗口左闭右开、管理员可管理、禁用账户不可绕过，错误时间拒绝', () => {
   const p = policy(1000, 2000);
   expect(serviceOpen(p, { role: 'Member' }, 999)).toBe(false);

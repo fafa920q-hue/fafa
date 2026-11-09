@@ -23,6 +23,10 @@ export async function registerAi(app: FastifyInstance, origins: string[]) {
         ).length,
       quota,
       personalCodex: 'UNAVAILABLE',
+      chatgptAuthorization:
+        process.env.CHATGPT_WEB_AUTH_ENABLED === 'true'
+          ? 'AWAITING_PROVIDER_APPROVAL'
+          : 'DISABLED',
       personalApi: 'AVAILABLE',
     };
   });

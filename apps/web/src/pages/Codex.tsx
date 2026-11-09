@@ -17,7 +17,11 @@ export function Codex() {
   const { request, toast, session } = useApp();
   const accounts = useData<Row[]>('/api/ai_accounts');
   const tasks = useData<Row[]>('/api/ai/tasks');
-  const service = useData<any>('/api/ai/service');
+  const service = useData<{
+    enabled: boolean;
+    quota: { dailyLimit: number; concurrency: number };
+    chatgptAuthorization?: 'DISABLED' | 'AWAITING_PROVIDER_APPROVAL';
+  }>('/api/ai/service');
   const [add, setAdd] = useState(false);
   const [remove, setRemove] = useState<Row>();
   const [selected, setSelected] = useState('');
@@ -77,9 +81,32 @@ export function Codex() {
         </div>
         <Card
           title="个人 Codex 授权 · 暂未开放"
-          description="个人 Codex 计划使用 ChatGPT 账户与官方设备码。本站取得适用的托管接入资格后开放。"
+          description="通过 OpenAI 官方授权连接自己的 ChatGPT 账户。"
         >
-          <p>已有 API 账户与管理员 AI 服务可在下方独立管理。</p>
+          <p role="status">
+            {service.error
+              ? '暂时无法读取 ChatGPT 授权状态。'
+              : !service.data
+                ? '正在读取 ChatGPT 授权状态。'
+                : service.data.chatgptAuthorization ===
+                    'AWAITING_PROVIDER_APPROVAL'
+                  ? '等待 OpenAI 托管应用授权。'
+                  : '本站的 ChatGPT 网页授权尚未启用。'}
+          </p>
+          <div className="actions">
+            <button type="button" disabled>
+              Continue with ChatGPT
+            </button>
+            <a
+              className="button"
+              href="https://chatgpt.com/codex"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              打开官方 Codex Cloud
+              <ExternalLink size={13} />
+            </a>
+          </div>
         </Card>
         <div className="two-col">
           <Card
@@ -150,23 +177,6 @@ export function Codex() {
                 description="添加自己的 API Key 后即可创建真实任务。"
               />
             )}
-            <div className="section-space callout">
-              <strong>Sign in with ChatGPT</strong>
-              <p>
-                暂未开放 · 尚未取得面板集成所需服务商授权。不会收集
-                Cookies、auth.json 或设备码。
-              </p>
-              <button disabled>暂未开放</button>
-              <a
-                className="button"
-                href="https://chatgpt.com/codex"
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                打开官方 Codex Cloud
-                <ExternalLink size={13} />
-              </a>
-            </div>
           </Card>
           <Card
             title="API 助手"

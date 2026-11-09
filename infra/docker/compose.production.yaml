@@ -65,6 +65,7 @@ services:
     <<: *runtime
     environment:
       <<: *runtime_environment
+      CHATGPT_WEB_AUTH_ENABLED: ${CHATGPT_WEB_AUTH_ENABLED:-false}
       MAIL_PROVIDER: ${MAIL_PROVIDER:-}
       MAIL_API_KEY: ${MAIL_API_KEY:-}
       MAIL_FROM: ${MAIL_FROM:-}
