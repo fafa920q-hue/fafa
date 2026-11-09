@@ -95,8 +95,22 @@ HTTPS gs-loc.apple.com 或 gs-loc-cn.apple.com 的 /wloc-settings/save：
 页面内含完整中文安装和恢复向导，不自动安装证书、改变信任、配置 AWS 证书或运行定位脚本。
 使用原版模块指定五个 MITM hostname，不扩大通配符。
 设备本人生成证书、手动安装并信任，见 https://support.apple.com/102390 。
-上游 2026-11-04 报告部分 iOS 18/26 拦截失败，原因未确认；
-上游报告 iOS 27 beta 6+ locationd 拒绝非 Apple CA。此为上游报告，不是本站真机结论。
+上游 2026-11-04 报告部分 iOS 18/26 拦截失败；随后上游调查已确认根因（非本站真机结论，见下）：
+2026-11-04 11:04（UTC）Apple 经 trustd 热更新 pinningrules.sqlite3，对 gs-loc.apple.com /
+gs-loc-cn.apple.com 增加 AppleIssued 校验（要求 Apple 根签发与 Apple 扩展标记），非 Apple
+CA 签发的证书返回 -67880（certificates do not meet pinning requirements）。同一张证书拦截
+example.com 等非 Apple 域名仍正常，只有 *.apple.com 被拒。受影响不限于 iOS 27 beta：iOS
+16/17/18/26 均有反馈（26.0、26.4.2、26.6.1、26.6.2、26.7、26.7.2、18.2、18.5、18.7.1、
+18.7.7、17.6.1），且多台设备未更新系统、未重启即失效；“受信任资产版本”1014 已确认受影响，
+1013 仍可用。该热更新即使关闭系统自动更新也会下发。非越狱设备目前无绕过办法（换代理工具、
+软路由、网关透明代理同样无效；Xcode 开发者模式会被标记为模拟定位）。iOS 27 beta 6+
+locationd 同样拒绝非 Apple CA。参考：上游 README 页首更新、Issue #130（pinningrules
+调查）、Issue #123（受影响版本反馈）。
+本站选址页的检测逻辑本身无误：device.ts 按原版模块协议要求 JSON success
+响应，模块未拦截时如实报“未获得有效WLOC模块响应”。本分支新增 diagnoseDevice /
+diagnoseDevices，可区分网络层失败（请求未得到响应，多为上述证书被拒）、HTTP
+层失败（服务器响应不是模块应答）、格式无效，以及“模块已检测到、未保存坐标”
+（success=false + 无已保存的坐标，属正常空状态）。
 不建议关闭系统安全设置、降低服务器 TLS 验证或将证书绕过当作成功。
 
 必须由账户持有人在真实 iPhone/iPad 验收：
@@ -126,5 +140,18 @@ Muse 必须审核本 SHA 并取得生产批准后，使用既有部署锁/备份
 新增 CSP 仅允许两台 Apple 配置主机连接与 OSM 瓦片图片；需重建 Web 镜像。
 两个正式域名不变、不新增公开服务或端口，4000/5432 保持 Docker 内部。
 现有 .env.production 保留；新搜索选项可默认或按获批供应商设置，不触碰原密钥。
+
+## 备用域名 dw.fafa888.uk 评估（2026-11-10）
+
+用户新建 dw.fafa888.uk（A 记录 → 3.19.237.155，Cloudflare DNS
+代理），问能否作为选址页备用域名、能否解决“未检测到代理模块”。
+结论：不能解决。模块检测是浏览器向 gs-loc.apple.com 发请求、由手机上的
+Shadowrocket MITM 拦截；选址页自身域名（fafa888.uk 或 dw.fafa888.uk）
+与该 MITM 是否生效无关。iOS 拒绝的是 gs-loc 域名的 MITM 证书，不是选址页的证书。
+若仍想把选址页挂到该域名，需要服务器端改动（不在本分支范围，须单独排期）：
+Caddy 增加 dw.fafa888.uk 虚拟主机并反代同一 Web 服务、为新域名签发 TLS
+证书、CSP 与应用域名配置相应更新、回归两站点的 /locations 与设备请求。
+在模块拦截恢复之前，迁域名对定位功能无任何改善；建议暂不迁移，待拦截问题
+有解后再视需要启用该域名作备用入口。
 生产验收包括正常 TLS、Google 登录、Owner、私有收藏、真实地图与搜索、
 设备失败提示和实际 iOS 读回；物理定位效果另列，不能以 CI 代替。
