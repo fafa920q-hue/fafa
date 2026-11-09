@@ -1,3 +1,5 @@
+import { registerCodexExecution } from './codex-execution';
+import { platformAccountsEnabled } from '../../../packages/auth/src/codex-execution';
 import type { ISql } from 'postgres';
 import { capabilityAllowed } from '../../../packages/auth/src/auto-grant';
 import {
@@ -57,7 +59,6 @@ import { registerAdmin } from './admin';
 import { registerAi } from './ai';
 import { registerPlatformAi } from './platform-ai';
 import { registerPlatformChat } from './platform-chat';
-import { platformAiEnabled } from '../../../packages/shared/src/platform-ai';
 import {
   beginOwnerCredential,
   completeOwnerCredential,
@@ -169,7 +170,7 @@ function visiblePersonalAccount(
 ) {
   return (
     table !== 'ai_accounts' ||
-    !platformAiEnabled() ||
+    !platformAccountsEnabled() ||
     isAdmin(role) ||
     provider === 'ANTHROPIC_API'
   );
@@ -251,7 +252,7 @@ export async function buildApp() {
     const actor = await resolveAccess(identity);
     req.actor = actor;
     if (
-      platformAiEnabled() &&
+      platformAccountsEnabled() &&
       !isAdmin(actor.role) &&
       /^\/api\/ai_accounts(\/|$)/.test(path)
     )
@@ -959,6 +960,7 @@ export async function buildApp() {
   await registerAccessCenter(app);
   await registerAi(app, origins);
   await registerPlatformAi(app);
+  await registerCodexExecution(app);
   await registerPlatformChat(app);
   await registerSsh(app, origins);
   return app;

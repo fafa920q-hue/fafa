@@ -1,4 +1,11 @@
 import {
+  codexExecutionEnabled,
+  codexCalls,
+  codexWorkerReady,
+  platformAccountsEnabled,
+  repositoryForUser,
+} from '../../../packages/auth/src/codex-execution';
+import {
   audience,
   modelForUser,
   platformModelConfig,
@@ -56,7 +63,7 @@ const apiKey = z
   .regex(/^sk-(?!admin-)[A-Za-z0-9_-]{16,}$/)
   .max(512);
 function owner(actor: any) {
-  if (!platformAiEnabled() || actor.role !== 'Owner') throw notFound();
+  if (!platformAccountsEnabled() || actor.role !== 'Owner') throw notFound();
 }
 const accountColumns = sql`id, project_id, service_account_id, name, note, models, enabled, health,
   daily_micros, monthly_micros, concurrency, checked_at, last_error, priority, allowed_users, (secret is not null) as has_key`;
@@ -66,7 +73,7 @@ async function choices(
   userId: string,
 ) {
   return db`select a.id, a.project_id, a.models, a.daily_micros, a.monthly_micros, a.revision, a.concurrency,
-      (select count(*)::int from ai_tasks t where t.platform_account_id=a.id and t.data->>'status' in ('QUEUED','RUNNING')) as active
+      (select count(*)::int from ai_tasks t where t.platform_account_id=a.id and t.data->>'status' in ('QUEUED','PREPARING','RUNNING','PAUSED','TESTING')) as active
     from ai_platform_accounts a
     where enabled and health='READY' and secret is not null
       and (allowed_users is null or ${userId}::uuid=any(allowed_users))
@@ -85,6 +92,7 @@ export async function submitPlatformTask(
     retryOf?: string;
     attachment?: { name: string; text: string };
   },
+  native?: { repositoryId: string; requestId: string; approveTests: boolean },
 ) {
   const task = await sql.begin(async (tx) => {
     await tx`select pg_advisory_xact_lock(77708)`;
@@ -98,6 +106,27 @@ export async function submitPlatformTask(
       throw new AppError(409, 'AI_SERVICE_CLOSED', '平台 AI 服务未开放');
     if (!quota.enabled || !quota.models.includes(input.model))
       throw new AppError(403, 'CAPABILITY_REQUIRED', '模型或额度未授权');
+    const repo = native
+      ? await repositoryForUser(tx, actor.id, native.repositoryId)
+      : null;
+    if (native) {
+      if (!(await codexWorkerReady(tx)))
+        throw new AppError(
+          503,
+          'AI_CODEX_RUNTIME_UNAVAILABLE',
+          '隔离执行服务暂不可用',
+        );
+      if (!repo) throw notFound();
+      if (native.approveTests && repo.test_recipe === 'NONE')
+        throw new AppError(
+          400,
+          'AI_CODEX_TEST_RECIPE',
+          '此仓库未配置可批准的测试命令',
+        );
+      const [duplicate] =
+        await tx`select id from ai_tasks where owner_id=${actor.id} and kind='CODEX' and client_request_id=${native.requestId}`;
+      if (duplicate) return duplicate;
+    }
     let prompt = input.prompt;
     let turnRoot: string | null = null;
     if (chat?.attachment) {
@@ -133,16 +162,24 @@ export async function submitPlatformTask(
         turnRoot = previous.data.turnRoot ?? previous.id;
       }
     }
-    const model = await modelForUser(tx, input.model, actor.id);
+    const model = await modelForUser(
+      tx,
+      input.model,
+      actor.id,
+      native ? 'CODEX' : 'GPT',
+    );
     if (!model)
       throw new AppError(403, 'AI_MODEL_UNAVAILABLE', '模型未授权或已停用');
-    const reserved = platformReserve(model.pricing, policy.maxOutput);
+    const reserved =
+      platformReserve(model.pricing, policy.maxOutput) *
+      (native ? codexCalls : 1);
     const global = await budget(tx, {}, policy.timeZone);
     const personal = await budget(tx, { user: actor.id }, policy.timeZone);
-    const reservedTokens = model.pricing.context + policy.maxOutput;
+    const reservedTokens =
+      (model.pricing.context + policy.maxOutput) * (native ? codexCalls : 1);
 
     const [count] =
-      await tx`select count(*) filter (where data->>'status' in ('QUEUED','RUNNING'))::int active,
+      await tx`select count(*) filter (where data->>'status' in ('QUEUED','PREPARING','RUNNING','PAUSED','TESTING'))::int active,
       count(*) filter (where created_at >= date_trunc('day', now(), ${policy.timeZone}))::int daily
           ,count(*) filter (where created_at >= now()-interval '1 minute')::int recent
       from ai_tasks where owner_id=${actor.id}`;
@@ -199,10 +236,17 @@ export async function submitPlatformTask(
         output: '',
         provider: 'OPENAI_API',
         platform: true,
+        ...(native && repo
+          ? {
+              repository: repo.github_owner + '/' + repo.github_repo,
+              commit: repo.commit_sha,
+              recipe: native.approveTests ? repo.test_recipe : 'NONE',
+            }
+          : {}),
         maxOutputTokens: policy.maxOutput,
       };
       const [r] =
-        await tx`insert into ai_tasks(owner_id,platform_account_id,chat_id,client_request_id,data) values(${actor.id},${a.id},${chat?.id ?? null},${chat?.requestId ?? null},${tx.json(data)}) returning id`;
+        await tx`insert into ai_tasks(owner_id,platform_account_id,chat_id,client_request_id,kind,codex_repo_id,data) values(${actor.id},${a.id},${chat?.id ?? null},${chat?.requestId ?? native?.requestId ?? null},${native ? 'CODEX' : 'GPT'},${repo?.id ?? null},${tx.json(data)}) returning id`;
       await tx`insert into ai_platform_usage(task_id,user_id,account_id,project_id,model,account_revision,reserved_micros,pricing,reserved_tokens)
         values(${r.id},${actor.id},${a.id},${a.project_id},${input.model},${a.revision},${reserved},${tx.json(model.pricing)},${reservedTokens})`;
       if (chat)
@@ -222,7 +266,8 @@ export async function submitPlatformTask(
 export async function registerPlatformAi(app: FastifyInstance) {
   app.get('/api/ai/platform', async (req, reply) => {
     reply.header('Cache-Control', 'no-store');
-    if (!platformAiEnabled()) return { mode: false };
+    if (!platformAccountsEnabled()) return { mode: false };
+    const gpt = platformAiEnabled();
     const { policy, quota } = await configuration(sql, req.actor.id);
     const available = new Map<
       string,
@@ -230,6 +275,7 @@ export async function registerPlatformAi(app: FastifyInstance) {
     >();
     const spend = await budget(sql, { user: req.actor.id }, policy.timeZone);
     if (
+      gpt &&
       allowed(req.actor) &&
       policy.enabled &&
       quota.enabled &&
@@ -272,11 +318,11 @@ export async function registerPlatformAi(app: FastifyInstance) {
       }
     }
     return {
-      mode: true,
+      mode: gpt,
       claude: anthropicApiEnabled(),
       models: [...available.keys()],
       catalog: [...available.values()],
-      codexRuntime: false,
+      codexRuntime: await codexWorkerReady(),
       allowTextAttachments: policy.allowTextAttachments,
       quota: {
         daily: Math.max(0, quota.limits.daily - spend.daily),
@@ -293,20 +339,12 @@ export async function registerPlatformAi(app: FastifyInstance) {
     };
   });
   app.get('/api/ai/platform/usage', async (req, reply) => {
-    if (!platformAiEnabled()) throw notFound();
+    if (!platformAccountsEnabled()) throw notFound();
     reply.header('Cache-Control', 'no-store');
     return sql`select l.task_id as id,l.model,l.input_tokens,l.cached_tokens,l.cache_write_tokens,
       l.output_tokens,l.charged_micros,l.reserved_micros,l.created_at,t.data->>'status' as status
       from ai_platform_usage l join ai_tasks t on t.id=l.task_id and t.owner_id=l.user_id
       where l.user_id=${req.actor.id} order by l.created_at desc limit 100`;
-  });
-  app.post('/api/ai/codex/tasks', async () => {
-    if (!platformAiEnabled()) throw notFound();
-    throw new AppError(
-      503,
-      'AI_CODEX_RUNTIME_UNAVAILABLE',
-      '隔离执行服务尚未配置',
-    );
   });
   app.post('/api/ai/platform/tasks', async (req) => {
     if (!platformAiEnabled()) throw notFound();
@@ -333,6 +371,7 @@ export async function registerPlatformAi(app: FastifyInstance) {
       ).map((m) => m.model_id),
       policy,
       usage: await budget(sql, {}, policy.timeZone),
+      codexExecution: codexExecutionEnabled(),
       accounts: await Promise.all(
         rows.map(async (row) => ({
           ...row,

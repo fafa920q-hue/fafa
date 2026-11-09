@@ -30,9 +30,15 @@ export const platformModelConfig = z
       (!v.defaultCodex || (v.supportsCodex && v.enabled)),
   );
 
-export async function modelForUser(db: any, id: string, userId: string) {
+export async function modelForUser(
+  db: any,
+  id: string,
+  userId: string,
+  kind: 'GPT' | 'CODEX' = 'GPT',
+) {
   const [row] =
-    await db`select * from ai_platform_models where model_id=${id} and enabled and supports_chat
+    await db`select * from ai_platform_models where model_id=${id} and enabled
+    and (case when ${kind}='CODEX' then supports_codex else supports_chat end)
     and (allowed_users is null or ${userId}::uuid=any(allowed_users))`;
   return row;
 }

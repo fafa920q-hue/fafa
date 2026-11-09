@@ -1,3 +1,4 @@
+import { NativeCodex, type CodexConfig } from './NativeCodex';
 import { PlatformCodex, type PlatformService } from './PlatformCodex';
 import { useEffect, useMemo, useState } from 'react';
 import type { AiProvider } from '../../../../packages/shared/src';
@@ -441,7 +442,11 @@ export function Codex() {
   const { session } = useApp();
   const admin = ['Owner', 'Admin'].includes(session.user.role);
   const service = useData<PlatformService>('/api/ai/platform');
+  const native = useData<CodexConfig>('/api/ai/codex/config');
   const [claude, setClaude] = useState(false);
+  if (native.data?.enabled) return <NativeCodex config={native} />;
+  if (!native.data)
+    return <DataState error={native.error} loading onRetry={native.refresh} />;
   if (!service.data)
     return (
       <DataState error={service.error} loading onRetry={service.refresh} />

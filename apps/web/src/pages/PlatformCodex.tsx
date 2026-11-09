@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import {
   Card,
   DataState,
@@ -56,6 +57,26 @@ export function PlatformCodex() {
 export function MyAiTasks() {
   const { request, toast } = useApp();
   const tasks = useData<Row[]>('/api/ai/tasks');
+  const active = tasks.data?.some((t) =>
+    ['QUEUED', 'PREPARING', 'RUNNING', 'PAUSED', 'TESTING'].includes(t.status),
+  );
+  useEffect(() => {
+    if (!active) return;
+    const timer = setInterval(tasks.refresh, 2000);
+    return () => clearInterval(timer);
+  }, [active]);
+  const control = async (task: Row, action: 'PAUSE' | 'RESUME' | 'CANCEL') => {
+    try {
+      if (task.kind === 'CODEX')
+        await request('/api/ai/codex/tasks/' + task.id + '/control', 'POST', {
+          action,
+        });
+      else await request('/api/ai/tasks/' + task.id + '/cancel', 'POST');
+      tasks.refresh();
+    } catch (error) {
+      toast((error as Error).message);
+    }
+  };
   return (
     <>
       <PageTitle
@@ -84,19 +105,43 @@ export function MyAiTasks() {
               </pre>
             )}
             {task.error && <p role="alert">{task.error}</p>}
-            {['QUEUED', 'RUNNING'].includes(task.status) && (
+            {task.repository && (
+              <p>
+                {task.repository} · {task.commit}
+              </p>
+            )}
+            {task.patch && (
+              <details>
+                <summary>查看变更补丁</summary>
+                <pre
+                  style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}
+                >
+                  {task.patch}
+                </pre>
+              </details>
+            )}
+            {task.kind === 'CODEX' && task.status === 'RUNNING' && (
               <button
-                onClick={async () => {
-                  try {
-                    await request(
-                      '/api/ai/tasks/' + task.id + '/cancel',
-                      'POST',
-                    );
-                    tasks.refresh();
-                  } catch (error) {
-                    toast((error as Error).message);
-                  }
-                }}
+                disabled={!!task.requestedAction}
+                onClick={() => control(task, 'PAUSE')}
+              >
+                暂停
+              </button>
+            )}
+            {task.kind === 'CODEX' && task.status === 'PAUSED' && (
+              <button
+                disabled={!!task.requestedAction}
+                onClick={() => control(task, 'RESUME')}
+              >
+                恢复
+              </button>
+            )}
+            {['QUEUED', 'PREPARING', 'RUNNING', 'PAUSED', 'TESTING'].includes(
+              task.status,
+            ) && (
+              <button
+                disabled={task.requestedAction === 'CANCEL'}
+                onClick={() => control(task, 'CANCEL')}
               >
                 取消任务
               </button>

@@ -1,4 +1,8 @@
 import {
+  codexExecutionEnabled,
+  platformAccountsEnabled,
+} from '../../../packages/auth/src/codex-execution';
+import {
   modelForUser,
   pricing,
 } from '../../../packages/auth/src/platform-models';
@@ -30,7 +34,7 @@ function clientFor(account: any, timeout: number) {
 }
 
 export async function checkPlatformAccount() {
-  if (!platformAiEnabled() || process.env.DEMO_MODE === 'true') return;
+  if (!platformAccountsEnabled() || process.env.DEMO_MODE === 'true') return;
   const account = await sql.begin(async (tx) => {
     const [row] =
       await tx`select id, secret, revision, models, project_id from ai_platform_accounts
@@ -65,7 +69,7 @@ export async function checkPlatformAccount() {
 
 export async function platformTaskAccount(task: any, user: any, db: any = sql) {
   if (
-    !platformAiEnabled() ||
+    !(task.kind === 'CODEX' ? codexExecutionEnabled() : platformAiEnabled()) ||
     process.env.DEMO_MODE === 'true' ||
     !allowed(user)
   )
@@ -77,7 +81,12 @@ export async function platformTaskAccount(task: any, user: any, db: any = sql) {
     !quota.models.includes(task.data.model)
   )
     return;
-  const model = await modelForUser(db, task.data.model, user.id);
+  const model = await modelForUser(
+    db,
+    task.data.model,
+    user.id,
+    task.kind === 'CODEX' ? 'CODEX' : 'GPT',
+  );
   if (!model) return;
   const [row] =
     await db`select a.id, a.secret, a.project_id, a.daily_micros, a.monthly_micros, l.reserved_micros, l.pricing

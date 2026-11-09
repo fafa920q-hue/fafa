@@ -1,3 +1,4 @@
+import { platformAccountsEnabled } from '../../../packages/auth/src/codex-execution';
 import { platformAiEnabled } from '../../../packages/shared/src/platform-ai';
 import {
   checkPlatformAccount,
@@ -96,14 +97,14 @@ export async function runSubscriptionJob(job: any) {
   });
 }
 export async function tick() {
-  if (platformAiEnabled()) {
+  if (platformAccountsEnabled()) {
     await checkPlatformAccount();
     await sql`update ai_tasks t set data=t.data || '{"status":"CANCELLED"}',updated_at=now()
       from users u where t.owner_id=u.id and (u.disabled or u.deleted_at is not null)
       and t.platform_account_id is not null and t.data->>'status'='QUEUED'`;
     await sql`update ai_platform_usage l set charged_micros=0 from ai_tasks t
       where t.id=l.task_id and l.dispatched_at is null and l.charged_micros is null
-      and t.data->>'status' not in ('QUEUED','RUNNING')`;
+      and t.data->>'status' not in ('QUEUED','PREPARING','RUNNING','PAUSED','TESTING')`;
   }
   await sql.begin(async (tx) => {
     await tx`select pg_advisory_xact_lock(77703)`;
@@ -152,7 +153,7 @@ export async function tick() {
   }
   const task = await sql.begin(async (tx) => {
     const [r] =
-      await tx`select t.* from ai_tasks t join users u on u.id=t.owner_id where t.data->>'status'='QUEUED' and (t.platform_account_id is null or ${platformAiEnabled()}) and not u.disabled order by t.created_at for update of t skip locked limit 1`;
+      await tx`select t.* from ai_tasks t join users u on u.id=t.owner_id where t.kind='GPT' and t.data->>'status'='QUEUED' and (t.platform_account_id is null or ${platformAiEnabled()}) and not u.disabled order by t.created_at for update of t skip locked limit 1`;
     if (r)
       await tx`update ai_tasks set data=data || '{"status":"RUNNING"}',updated_at=now() where id=${r.id}`;
     return r;

@@ -1,4 +1,4 @@
-import { platformAiEnabled } from '../../../packages/shared/src/platform-ai';
+import { platformAccountsEnabled } from '../../../packages/auth/src/codex-execution';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { sql, own, audit } from '../../../packages/db/src';
@@ -44,7 +44,7 @@ export async function registerAi(app: FastifyInstance, origins: string[]) {
     const provider = aiProviderSchema.parse(
       account.data.provider ?? 'OPENAI_API',
     );
-    if (platformAiEnabled() && provider === 'OPENAI_API')
+    if (platformAccountsEnabled() && provider === 'OPENAI_API')
       throw new AppError(403, 'AI_PLATFORM_ONLY', '请使用平台 AI 服务');
     await sql.begin(async (tx) => {
       await tx`select pg_advisory_xact_lock(hashtext(${'ai-select:' + req.actor.id}))`;
@@ -58,10 +58,12 @@ export async function registerAi(app: FastifyInstance, origins: string[]) {
   });
   app.get('/api/ai/tasks', async (req) =>
     (
-      await sql`select id,account_id,data,created_at from ai_tasks where owner_id=${req.actor.id} and revoked_at is null and chat_id is null order by created_at desc limit 50`
+      await sql`select id,account_id,kind,requested_action,data,created_at from ai_tasks where owner_id=${req.actor.id} and revoked_at is null and chat_id is null order by created_at desc limit 50`
     ).map((r) => ({
       id: r.id,
       accountId: r.account_id,
+      kind: r.kind,
+      requestedAction: r.requested_action,
       ...r.data,
       provider: r.data.provider ?? 'OPENAI_API',
       createdAt: r.created_at,
@@ -77,7 +79,7 @@ export async function registerAi(app: FastifyInstance, origins: string[]) {
         workspace: z.string().max(300).default(''),
       })
       .parse(req.body);
-    if (platformAiEnabled() && d.provider === 'OPENAI_API')
+    if (platformAccountsEnabled() && d.provider === 'OPENAI_API')
       throw new AppError(403, 'AI_PLATFORM_ONLY', '请使用平台 AI 服务');
     const policy = await readServicePolicy();
     const quota = await readAiQuota(req.actor.id);
@@ -154,7 +156,7 @@ export async function registerAi(app: FastifyInstance, origins: string[]) {
   app.post('/api/ai/tasks/:id/cancel', async (req) => {
     const { id } = z.object({ id: z.uuid() }).parse(req.params);
     const rows =
-      await sql`update ai_tasks set data=data || '{"status":"CANCELLED"}'::jsonb where id=${id} and owner_id=${req.actor.id} and data->>'status' in ('QUEUED','RUNNING') returning id`;
+      await sql`update ai_tasks set data=data || '{"status":"CANCELLED"}'::jsonb where id=${id} and owner_id=${req.actor.id} and kind='GPT' and data->>'status' in ('QUEUED','RUNNING') returning id`;
     if (!rows.length) throw notFound();
     await audit(req.actor.id, 'ai.task_cancelled', id);
     return { ok: true };
@@ -185,7 +187,12 @@ export async function registerAi(app: FastifyInstance, origins: string[]) {
         await sql`select data from ai_tasks where id=${id} and owner_id=${req.actor.id}`;
       if (!r) break;
       reply.raw.write(`data: ${JSON.stringify(r.data)}\n\n`);
-      if (!['QUEUED', 'RUNNING'].includes(r.data.status)) break;
+      if (
+        !['QUEUED', 'PREPARING', 'RUNNING', 'PAUSED', 'TESTING'].includes(
+          r.data.status,
+        )
+      )
+        break;
       await new Promise((r) => setTimeout(r, 1000));
     }
     reply.raw.end();
