@@ -2,7 +2,6 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { sql } from '../../../packages/db/src';
 import { AppError } from '../../../packages/shared/src';
-import { capabilityAllowed } from '../../../packages/auth/src/auto-grant';
 import {
   activeGrant,
   defaultTrialPolicy,
