@@ -292,7 +292,7 @@ export async function registerAdmin(app: FastifyInstance) {
     const grant =
       kind === 'source' ? 'node_group_grants' : 'server_access_grants';
     const fk = kind === 'source' ? 'source_id' : 'server_id';
-    await sql`insert into ${sql(grant)}(owner_id,${sql(fk)},user_id,data) values(${req.actor.id},${resourceId},${userId},${sql.json({ scope: 'USE', grantSource: 'ADMIN', startsAt: new Date().toISOString(), endsAt: null })}) on conflict (${sql(fk)},user_id) where revoked_at is null do update set data=excluded.data,updated_at=now()`;
+    await sql`insert into ${sql(grant)}(owner_id,${sql(fk)},user_id,data) values(${req.actor.id},${resourceId},${userId},${sql.json({ scope: 'USE', grantSource: 'ADMIN', startsAt: new Date().toISOString(), endsAt: null })}) on conflict (${sql(fk)},user_id) where revoked_at is null do update set data=case when ${sql(grant)}.data ? 'nodeScope' then ${sql(grant)}.data else excluded.data end,updated_at=now()`;
     await audit(req.actor.id, 'grant.created', resourceId);
     return { ok: true };
   });

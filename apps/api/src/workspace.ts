@@ -5,6 +5,7 @@ import {
   activeGrant,
   resolveAccess,
   sourceAllowed,
+  withinNodeGrantScope,
 } from '../../../packages/auth/src/business-access';
 import {
   readServicePolicy,
@@ -34,6 +35,7 @@ export async function memberNodeCatalog(actor: any) {
       source = row.source_data;
     const enabled = node.enabled !== false && source.enabled !== false;
     const sourceActive = activeAt(source.expiresAt);
+    const group = node.group || source.group || '';
     const legal =
       source.kind === 'OWNED_NODE' ||
       (source.authorized === true &&
@@ -46,7 +48,8 @@ export async function memberNodeCatalog(actor: any) {
       enabled &&
       sourceActive &&
       legal &&
-      sourceAllowed(actor, row.source_id, node.group || source.group || '') &&
+      sourceAllowed(actor, row.source_id, group) &&
+      withinNodeGrantScope(row.grant_data, row.id, group) &&
       (baseGrant || actor._access.overlaySources.includes(row.source_id)) &&
       capabilityAllowed(actor, 'node');
     return {
@@ -56,7 +59,7 @@ export async function memberNodeCatalog(actor: any) {
       country: String(node.country || '未标注'),
       region: String(node.region || ''),
       protocol: String(node.protocol || ''),
-      group: String(node.group || source.group || ''),
+      group: String(group),
       enabled,
       health:
         enabled && sourceActive

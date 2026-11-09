@@ -1,8 +1,10 @@
+import type { ISql } from 'postgres';
 import { capabilityAllowed } from '../../../packages/auth/src/auto-grant';
 import {
   activeGrant,
   resolveAccess,
   sourceAllowed,
+  withinNodeGrantScope,
 } from '../../../packages/auth/src/business-access';
 import { registerAccessCenter } from './access-center';
 import { assertServiceOpen } from '../../../packages/auth/src/service-policy';
@@ -82,6 +84,42 @@ function publicRow(row: any) {
     updatedAt: row.updated_at,
   };
 }
+async function authorizedNodeRows(
+  user: Awaited<ReturnType<typeof resolveAccess>>,
+  db: ISql,
+) {
+  const owner = user.id;
+  const rows =
+    await db`select n.*,s.data as source_data,s.owner_id as source_owner,u.role as source_role,g.data as grant_data from nodes n join node_sources s on s.id=n.source_id join users u on u.id=s.owner_id left join node_group_grants g on g.source_id=s.id and g.user_id=${owner} and g.revoked_at is null where n.revoked_at is null and s.revoked_at is null and not u.disabled and u.deleted_at is null and (s.owner_id=${owner} or g.id is not null or (u.role in ('Owner','Admin') and s.id=any(${user._access.subscriptionSources as string[]}::uuid[])))`;
+  return rows.filter(
+    (row) =>
+      sourceAllowed(
+        user,
+        row.source_id,
+        row.data.group || row.source_data.group || '',
+      ) &&
+      withinNodeGrantScope(
+        row.grant_data,
+        row.id,
+        row.data.group || row.source_data.group || '',
+      ) &&
+      ((user._access.base.node && row.source_owner === owner) ||
+        ((row.source_data.kind === 'OWNED_NODE' ||
+          (row.source_data.authorized === true &&
+            row.source_data.redistributionAuthorized === true &&
+            row.source_data.authorizationReference?.trim())) &&
+          ((user._access.base.node &&
+            row.grant_data &&
+            activeGrant(row.grant_data)) ||
+            (['Owner', 'Admin'].includes(row.source_role) &&
+              user._access.subscriptionSources.includes(row.source_id))))) &&
+      row.source_data.enabled &&
+      !row.source_data.demo &&
+      row.data.enabled !== false &&
+      (!row.source_data.expiresAt ||
+        new Date(row.source_data.expiresAt) > new Date()),
+  );
+}
 export async function visibleNodes(owner: string) {
   const [rawUser] =
     await sql`select * from users where id=${owner} and not disabled and deleted_at is null`;
@@ -91,31 +129,9 @@ export async function visibleNodes(owner: string) {
   const [profile] =
     await sql`select data from subscription_profiles where owner_id=${owner} and revoked_at is null order by updated_at desc limit 1`;
   const filter = profile?.data || {};
-  const rows =
-    await sql`select n.*,s.data as source_data,s.owner_id as source_owner,u.role as source_role,g.data as grant_data from nodes n join node_sources s on s.id=n.source_id join users u on u.id=s.owner_id left join node_group_grants g on g.source_id=s.id and g.user_id=${owner} and g.revoked_at is null where n.revoked_at is null and s.revoked_at is null and not u.disabled and u.deleted_at is null and (s.owner_id=${owner} or g.id is not null or (u.role in ('Owner','Admin') and s.id=any(${user._access.subscriptionSources as string[]}::uuid[])))`;
-  const nodes = rows
+  const nodes = (await authorizedNodeRows(user, sql))
     .filter(
       (row) =>
-        sourceAllowed(
-          user,
-          row.source_id,
-          row.data.group || row.source_data.group || '',
-        ) &&
-        ((user._access.base.node && row.source_owner === owner) ||
-          ((row.source_data.kind === 'OWNED_NODE' ||
-            (row.source_data.authorized === true &&
-              row.source_data.redistributionAuthorized === true &&
-              row.source_data.authorizationReference?.trim())) &&
-            ((user._access.base.node &&
-              row.grant_data &&
-              activeGrant(row.grant_data)) ||
-              (['Owner', 'Admin'].includes(row.source_role) &&
-                user._access.subscriptionSources.includes(row.source_id))))) &&
-        row.source_data.enabled &&
-        !row.source_data.demo &&
-        row.data.enabled !== false &&
-        (!row.source_data.expiresAt ||
-          new Date(row.source_data.expiresAt) > new Date()) &&
         (!filter.country ||
           (row.data.country || row.source_data.country) === filter.country) &&
         (!filter.protocol || row.data.protocol === filter.protocol) &&
@@ -771,6 +787,15 @@ export async function buildApp() {
           '订阅权限尚未开放或已到期',
         );
       await assertServiceOpen(user, tx);
+      if (
+        Number(user.node_limit) < 1 ||
+        !(await authorizedNodeRows(user, tx)).length
+      )
+        throw new AppError(
+          403,
+          'NO_SUBSCRIPTION_NODES',
+          '尚无已授权的可订阅节点',
+        );
       await tx`update subscription_tokens set revoked_at=now() where owner_id=${req.actor.id} and revoked_at is null`;
       await tx`insert into subscription_tokens(owner_id,token_hash,data) values(${req.actor.id},${hash(raw)},${tx.json({ enabled: true })})`;
     });

@@ -8,8 +8,17 @@ import {
 } from '../../../../packages/ui/src/core';
 
 type Resource = { id: string; name: string };
-type Resources = { sources: Resource[]; servers: Resource[]; groups: string[] };
-type Grant = { id: string; data: { endsAt?: string } };
+type NodeScope = { nodeIds: string[]; groups: string[] };
+type Resources = {
+  sources: Resource[];
+  servers: Resource[];
+  groups: string[];
+  nodes: (Resource & { sourceId: string; group: string })[];
+};
+type Grant = {
+  id: string;
+  data: { endsAt?: string; expiresAt?: string; nodeScope?: NodeScope };
+};
 type AccessUser = {
   id: string;
   name: string;
@@ -473,6 +482,17 @@ function GrantForms({
   save: (path: string, method: string, patch: object) => Promise<void>;
 }) {
   const path = '/api/admin/access/users/' + user.id;
+  const { toast } = useApp();
+  const [sourceId, setSourceId] = useState('');
+  const sourceGrant = user.grants.sources.find(
+    (grant) => grant.id === sourceId,
+  );
+  const sourceNodes = resources.nodes.filter(
+    (node) => node.sourceId === sourceId,
+  );
+  const sourceGroups = [
+    ...new Set(sourceNodes.map((node) => node.group).filter(Boolean)),
+  ];
   return (
     <>
       {(['source', 'server'] as const).map((kind) => {
@@ -482,13 +502,26 @@ function GrantForms({
         return (
           <details key={kind}>
             <summary>
-              {kind === 'source' ? '节点源授权' : '服务器及 SSH 授权'}
+              {kind === 'source' ? '节点分配' : '服务器及 SSH 授权'}
             </summary>
+            {kind === 'source' && (
+              <p>
+                用户级节点权限开启后，仍需分配可使用的节点。按节点或分组保存会替换此节点源原有的分配范围。
+              </p>
+            )}
             {grants.map((grant) => (
               <div className="list-item" key={grant.id}>
                 <span>
                   {items.find((item) => item.id === grant.id)?.name || grant.id}{' '}
-                  · {time(grant.data.endsAt)}
+                  {kind === 'source' &&
+                    (grant.data.nodeScope
+                      ? '· 已选 ' +
+                        grant.data.nodeScope.nodeIds.length +
+                        ' 个节点 / ' +
+                        grant.data.nodeScope.groups.length +
+                        ' 个分组 '
+                      : '· 整个节点源 ')}
+                  · {time(grant.data.endsAt || grant.data.expiresAt)}
                 </span>
                 <button
                   type="button"
@@ -504,25 +537,114 @@ function GrantForms({
             ))}
             <form
               className="fields"
+              key={
+                kind === 'source'
+                  ? sourceId + JSON.stringify(sourceGrant?.data || {})
+                  : kind
+              }
               onSubmit={(event) => {
                 event.preventDefault();
                 const data = new FormData(event.currentTarget),
-                  resourceId = nullable(data, 'resourceId');
+                  resourceId =
+                    kind === 'source' ? sourceId : nullable(data, 'resourceId');
+                const enabled = data.get('grantAction') === 'allow';
+                const nodeScope =
+                  kind === 'source' &&
+                  enabled &&
+                  data.get('scope') === 'selection'
+                    ? {
+                        nodeIds: selected(data, 'nodeIds'),
+                        groups: selected(data, 'nodeGroups'),
+                      }
+                    : undefined;
+                if (
+                  nodeScope &&
+                  !nodeScope.nodeIds.length &&
+                  !nodeScope.groups.length
+                ) {
+                  toast('请至少选择一个节点或分组');
+                  return;
+                }
                 if (resourceId)
                   void save(path, 'PATCH', {
                     grants: [
                       {
                         kind,
                         resourceId,
-                        enabled: data.get('grantAction') === 'allow',
+                        enabled,
+                        ...(nodeScope ? { nodeScope } : {}),
                         endsAt: nullable(data, 'endsAt'),
                       },
                     ],
                   });
               }}
             >
-              <Options name="resourceId" label="平台资源" items={items} />
-              <Field name="endsAt" label="授权截止（UTC ISO，可留空）" />
+              {kind === 'source' ? (
+                <>
+                  <label>
+                    <span>选择节点源</span>
+                    <select
+                      aria-label="选择节点源"
+                      value={sourceId}
+                      required
+                      onChange={(event) => setSourceId(event.target.value)}
+                    >
+                      <option value="">请选择</option>
+                      {items.map((item) => (
+                        <option key={item.id} value={item.id}>
+                          {item.name || item.id}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  {sourceId && (
+                    <>
+                      <label>
+                        <span>分配范围</span>
+                        <select
+                          name="scope"
+                          defaultValue={
+                            sourceGrant && !sourceGrant.data.nodeScope
+                              ? 'all'
+                              : 'selection'
+                          }
+                        >
+                          <option value="selection">按节点和分组分配</option>
+                          <option value="all">整个节点源</option>
+                        </select>
+                      </label>
+                      <Options
+                        name="nodeIds"
+                        label="选择节点（可多选）"
+                        items={sourceNodes}
+                        values={sourceGrant?.data.nodeScope?.nodeIds}
+                        multiple
+                      />
+                      <Options
+                        name="nodeGroups"
+                        label="选择完整分组（可多选）"
+                        items={sourceGroups.map((group) => ({
+                          id: group,
+                          name: group,
+                        }))}
+                        values={sourceGrant?.data.nodeScope?.groups}
+                        multiple
+                      />
+                    </>
+                  )}
+                </>
+              ) : (
+                <Options name="resourceId" label="平台资源" items={items} />
+              )}
+              <Field
+                name="endsAt"
+                label="授权截止（UTC ISO，可留空）"
+                value={
+                  kind === 'source'
+                    ? sourceGrant?.data.endsAt || sourceGrant?.data.expiresAt
+                    : undefined
+                }
+              />
               <label>
                 <span>授权操作</span>
                 <select name="grantAction">
@@ -530,7 +652,9 @@ function GrantForms({
                   <option value="deny">禁止该资源</option>
                 </select>
               </label>
-              <button>保存资源权限</button>
+              <button>
+                {kind === 'source' ? '保存节点分配' : '保存资源权限'}
+              </button>
             </form>
           </details>
         );

@@ -296,6 +296,20 @@ export async function resolveAccess<T extends Record<string, any>>(
   };
   return user;
 }
+// Source grants saved before scoped assignment authorize the whole source.
+export function withinNodeGrantScope(
+  grant: any,
+  nodeId: string,
+  group: string,
+) {
+  const scope = grant?.nodeScope;
+  if (scope === undefined) return true;
+  return Boolean(
+    (Array.isArray(scope?.nodeIds) && scope.nodeIds.includes(nodeId)) ||
+    (group && Array.isArray(scope?.groups) && scope.groups.includes(group)),
+  );
+}
+
 export function sourceAllowed(user: any, sourceId: string, group = '') {
   if (['Owner', 'Admin'].includes(user.role)) return true;
   const policy = user._access?.policy;

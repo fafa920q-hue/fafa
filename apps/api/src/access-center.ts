@@ -16,12 +16,28 @@ import {
   servicePolicySchema,
 } from '../../../packages/auth/src/service-policy';
 
-const grantSchema = z.object({
-  kind: z.enum(['source', 'server']),
-  resourceId: z.uuid(),
-  enabled: z.boolean(),
-  endsAt: z.iso.datetime().nullable().default(null),
-});
+const nodeScopeSchema = z
+  .object({
+    nodeIds: z.array(z.uuid()).max(5000),
+    groups: z.array(z.string().min(1).max(80)).max(100),
+  })
+  .strict()
+  .refine(
+    (scope) => scope.nodeIds.length > 0 || scope.groups.length > 0,
+    '至少选择一个节点或分组',
+  );
+const grantSchema = z
+  .object({
+    kind: z.enum(['source', 'server']),
+    resourceId: z.uuid(),
+    enabled: z.boolean(),
+    endsAt: z.iso.datetime().nullable().default(null),
+    nodeScope: nodeScopeSchema.optional(),
+  })
+  .refine(
+    (grant) => !grant.nodeScope || (grant.kind === 'source' && grant.enabled),
+    '节点范围仅用于授予节点源',
+  );
 const capabilityPatch = z.object({
   enabled: z.boolean(),
   until: z.iso.datetime().nullable().default(null),
@@ -125,11 +141,28 @@ async function changeAccess(
         '只能修改有效普通用户；整批包含受保护账户时不执行任何变更',
       );
     const resources = new Map<string, any>();
-    for (const grant of patch.grants)
-      resources.set(
-        grant.kind + grant.resourceId,
-        await platformResource(grant.kind, grant.resourceId, tx),
-      );
+    for (const grant of patch.grants) {
+      const resource = await platformResource(grant.kind, grant.resourceId, tx);
+      const scope = grant.nodeScope;
+      if (scope) {
+        const rows =
+          await tx`SELECT id,coalesce(nullif(data->>'group',''),${resource.data.group || ''}) AS "group"
+          FROM nodes WHERE source_id=${resource.id} AND revoked_at IS NULL
+          AND data->>'enabled' IS DISTINCT FROM 'false' AND data->>'demo' IS DISTINCT FROM 'true'`;
+        const availableNodes = new Set(rows.map((row) => row.id));
+        const availableGroups = new Set(rows.map((row) => row.group));
+        if (
+          scope.nodeIds.some((id) => !availableNodes.has(id)) ||
+          scope.groups.some((group) => !availableGroups.has(group))
+        )
+          throw new AppError(
+            400,
+            'NODE_SCOPE_INVALID',
+            '所选节点或分组不属于此节点源，或已停用',
+          );
+      }
+      resources.set(grant.kind + grant.resourceId, resource);
+    }
     if (patch.policy?.allowedSourceIds)
       await validateActivitySources(patch.policy.allowedSourceIds, tx);
     if (patch.policy?.allowedServerIds)
@@ -176,7 +209,7 @@ async function changeAccess(
               : 'server_access_grants',
           fk = grant.kind === 'source' ? 'source_id' : 'server_id';
         if (grant.enabled) {
-          await tx`INSERT INTO ${tx(table)}(owner_id,${tx(fk)},user_id,data) VALUES(${resource.owner_id},${resource.id},${u.id},${tx.json({ scope: 'USE', grantSource: 'ADMIN', startsAt: new Date().toISOString(), endsAt: grant.endsAt })}) ON CONFLICT(${tx(fk)},user_id) WHERE revoked_at IS NULL DO UPDATE SET data=excluded.data,updated_at=now()`;
+          await tx`INSERT INTO ${tx(table)}(owner_id,${tx(fk)},user_id,data) VALUES(${resource.owner_id},${resource.id},${u.id},${tx.json({ scope: 'USE', grantSource: 'ADMIN', startsAt: new Date().toISOString(), endsAt: grant.endsAt, ...(grant.nodeScope ? { nodeScope: grant.nodeScope } : {}) })}) ON CONFLICT(${tx(fk)},user_id) WHERE revoked_at IS NULL DO UPDATE SET data=excluded.data,updated_at=now()`;
           if (grant.kind === 'source')
             policy.deniedSourceIds = policy.deniedSourceIds.filter(
               (id) => id !== resource.id,
@@ -247,6 +280,14 @@ export async function registerAccessCenter(app: FastifyInstance) {
   app.get('/api/admin/access/resources', async () => ({
     sources:
       await sql`SELECT s.id,s.owner_id,s.data->>'name' AS name,s.data->>'group' AS "group",s.data->>'kind' AS kind FROM node_sources s JOIN users u ON u.id=s.owner_id WHERE s.revoked_at IS NULL AND u.role IN ('Owner','Admin') AND NOT u.disabled AND u.deleted_at IS NULL ORDER BY s.created_at`,
+    nodes:
+      await sql`SELECT n.id,n.source_id AS "sourceId",n.data->>'name' AS name,
+      coalesce(nullif(n.data->>'group',''),s.data->>'group','') AS "group"
+      FROM nodes n JOIN node_sources s ON s.id=n.source_id JOIN users u ON u.id=s.owner_id
+      WHERE n.revoked_at IS NULL AND s.revoked_at IS NULL AND u.role IN ('Owner','Admin')
+      AND NOT u.disabled AND u.deleted_at IS NULL
+      AND n.data->>'enabled' IS DISTINCT FROM 'false' AND n.data->>'demo' IS DISTINCT FROM 'true'
+      ORDER BY n.data->>'name',n.id LIMIT 5000`,
     groups: (
       await sql`SELECT DISTINCT coalesce(n.data->>'group',s.data->>'group','') AS name FROM nodes n JOIN node_sources s ON s.id=n.source_id JOIN users u ON u.id=s.owner_id WHERE n.revoked_at IS NULL AND s.revoked_at IS NULL AND u.role IN ('Owner','Admin')`
     )

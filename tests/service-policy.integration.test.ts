@@ -85,6 +85,25 @@ it('仅Owner能配置全站时段，结束后阻止API和既有订阅令牌，�
   expect(
     (await send(1, '/api/admin/service-policy', 'PATCH', p)).statusCode,
   ).toBe(403);
+  const source = await send(0, '/api/node_sources', 'POST', {
+    name: '服务时段夹具',
+    kind: 'OWNED_NODE',
+    authorized: true,
+    content:
+      'ss://' +
+      Buffer.from('aes-256-gcm:window-fixture-only').toString('base64url') +
+      '@window.example.invalid:443#window',
+  });
+  expect(source.statusCode).toBe(200);
+  expect(
+    (
+      await send(0, '/api/admin/grants', 'POST', {
+        kind: 'source',
+        resourceId: source.json().id,
+        userId: ids[1],
+      })
+    ).statusCode,
+  ).toBe(200);
   const rotated = await send(1, '/api/subscription/rotate', 'POST', {});
   expect(rotated.statusCode).toBe(200);
   const path = new URL(rotated.json().url).pathname;

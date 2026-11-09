@@ -1007,6 +1007,38 @@ describe('验证码、真实API邮件状态和限时授权集成', () => {
       [session.id],
     );
     expect(same.expires_at).toEqual(firstExpiry);
+    const noAllocation = await privateRequest(
+      session,
+      '/api/subscription/rotate',
+      'POST',
+      {},
+    );
+    expect(noAllocation.statusCode).toBe(403);
+    expect(noAllocation.json().code).toBe('NO_SUBSCRIPTION_NODES');
+    const source = await privateRequest(
+      ownerSession,
+      '/api/node_sources',
+      'POST',
+      {
+        name: '到期验证夹具',
+        kind: 'OWNED_NODE',
+        authorized: true,
+        content:
+          'ss://' +
+          Buffer.from('aes-256-gcm:expiry-fixture-only').toString('base64url') +
+          '@expiry.example.invalid:443#expiry',
+      },
+    );
+    expect(source.statusCode).toBe(200);
+    expect(
+      (
+        await privateRequest(ownerSession, '/api/admin/grants', 'POST', {
+          kind: 'source',
+          resourceId: source.json().id,
+          userId: session.id,
+        })
+      ).statusCode,
+    ).toBe(200);
     const rotation = await privateRequest(
       session,
       '/api/subscription/rotate',

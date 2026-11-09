@@ -279,7 +279,10 @@ test('认证页面视觉与手机溢出检查', async ({ page }, testInfo) => {
   }
 });
 
-test('用户工作台：节点展示、管理员授权、独立订阅和撤销', async ({ page }) => {
+test('用户工作台：节点展示、管理员授权、独立订阅和撤销', async ({
+  page,
+  browser,
+}) => {
   const { seal } = await import('../../packages/shared/src/crypto');
   const name = 'catalog_' + randomUUID().replaceAll('-', '').slice(0, 12),
     email = name + '@example.invalid';
@@ -302,6 +305,7 @@ test('用户工作台：节点展示、管理员授权、独立订阅和撤销',
     transport: 'tcp',
   };
   await sql`INSERT INTO nodes(id,owner_id,source_id,data,secret) VALUES(${nodeId},${owner.id},${sourceId},${sql.json({ name: nodeName, protocol: 'ss', country: '日本', enabled: true })},${sql.json(seal(JSON.stringify(node)))})`;
+  const adminContext = await browser.newContext();
   try {
     await page.goto('/member/register');
     await page.getByLabel('用户名', { exact: true }).fill(name);
@@ -330,9 +334,47 @@ test('用户工作台：节点展示、管理员授权、独立订阅和撤销',
     await expect(
       page.getByRole('button', { name: '添加节点', exact: true }),
     ).toHaveCount(0);
-    await sql`UPDATE users SET node_access_enabled=true,node_access_until=now()+interval '1 hour',subscription_enabled=true,node_limit=20 WHERE id=${me.user.id}`;
-    await sql`INSERT INTO node_group_grants(owner_id,source_id,user_id,data) VALUES(${owner.id},${sourceId},${me.user.id},${sql.json({ scope: 'USE', expiresAt: new Date(Date.now() + 3600000).toISOString() })})`;
+    const admin = 'http://localhost:5174';
+    const adminPage = await adminContext.newPage();
+    await adminPage.goto(admin);
+    await adminPage
+      .getByRole('button', { name: '管理员演示', exact: true })
+      .click();
+    await expect(
+      adminPage.getByRole('heading', { name: '管理概览', exact: true }),
+    ).toBeVisible();
+    const administrator = await (
+      await adminPage.request.get(admin + '/api/me')
+    ).json();
+    const capability = await adminPage.request.patch(
+      admin + '/api/admin/access/users/' + me.user.id,
+      {
+        data: { node: { enabled: true }, nodeLimit: 20 },
+        headers: { Origin: admin, 'x-csrf-token': administrator.csrf },
+      },
+    );
+    expect(capability.status()).toBe(200);
     await page.getByRole('button', { name: '刷新节点', exact: true }).click();
+    await expect(
+      card.getByRole('button', { name: '未开放订阅', exact: true }),
+    ).toBeDisabled();
+    await adminPage.goto(admin + '/users');
+    await adminPage
+      .getByRole('combobox', { name: '选择普通用户', exact: true })
+      .selectOption(me.user.id);
+    await adminPage.getByText('节点分配', { exact: true }).click();
+    await adminPage
+      .getByRole('combobox', { name: '选择节点源', exact: true })
+      .selectOption(sourceId);
+    await adminPage
+      .getByRole('listbox', { name: '选择节点（可多选）', exact: true })
+      .selectOption(nodeId);
+    await adminPage
+      .getByRole('button', { name: '保存节点分配', exact: true })
+      .click();
+    await expect(adminPage.getByRole('status')).toContainText('权限已保存');
+    await page.getByRole('button', { name: '刷新节点', exact: true }).click();
+    await expect(card.getByText('已获使用授权', { exact: true })).toBeVisible();
     await expect(
       card.getByRole('link', { name: '管理订阅', exact: true }),
     ).toBeVisible();
@@ -370,6 +412,7 @@ test('用户工作台：节点展示、管理员授权、独立订阅和撤销',
         .getByRole('button', { name: '未开放订阅', exact: true }),
     ).toBeDisabled();
   } finally {
+    await adminContext.close();
     await sql`UPDATE node_sources SET revoked_at=now() WHERE id=${sourceId}`;
     await sql`UPDATE nodes SET revoked_at=now() WHERE id=${nodeId}`;
   }

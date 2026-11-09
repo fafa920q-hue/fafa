@@ -241,3 +241,163 @@ it('全站开放按范围发放订阅，明确撤销、停用和旧令牌不会�
     await sql`DELETE FROM settings WHERE key=${'business_access_' + target} OR key='service_policy_v3'`;
   }
 });
+
+it('用户级开关、单节点、多节点和整组分配分别控制目录、旧链接与跨用户访问', async () => {
+  const createMember = async () => {
+    const [u] =
+      await sql`INSERT INTO users(email,name,role) VALUES(${randomUUID() + '@example.invalid'},'scoped assignment','Member') RETURNING *`;
+    const index = users.push(u.id) - 1;
+    sessions.push(await createSession(u as any));
+    return index;
+  };
+  const member = await createMember(),
+    other = await createMember();
+  const sourceId = sources[1];
+  const ids = [nodes[1], randomUUID(), randomUUID()];
+  const labels = ['other_permission_node', 'second_in_group', 'outside_group'];
+  await sql`UPDATE nodes SET data=data || '{"group":"test-selected-group"}'::jsonb WHERE id=${ids[0]}`;
+  for (let i = 1; i < ids.length; i++) {
+    const metadata = {
+      name: labels[i],
+      protocol: 'ss',
+      country: '日本',
+      group: i === 1 ? 'test-selected-group' : 'outside',
+      enabled: true,
+    };
+    const node = {
+      ...metadata,
+      host: '203.0.113.' + (190 + i),
+      port: 443,
+      cipher: 'aes-128-gcm',
+      credential: 'synthetic-only',
+      tls: false,
+      transport: 'tcp',
+    };
+    await sql`INSERT INTO nodes(id,owner_id,source_id,data,secret) VALUES(${ids[i]},${users[0]},${sourceId},${sql.json(metadata)},${sql.json(seal(JSON.stringify(node)))} )`;
+  }
+  const userPath = '/api/admin/access/users/' + users[member];
+  const scopedGrant = (
+    nodeIds: string[],
+    groups: string[] = [],
+    endsAt: string | null = null,
+  ) => ({
+    grants: [
+      {
+        kind: 'source',
+        resourceId: sourceId,
+        enabled: true,
+        nodeScope: { nodeIds, groups },
+        endsAt,
+      },
+    ],
+  });
+  const catalog = async (index: number) =>
+    (await send(index, '/api/catalog/nodes'))
+      .json()
+      .nodes.filter((row: any) => ids.includes(row.id));
+  const subscribed = async (index: number) =>
+    (await catalog(index))
+      .filter((row: any) => row.canSubscribe)
+      .map((row: any) => row.name)
+      .sort();
+  for (const index of [member, other]) {
+    expect(
+      (
+        await send(0, '/api/admin/access/users/' + users[index], 'PATCH', {
+          node: { enabled: true },
+        })
+      ).statusCode,
+    ).toBe(200);
+  }
+  expect(await subscribed(member)).toEqual([]);
+  const missing = await send(member, '/api/subscription/rotate', 'POST', {});
+  expect(missing.statusCode).toBe(403);
+  expect(missing.json().code).toBe('NO_SUBSCRIPTION_NODES');
+  const invalid = await send(0, userPath, 'PATCH', scopedGrant([nodes[0]]));
+  expect(invalid.statusCode).toBe(400);
+  expect(invalid.json().code).toBe('NODE_SCOPE_INVALID');
+  expect(
+    (await send(member, userPath, 'PATCH', scopedGrant([ids[0]]))).statusCode,
+  ).toBe(403);
+
+  expect(
+    (await send(0, userPath, 'PATCH', scopedGrant([ids[0]]))).statusCode,
+  ).toBe(200);
+  expect(await subscribed(member)).toEqual([labels[0]]);
+  expect(await subscribed(other)).toEqual([]);
+  expect(
+    (await send(member, '/api/nodes')).json().map((row: any) => row.id),
+  ).toEqual([ids[0]]);
+  expect(
+    (
+      await send(0, '/api/admin/grants', 'POST', {
+        kind: 'source',
+        resourceId: sourceId,
+        userId: users[member],
+      })
+    ).statusCode,
+  ).toBe(200);
+  expect(await subscribed(member)).toEqual([labels[0]]);
+
+  const rotation = await send(member, '/api/subscription/rotate', 'POST', {});
+  expect(rotation.statusCode).toBe(200);
+  const path = new URL(rotation.json().url).pathname + '?format=uri';
+  const exported = async () => (await app.inject(path)).body;
+  expect(await exported()).toContain(labels[0]);
+  expect(await exported()).not.toContain(labels[1]);
+  expect(
+    (await send(0, userPath, 'PATCH', scopedGrant([ids[0], ids[2]])))
+      .statusCode,
+  ).toBe(200);
+  expect(await subscribed(member)).toEqual([labels[0], labels[2]].sort());
+  expect(await exported()).toContain(labels[2]);
+
+  expect(
+    (await send(0, userPath, 'PATCH', scopedGrant([], ['test-selected-group'])))
+      .statusCode,
+  ).toBe(200);
+  expect(await subscribed(member)).toEqual([labels[0], labels[1]].sort());
+  expect(await exported()).toContain(labels[1]);
+  expect(await exported()).not.toContain(labels[2]);
+  expect(
+    (
+      await send(
+        0,
+        userPath,
+        'PATCH',
+        scopedGrant([ids[0]], [], new Date(Date.now() - 1000).toISOString()),
+      )
+    ).statusCode,
+  ).toBe(200);
+  expect(await subscribed(member)).toEqual([]);
+  expect(await exported()).toBe('');
+
+  expect(
+    (
+      await send(0, userPath, 'PATCH', {
+        ...scopedGrant([ids[0]]),
+        subscriptionEnabled: false,
+      })
+    ).statusCode,
+  ).toBe(200);
+  expect(
+    (await catalog(member)).find((row: any) => row.id === ids[0]),
+  ).toMatchObject({ authorized: true, canSubscribe: false });
+  expect(
+    (await send(member, '/api/subscription/rotate', 'POST', {})).statusCode,
+  ).toBe(403);
+  expect(
+    (await send(0, userPath, 'PATCH', { subscriptionEnabled: true }))
+      .statusCode,
+  ).toBe(200);
+  expect(
+    (
+      await send(0, userPath, 'PATCH', {
+        grants: [{ kind: 'source', resourceId: sourceId, enabled: false }],
+      })
+    ).statusCode,
+  ).toBe(200);
+  expect(await subscribed(member)).toEqual([]);
+  expect(await exported()).toBe('');
+  expect(await subscribed(other)).toEqual([]);
+});

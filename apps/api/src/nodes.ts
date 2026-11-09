@@ -1,5 +1,10 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import {
+  activeGrant,
+  sourceAllowed,
+  withinNodeGrantScope,
+} from '../../../packages/auth/src/business-access';
 import { sql, audit, own } from '../../../packages/db/src';
 import { AppError, notFound, isAdmin } from '../../../packages/shared/src';
 import { seal } from '../../../packages/shared/src/crypto';
@@ -126,8 +131,19 @@ export async function registerNodes(app: FastifyInstance) {
   });
   app.get('/api/nodes', async (req) => {
     const rows =
-      await sql`select n.*,s.data as source_data from nodes n join node_sources s on s.id=n.source_id join users u on u.id=s.owner_id where n.revoked_at is null and s.revoked_at is null and not u.disabled and u.deleted_at is null and (s.owner_id=${req.actor.id} or ((s.data->>'kind'='OWNED_NODE' or (s.data->>'authorized'='true' and s.data->>'redistributionAuthorized'='true' and length(trim(coalesce(s.data->>'authorizationReference','')))>0)) and exists(select 1 from node_group_grants g where g.source_id=s.id and g.user_id=${req.actor.id} and g.revoked_at is null))) order by n.created_at limit 5000`;
-    return rows.map((row) => summary(row, req.actor.id));
+      await sql`select n.*,s.data as source_data,g.data as grant_data from nodes n join node_sources s on s.id=n.source_id join users u on u.id=s.owner_id left join node_group_grants g on g.source_id=s.id and g.user_id=${req.actor.id} and g.revoked_at is null where n.revoked_at is null and s.revoked_at is null and not u.disabled and u.deleted_at is null and (s.owner_id=${req.actor.id} or ((s.data->>'kind'='OWNED_NODE' or (s.data->>'authorized'='true' and s.data->>'redistributionAuthorized'='true' and length(trim(coalesce(s.data->>'authorizationReference','')))>0)) and g.id is not null)) order by n.created_at limit 5000`;
+    return rows
+      .filter((row) => {
+        const group = row.data.group || row.source_data.group || '';
+        return (
+          row.owner_id === req.actor.id ||
+          (row.grant_data &&
+            activeGrant(row.grant_data) &&
+            sourceAllowed(req.actor, row.source_id, group) &&
+            withinNodeGrantScope(row.grant_data, row.id, group))
+        );
+      })
+      .map((row) => summary(row, req.actor.id));
   });
   app.patch('/api/nodes/:id', async (req) => {
     const { id } = z.object({ id: z.uuid() }).parse(req.params);
