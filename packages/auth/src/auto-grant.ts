@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { sql } from '../../db/src';
 import { hash, token } from '../../shared/src/crypto';
 import { AppError } from '../../shared/src';
+import { issueTrial } from './business-access';
 
 export const AUTO_GRANT_POLICY_KEYS = [
   'auto_grant_enabled',
@@ -55,6 +56,7 @@ export function capabilityAllowed(
   kind: 'node' | 'server' | 'codex',
 ) {
   if (!user || user.disabled || user.deleted_at) return false;
+  if (user._access) return user._access.capabilities[kind] === true;
   if (user.role === 'Owner' || user.role === 'Admin') return true;
   const prefix = {
     node: 'node_access',
@@ -68,6 +70,8 @@ export function capabilityAllowed(
   );
 }
 export async function applyAutoGrant(userId: string, db: any = sql) {
+  const trial = await issueTrial(userId, db);
+  if (trial !== undefined) return trial;
   const policy = await readAutoGrantPolicy(db);
   const [user] = await db.unsafe(
     'SELECT * FROM users WHERE id=$1 AND deleted_at IS NULL FOR UPDATE',

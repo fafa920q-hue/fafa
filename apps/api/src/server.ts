@@ -1,4 +1,6 @@
 import { capabilityAllowed } from '../../../packages/auth/src/auto-grant';
+import { activeGrant, resolveAccess, sourceAllowed } from '../../../packages/auth/src/business-access';
+import { registerAccessCenter } from './access-center';
 import { assertServiceOpen } from '../../../packages/auth/src/service-policy';
 import type { TokenPayload } from 'google-auth-library';
 import Fastify, { type FastifyRequest } from 'fastify';
@@ -77,18 +79,20 @@ function publicRow(row: any) {
   };
 }
 export async function visibleNodes(owner: string) {
-  const [user] =
-    await sql`select role,node_access_enabled,node_access_until,node_limit,subscription_enabled from users where id=${owner} and not disabled and deleted_at is null`;
+  const [rawUser] = await sql`select * from users where id=${owner} and not disabled and deleted_at is null`;
+  const user = rawUser ? await resolveAccess(rawUser) : null;
   if (!user?.subscription_enabled || !capabilityAllowed(user, 'node'))
     return [];
   const [profile] =
     await sql`select data from subscription_profiles where owner_id=${owner} and revoked_at is null order by updated_at desc limit 1`;
   const filter = profile?.data || {};
   const rows =
-    await sql`select n.*,s.data as source_data from nodes n join node_sources s on s.id=n.source_id join users u on u.id=s.owner_id where n.revoked_at is null and s.revoked_at is null and not u.disabled and u.deleted_at is null and (s.owner_id=${owner} or ((s.data->>'kind'='OWNED_NODE' or (s.data->>'authorized'='true' and s.data->>'redistributionAuthorized'='true' and length(trim(coalesce(s.data->>'authorizationReference','')))>0)) and exists(select 1 from node_group_grants g where g.source_id=s.id and g.user_id=${owner} and g.revoked_at is null and (not (g.data ? 'expiresAt') or (g.data->>'expiresAt')::timestamptz>now()))))`;
+    await sql`select n.*,s.data as source_data,s.owner_id as source_owner,u.role as source_role,g.data as grant_data from nodes n join node_sources s on s.id=n.source_id join users u on u.id=s.owner_id left join node_group_grants g on g.source_id=s.id and g.user_id=${owner} and g.revoked_at is null where n.revoked_at is null and s.revoked_at is null and not u.disabled and u.deleted_at is null and (s.owner_id=${owner} or g.id is not null or (u.role in ('Owner','Admin') and s.id in ${sql([...user._access.overlaySources, '00000000-0000-0000-0000-000000000000'])}))`;
   const nodes = rows
     .filter(
       (row) =>
+        sourceAllowed(user, row.source_id, row.data.group || row.source_data.group || '') &&
+        (row.source_owner === owner || ((row.source_data.kind === 'OWNED_NODE' || (row.source_data.authorized === true && row.source_data.redistributionAuthorized === true && row.source_data.authorizationReference?.trim())) && ((row.grant_data && activeGrant(row.grant_data)) || (['Owner','Admin'].includes(row.source_role) && user._access.overlaySources.includes(row.source_id))))) &&
         row.source_data.enabled &&
         !row.source_data.demo &&
         row.data.enabled !== false &&
@@ -191,8 +195,9 @@ export async function buildApp() {
     )
       return;
     if (!path.startsWith('/api/')) return;
-    const actor = await authenticate(req.cookies.fafa_session);
-    if (!actor) throw new AppError(401, 'UNAUTHENTICATED', '请先登录');
+    const identity = await authenticate(req.cookies.fafa_session);
+    if (!identity) throw new AppError(401, 'UNAUTHENTICATED', '请先登录');
+    const actor = await resolveAccess(identity);
     req.actor = actor;
     const capability = /^\/api\/(servers|server_connections)(\/|$)/.test(path)
       ? 'server'
@@ -220,6 +225,8 @@ export async function buildApp() {
         req.headers['x-csrf-token'] !== actor.csrf
       )
         throw new AppError(403, 'CSRF', '安全验证失败，请刷新页面');
+      if (/^\/api\/(node-import|node_sources|nodes)(\/|$)/.test(path) && !isAdmin(actor.role))
+        throw new AppError(403, 'ADMIN_NODE_MANAGEMENT', '节点由管理员统一添加和管理');
       if (
         (req.url.startsWith('/api/node-import') ||
           req.url.startsWith('/api/node_sources') ||
@@ -751,18 +758,20 @@ export async function buildApp() {
         const raw = params(req).token;
         const [t] =
           await sql`select t.*,u.role,u.node_access_enabled,u.node_access_until from subscription_tokens t join users u on u.id=t.owner_id where t.token_hash=${hash(raw)} and t.revoked_at is null and not u.disabled and u.deleted_at is null and u.subscription_enabled and t.data->>'enabled'='true'`;
-        if (t && !capabilityAllowed(t, 'node'))
+        if (!t) throw notFound();
+        const [rawUser] = await sql`SELECT * FROM users WHERE id=${t.owner_id} AND NOT disabled AND deleted_at IS NULL`;
+        const user = rawUser ? await resolveAccess(rawUser) : null;
+        if (!user || !user.subscription_enabled || !capabilityAllowed(user, 'node') || !activeGrant({ expiresAt: t.data.expiresAt }))
           throw new AppError(
             403,
             'CAPABILITY_REQUIRED',
             '订阅授权已撤销或到期',
           );
-        if (!t) throw notFound();
-        await assertServiceOpen(t);
+        await assertServiceOpen(user);
         const { format } = z
           .object({
             format: z
-              .enum(['mihomo', 'sing-box', 'uri', 'base64'])
+              .enum(['mihomo', 'sing-box', 'uri', 'base64', 'shadowrocket', 'v2rayn'])
               .default('mihomo'),
           })
           .parse(req.query);
@@ -774,7 +783,7 @@ export async function buildApp() {
               ? 'text/yaml'
               : 'text/plain',
         );
-        return exportSubscription(nodes, format);
+        return exportSubscription(nodes, format === 'shadowrocket' ? 'uri' : format === 'v2rayn' ? 'base64' : format);
       },
     );
   app.get('/api/data-export', async (req) => {
@@ -805,6 +814,7 @@ export async function buildApp() {
   await registerNodes(app);
   await registerWorkspace(app);
   await registerAdmin(app);
+  await registerAccessCenter(app);
   await registerAi(app, origins);
   await registerSsh(app, origins);
   return app;

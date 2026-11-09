@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { sql } from '../../../packages/db/src';
 import { capabilityAllowed } from '../../../packages/auth/src/auto-grant';
+import { activeGrant, resolveAccess, sourceAllowed } from '../../../packages/auth/src/business-access';
 import {
   readServicePolicy,
   serviceOpen,
@@ -12,13 +13,12 @@ const activeAt = (value: unknown) =>
     Number.isFinite(Date.parse(value)) &&
     Date.parse(value) > Date.now());
 export async function memberNodeCatalog(actor: any) {
+  actor = await resolveAccess(actor);
+  if (actor.role === 'Member' && !actor._access.policy.catalogEnabled) return [];
   const open = serviceOpen(await readServicePolicy(), actor);
   const rows = await sql`
   SELECT n.id,n.source_id,n.data,s.data AS source_data,
-   EXISTS(SELECT 1 FROM node_group_grants g WHERE g.source_id=s.id AND g.user_id=${actor.id}
-    AND g.revoked_at IS NULL
-    AND (NOT(g.data ? 'expiresAt') OR (g.data->>'expiresAt')::timestamptz>now())
-    AND (NOT(g.data ? 'endsAt') OR g.data->>'endsAt' IS NULL OR (g.data->>'endsAt')::timestamptz>now())) AS has_grant
+   (SELECT g.data FROM node_group_grants g WHERE g.source_id=s.id AND g.user_id=${actor.id} AND g.revoked_at IS NULL LIMIT 1) AS grant_data
   FROM nodes n JOIN node_sources s ON s.id=n.source_id JOIN users u ON u.id=s.owner_id
   WHERE n.revoked_at IS NULL AND s.revoked_at IS NULL AND u.role IN ('Owner','Admin')
    AND NOT u.disabled AND u.deleted_at IS NULL AND n.data->>'catalogVisible' IS DISTINCT FROM 'false'
@@ -39,7 +39,8 @@ export async function memberNodeCatalog(actor: any) {
       enabled &&
       sourceActive &&
       legal &&
-      row.has_grant &&
+      sourceAllowed(actor, row.source_id, node.group || source.group || '') &&
+      ((row.grant_data && activeGrant(row.grant_data)) || actor._access.overlaySources.includes(row.source_id)) &&
       capabilityAllowed(actor, 'node');
     return {
       id: row.id,
@@ -110,6 +111,7 @@ export async function registerWorkspace(app: FastifyInstance) {
         codex: open && capabilityAllowed(req.actor, 'codex'),
       },
       service: { open, schedule: policy.schedule },
+      access: { overlays: (req.actor as any)._access?.overlays, traffic: (req.actor as any)._access?.traffic },
       history,
       serverTime: new Date().toISOString(),
     };

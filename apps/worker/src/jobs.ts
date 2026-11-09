@@ -1,4 +1,5 @@
 import { capabilityAllowed } from '../../../packages/auth/src/auto-grant';
+import { resolveAccess, teamServiceAllowed } from '../../../packages/auth/src/business-access';
 import {
   assertServiceOpen,
   readServicePolicy,
@@ -141,8 +142,9 @@ export async function runAiTask(task: any) {
   let accessRevoked = false;
   const accessWatchdog = setInterval(async () => {
     try {
-      const [user] =
+      const [rawUser] =
         await sql`select * from users where id=${task.owner_id} and not disabled and deleted_at is null`;
+      const user = rawUser ? await resolveAccess(rawUser) : null;
       if (user) await assertServiceOpen(user);
       const policy = await readServicePolicy();
       const quota = await readAiQuota(task.owner_id);
@@ -152,7 +154,7 @@ export async function runAiTask(task: any) {
         !account ||
         quota.dailyLimit === 0 ||
         (task.data.service &&
-          (!policy.ai.enabled || policy.ai.accountId !== task.account_id))
+          (!teamServiceAllowed(user, policy) || policy.ai.accountId !== task.account_id))
       )
         throw Error('ACCESS_REVOKED');
       if (!user || !capabilityAllowed(user, 'codex')) {
@@ -165,8 +167,9 @@ export async function runAiTask(task: any) {
     }
   }, 1000);
   try {
-    const [user] =
+    const [rawUser] =
       await sql`select * from users where id=${task.owner_id} and not disabled and deleted_at is null`;
+    const user = rawUser ? await resolveAccess(rawUser) : null;
     if (!user || !capabilityAllowed(user, 'codex'))
       throw Error('CAPABILITY_REQUIRED');
     await assertServiceOpen(user);
@@ -175,7 +178,7 @@ export async function runAiTask(task: any) {
     if (quota.dailyLimit === 0) throw Error('AI_QUOTA_REVOKED');
     if (
       task.data.service &&
-      (!policy.ai.enabled || policy.ai.accountId !== task.account_id)
+      (!teamServiceAllowed(user, policy) || policy.ai.accountId !== task.account_id)
     )
       throw Error('AI_SERVICE_CLOSED');
     const [account] =
@@ -202,10 +205,10 @@ export async function runAiTask(task: any) {
     );
     let last = 0;
     for await (const event of stream) {
-      const [state] =
-        await sql`select t.data->>'status' as status,u.disabled,u.role,u.codex_tasks_enabled,u.codex_tasks_until from ai_tasks t join users u on u.id=t.owner_id where t.id=${task.id}`;
+      const [rawState] = await sql`select t.data->>'status' as status,u.* from ai_tasks t join users u on u.id=t.owner_id where t.id=${task.id}`;
+      const state = rawState ? await resolveAccess(rawState) : null;
       if (
-        state.status === 'CANCELLED' ||
+        !state || state.status === 'CANCELLED' ||
         state.disabled ||
         !capabilityAllowed(state, 'codex')
       ) {
@@ -214,6 +217,9 @@ export async function runAiTask(task: any) {
         break;
       }
       if (event.type === 'response.output_text.delta') output += event.delta;
+      if (event.type === 'response.completed' && event.response.usage) {
+        await sql`UPDATE ai_tasks SET data=data || ${sql.json({ usage: event.response.usage })},updated_at=now() WHERE id=${task.id}`;
+      }
       if (event.type === 'response.failed' || event.type === 'error')
         throw Error('PROVIDER_RESPONSE_FAILED');
       if (Date.now() - last > 200) {

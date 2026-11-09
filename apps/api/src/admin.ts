@@ -9,6 +9,7 @@ import {
   readAiQuota,
 } from '../../../packages/auth/src/service-policy';
 import { AppError, notFound } from '../../../packages/shared/src';
+import { memberPolicySchema, readSetting, resolveAccess, writeSetting } from '../../../packages/auth/src/business-access';
 export async function registerAdmin(app: FastifyInstance) {
   app.get('/api/admin/service-policy', async () => readServicePolicy());
   app.patch('/api/admin/service-policy', async (req) => {
@@ -48,10 +49,10 @@ export async function registerAdmin(app: FastifyInstance) {
     });
     return { ok: true };
   });
-  app.get('/api/admin/users', async () =>
+  app.get('/api/admin/users', async () => Promise.all(
     (
       await sql`select u.id,u.name,u.email,u.role,u.disabled,u.node_limit,u.subscription_enabled,u.traffic_limit_bytes,u.created_at,u.node_access_enabled,u.node_access_until,u.server_connect_enabled,u.server_connect_until,u.codex_tasks_enabled,u.codex_tasks_until,(exists(select 1 from member_credentials c where c.user_id=u.id) or exists(select 1 from google_identities g where g.user_id=u.id)) as email_verified from users u where u.deleted_at is null order by u.created_at`
-    ).map((user) => ({
+    ).map(async (row) => { const user = await resolveAccess(row); return ({
       ...user,
       capabilities: {
         node: capabilityAllowed(user, 'node'),
@@ -62,10 +63,11 @@ export async function registerAdmin(app: FastifyInstance) {
         user.traffic_limit_bytes === null
           ? null
           : Number(user.traffic_limit_bytes),
-      trafficUsageBytes: null,
-      trafficMeteringStatus: 'UNAVAILABLE',
-      trafficQuotaEnforcement: 'NOT_ACTIVE',
-    })),
+      trafficUsageBytes: user._access.traffic.bytes,
+      trafficMeteringStatus: user._access.traffic.status,
+      trafficQuotaEnforcement: user._access.traffic.enforcement,
+    }); }),
+    ),
   );
   app.get(
     '/api/admin/invitations',
@@ -146,7 +148,17 @@ export async function registerAdmin(app: FastifyInstance) {
     )
       throw new AppError(403, 'OWNER_PROTECTED', '不允许修改此账户或角色');
     await sql.begin(async (tx) => {
-      await tx`update users set disabled=${d.disabled ?? u.disabled},role=${d.role ?? u.role},node_limit=${d.nodeLimit ?? u.node_limit},subscription_enabled=${d.subscriptionEnabled ?? u.subscription_enabled},traffic_limit_bytes=${d.trafficLimitBytes === undefined ? u.traffic_limit_bytes : d.trafficLimitBytes},updated_at=now() where id=${id}`;
+      const [live] = await tx`SELECT * FROM users WHERE id=${id} FOR UPDATE`;
+      if (!live || live.role === 'Owner' || (live.role === 'Admin' && req.actor.role !== 'Owner')) throw new AppError(403, 'OWNER_PROTECTED', '不允许修改受保护账户');
+      const policy = memberPolicySchema.parse((await readSetting('business_access_' + id, tx)) || {});
+      const deny = new Set(policy.deny);
+      for (const [kind, key] of [['node', 'nodeAccessEnabled'], ['server', 'serverConnectEnabled'], ['codex', 'codexTasksEnabled'], ['subscription', 'subscriptionEnabled']] as const) {
+        if (d[key] === false) deny.add(kind); else if (d[key] === true) deny.delete(kind);
+      }
+      policy.deny = [...deny];
+      if (d.nodeLimit !== undefined) policy.nodeCeiling = d.nodeLimit;
+      await writeSetting('business_access_' + id, policy, tx);
+      await tx`update users set disabled=${d.disabled ?? live.disabled},role=${d.role ?? live.role},node_limit=${d.nodeLimit ?? live.node_limit},subscription_enabled=${d.subscriptionEnabled ?? live.subscription_enabled},traffic_limit_bytes=${d.trafficLimitBytes === undefined ? live.traffic_limit_bytes : d.trafficLimitBytes},updated_at=now() where id=${id}`;
       for (const [key, column, expiry] of [
         ['nodeAccessEnabled', 'node_access_enabled', 'node_access_until'],
         [
