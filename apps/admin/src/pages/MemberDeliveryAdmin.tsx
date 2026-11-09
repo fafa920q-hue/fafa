@@ -1,6 +1,5 @@
-import { AccessActivities } from './AccessActivities';
 import { useRef, useState } from 'react';
-import { MemberAiQuota, ServicePolicyAdmin } from './ServicePolicyAdmin';
+import { MemberAiQuota } from './ServicePolicyAdmin';
 import {
   Card,
   DataState,
@@ -62,18 +61,11 @@ export function MemberAccessControls({
 export function MemberDeliveryAdmin() {
   const { request, session, toast } = useApp();
   const policy = useData<any>('/api/admin/auto-grant-policy');
-  const mail = useData<any[]>('/api/admin/member-mail');
   const records = useData<any[]>('/api/admin/auto-grant-records');
   const [busy, setBusy] = useState(false),
     pending = useRef(false);
-  const reasons: Record<string, string> = {
-    PROVIDER_REJECTED: '邮件服务拒绝',
-    MAIL_NETWORK_ERROR: '网络或超时',
-  };
   return (
     <>
-      <ServicePolicyAdmin />
-      <AccessActivities />
       {policy.data && !policy.data.retired && (
         <Card
           title="首次三天自动授权"
@@ -185,54 +177,6 @@ export function MemberDeliveryAdmin() {
           )}
         </Card>
       )}
-      <Card
-        title="邮件发送状态"
-        description="提供商已接受不等于已送达。待发送可能因进程中断而结果未知；不展示收件地址、验证码、重置链接或密钥。"
-      >
-        <DataState
-          error={mail.error}
-          loading={!mail.data}
-          onRetry={mail.refresh}
-        />
-        <div className="list">
-          {mail.data?.map((row) => (
-            <div className="list-item" key={row.id}>
-              <div>
-                <strong>
-                  {
-                    (
-                      {
-                        VERIFY: '激活邮件',
-                        RESET: '找回密码',
-                        CODE: '注册验证码',
-                        VERIFIED: '验证成功通知',
-                        RESET_SUCCESS: '重置成功通知',
-                        PASSWORD_CHANGED: '密码安全通知',
-                      } as Record<string, string>
-                    )[row.purpose]
-                  }
-                </strong>
-                <small>
-                  {new Date(row.created_at).toLocaleString('zh-CN')}
-                </small>
-                <small>
-                  {
-                    (
-                      {
-                        PENDING: '待发送 / 结果未知',
-                        ACCEPTED: '提供商已接受，收件未确认',
-                        FAILED: '发送失败',
-                      } as Record<string, string>
-                    )[row.status]
-                  }{' '}
-                  {reasons[row.failure_code] || ''}
-                </small>
-              </div>
-            </div>
-          ))}
-        </div>
-        {mail.data?.length === 0 && <p>暂无邮件记录</p>}
-      </Card>
       {policy.data && !policy.data.retired && (
         <Card
           title="自动授权记录"
@@ -275,5 +219,59 @@ export function MemberDeliveryAdmin() {
         </Card>
       )}
     </>
+  );
+}
+
+export function MemberMailStatus() {
+  const mail = useData<any[]>('/api/admin/member-mail');
+  const reasons: Record<string, string> = {
+    PROVIDER_REJECTED: '邮件服务拒绝',
+    MAIL_NETWORK_ERROR: '网络或超时',
+  };
+  return (
+    <div className="reg-mail-records">
+      <p>提供商已接受仅代表受理。待发送记录可能因进程中断而结果未知。</p>
+      <DataState
+        error={mail.error}
+        loading={!mail.data}
+        onRetry={mail.refresh}
+      />
+      <div className="list">
+        {mail.data?.map((row) => (
+          <div className="list-item" key={row.id}>
+            <div>
+              <strong>
+                {
+                  (
+                    {
+                      VERIFY: '激活邮件',
+                      RESET: '找回密码',
+                      CODE: '注册验证码',
+                      VERIFIED: '验证成功通知',
+                      RESET_SUCCESS: '重置成功通知',
+                      PASSWORD_CHANGED: '密码安全通知',
+                    } as Record<string, string>
+                  )[row.purpose]
+                }
+              </strong>
+              <small>{new Date(row.created_at).toLocaleString('zh-CN')}</small>
+              <small>
+                {
+                  (
+                    {
+                      PENDING: '待发送 / 结果未知',
+                      ACCEPTED: '提供商已接受，收件未确认',
+                      FAILED: '发送失败',
+                    } as Record<string, string>
+                  )[row.status]
+                }{' '}
+                {reasons[row.failure_code] || ''}
+              </small>
+            </div>
+          </div>
+        ))}
+      </div>
+      {mail.data?.length === 0 && <p>暂无邮件记录</p>}
+    </div>
   );
 }

@@ -420,7 +420,7 @@ test('用户工作台：节点展示、管理员授权、独立订阅和撤销',
 
 test('后台统一管理：服务时段、注册体验策略与普通用户AI额度', async ({
   page,
-}) => {
+}, testInfo) => {
   const admin = 'http://localhost:5174';
   await page.goto(admin);
   await page.getByRole('button', { name: '管理员演示', exact: true }).click();
@@ -431,29 +431,107 @@ test('后台统一管理：服务时段、注册体验策略与普通用户AI额
     await page.request.get(admin + '/api/admin/service-policy')
   ).json();
   const me = await (await page.request.get(admin + '/api/me')).json();
+  const registration = await (
+    await page.request.get(admin + '/api/admin/member-registration')
+  ).json();
+  const screenshotDir = process.env.FAFA_TEST_SCREENSHOT_DIR;
+  const desktop = testInfo.project.name === 'chromium';
+  if (desktop) await page.setViewportSize({ width: 1536, height: 1024 });
   try {
     await page.goto(admin + '/member-registration');
     await expect(
-      page.getByRole('heading', {
-        name: '全站开放时间与管理员 AI 服务',
-        exact: true,
-      }),
+      page.getByRole('heading', { name: '普通账户注册', exact: true }),
     ).toBeVisible();
+    const nav = page.getByRole('navigation', { name: '注册设置分区' });
+    const seat = page.getByRole('spinbutton', {
+      name: '注册人数上限（所有有效用户共用）',
+    });
+    await expect(seat).toBeVisible();
+    await expect(page.locator('.reg-seat-count')).toHaveText(/\d+\s*\/\s*\d+/);
     await expect(
-      page.getByRole('heading', { name: '注册体验策略', exact: true }),
-    ).toBeVisible();
-    await expect(
-      page.getByRole('heading', { name: '全站限时开放', exact: true }),
-    ).toBeVisible();
+      page.locator('.reg-metric .reg-status').filter({ hasText: '读取中' }),
+    ).toHaveCount(0);
     await expect(
       page.getByRole('heading', { name: '首次三天自动授权', exact: true }),
     ).toHaveCount(0);
+    const hasHorizontalOverflow = () =>
+      page.evaluate(
+        () => document.documentElement.scrollWidth > window.innerWidth + 1,
+      );
+    expect(await hasHorizontalOverflow()).toBe(false);
+    if (screenshotDir && (desktop || testInfo.project.name === 'iphone')) {
+      await page.evaluate(() => document.fonts.ready);
+      await page.screenshot({
+        path:
+          screenshotDir +
+          '/registration-' +
+          (desktop ? 'desktop' : 'iphone') +
+          '.png',
+        fullPage: desktop,
+        animations: 'disabled',
+      });
+    }
+
+    await seat.fill('100');
+    await nav
+      .getByRole('button', { name: '注册体验策略', exact: true })
+      .click();
+    await expect(
+      page.getByRole('spinbutton', { name: '体验时长（小时）' }),
+    ).toBeVisible();
+    await expect(seat).toBeHidden();
+    await nav
+      .getByRole('button', { name: '全站限时开放', exact: true })
+      .click();
+    await expect(
+      page
+        .locator('#reg-panel-campaign')
+        .getByLabel('开始时间（UTC）', { exact: true }),
+    ).toBeVisible();
+    expect(await hasHorizontalOverflow()).toBe(false);
+    if (screenshotDir && desktop) {
+      await page.screenshot({
+        path: screenshotDir + '/registration-campaign-desktop.png',
+        fullPage: true,
+        animations: 'disabled',
+      });
+    }
+    await nav
+      .getByRole('button', { name: '自由注册设置', exact: true })
+      .click();
+    await expect(seat).toHaveValue('100');
     await page
-      .getByLabel('服务开始时间（UTC ISO）', { exact: true })
-      .fill('2026-11-08T00:00:00Z');
+      .getByRole('button', { name: '保存自由注册设置', exact: true })
+      .click();
+    await expect(page.getByRole('status')).toContainText('注册策略已保存');
+    const savedRegistration = await (
+      await page.request.get(admin + '/api/admin/member-registration')
+    ).json();
+    expect(savedRegistration).toMatchObject({
+      enabled: registration.enabled,
+      seatLimit: 100,
+    });
+    await page.getByText('查看邮件记录', { exact: true }).click();
+    await expect(
+      page.getByText('提供商已接受仅代表受理。', { exact: false }),
+    ).toBeVisible();
+
+    await nav.getByRole('button', { name: 'AI 服务管理', exact: true }).click();
+    await page.getByText('兼容设置 · 原全站服务时段', { exact: true }).click();
     await page
-      .getByLabel('服务结束时间（UTC ISO）', { exact: true })
-      .fill('2026-11-09T00:00:00Z');
+      .getByLabel('服务开始时间（UTC）', { exact: true })
+      .fill('2026-11-08T00:10');
+    await page
+      .getByLabel('服务结束时间（UTC）', { exact: true })
+      .fill('2026-11-09T00:20');
+    await page.getByText('指定使用者', { exact: true }).click();
+    const firstMember = page.locator('input[name="aiUserIds"]').first();
+    await firstMember.check();
+    const selectedMember = await firstMember.inputValue();
+    await page
+      .getByRole('searchbox', { name: '搜索指定使用者', exact: true })
+      .fill('no-such-fixture-name');
+    await expect(firstMember).toBeHidden();
     await page
       .getByLabel('每任务输出 token 上限', { exact: true })
       .fill('2100');
@@ -466,6 +544,9 @@ test('后台统一管理：服务时段、注册体验策略与普通用户AI额
     ).json();
     expect(saved.ai.maxOutputTokens).toBe(2100);
     expect(saved.ai.enabled).toBe(false);
+    expect(saved.ai.userIds).toContain(selectedMember);
+    expect(saved.schedule.startsAt).toBe('2026-11-08T00:10:00.000Z');
+    expect(saved.schedule.endsAt).toBe('2026-11-09T00:20:00.000Z');
     expect(saved.schedule.enabled).toBe(false);
     await expect(
       page.getByLabel('每任务输出 token 上限', { exact: true }),
@@ -494,6 +575,13 @@ test('后台统一管理：服务时段、注册体验策略与普通用户AI额
       .click();
     await expect(page.getByRole('status')).toContainText('用户 AI 额度已保存');
   } finally {
+    await page.request.patch(admin + '/api/admin/member-registration', {
+      data: {
+        enabled: registration.enabled,
+        seatLimit: registration.seatLimit,
+      },
+      headers: { Origin: admin, 'x-csrf-token': me.csrf },
+    });
     await page.request.patch(admin + '/api/admin/service-policy', {
       data: original,
       headers: { Origin: admin, 'x-csrf-token': me.csrf },

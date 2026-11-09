@@ -1,33 +1,36 @@
+import type { ServicePolicy } from '../../../../packages/auth/src/service-policy';
+import { PolicyMultiSelect, PolicyTimeField } from './RegistrationControls';
 import { useState } from 'react';
-import {
-  Card,
-  DataState,
-  useApp,
-  useData,
-} from '../../../../packages/ui/src/core';
+import { DataState, useApp, useData } from '../../../../packages/ui/src/core';
 
-export function ServicePolicyAdmin() {
+export function ServicePolicyAdmin({
+  policy,
+  onSaved,
+}: {
+  policy: ReturnType<typeof useData<ServicePolicy>>;
+  onSaved: () => void;
+}) {
   const { request, session, toast } = useApp();
-  const policy = useData<any>('/api/admin/service-policy');
   const accounts = useData<any[]>('/api/ai_accounts');
   const users = useData<{ id: string; name: string; role: string }[]>(
     '/api/admin/access/users',
   );
   const [busy, setBusy] = useState(false);
   return (
-    <Card
-      title="全站开放时间与管理员 AI 服务"
-      description="时间统一使用 UTC。开启限时服务后，普通用户在开始前及结束后不能使用节点订阅、服务器和 AI；管理员可继续管理。原有业务权限与资源分配仍须满足。"
-    >
+    <>
       <DataState
-        error={policy.error}
-        loading={!policy.data}
-        onRetry={policy.refresh}
+        error={policy.error || accounts.error || users.error}
+        loading={!policy.data || !accounts.data || !users.data}
+        onRetry={() => {
+          policy.refresh();
+          accounts.refresh();
+          users.refresh();
+        }}
       />
-      {policy.data && (
+      {policy.data && accounts.data && users.data && (
         <form
           key={JSON.stringify(policy.data)}
-          className="fields"
+          className="fields reg-form"
           onSubmit={async (event) => {
             event.preventDefault();
             if (busy) return;
@@ -52,6 +55,7 @@ export function ServicePolicyAdmin() {
                 },
               });
               policy.refresh();
+              onSaved();
               toast('服务策略已保存，到期自动关闭');
             } catch {
               /* Shared handler displays errors. */
@@ -60,31 +64,10 @@ export function ServicePolicyAdmin() {
             }
           }}
         >
-          <fieldset disabled={busy || session.user.role !== 'Owner'}>
-            <label>
-              <span>启用全站限时服务</span>
-              <input
-                name="enabled"
-                type="checkbox"
-                defaultChecked={policy.data.schedule.enabled}
-              />
-            </label>
-            <label>
-              <span>服务开始时间（UTC ISO）</span>
-              <input
-                name="startsAt"
-                defaultValue={policy.data.schedule.startsAt}
-                required
-              />
-            </label>
-            <label>
-              <span>服务结束时间（UTC ISO）</span>
-              <input
-                name="endsAt"
-                defaultValue={policy.data.schedule.endsAt}
-                required
-              />
-            </label>
+          <fieldset
+            className="reg-form-grid"
+            disabled={busy || session.user.role !== 'Owner'}
+          >
             <label>
               <span>开放管理员 AI 服务</span>
               <input
@@ -148,31 +131,55 @@ export function ServicePolicyAdmin() {
                 defaultChecked={policy.data.ai.allMembers !== false}
               />
             </label>
-            <label>
-              <span>或选择指定用户</span>
-              <select
-                name="aiUserIds"
-                multiple
-                defaultValue={policy.data.ai.userIds || []}
-              >
-                {users.data
-                  ?.filter((user) => user.role === 'Member')
-                  .map((user) => (
-                    <option key={user.id} value={user.id}>
-                      {user.name}
-                    </option>
-                  ))}
-              </select>
-            </label>
-            <label>
-              <span>AI 服务到期（UTC ISO，可留空）</span>
-              <input name="aiUntil" defaultValue={policy.data.ai.until || ''} />
-            </label>
-            <button>保存服务策略</button>
+            <PolicyMultiSelect
+              name="aiUserIds"
+              label="指定使用者"
+              items={users.data.filter((user) => user.role === 'Member')}
+              values={policy.data.ai.userIds}
+            />
+            <PolicyTimeField
+              name="aiUntil"
+              label="AI 服务到期"
+              value={policy.data.ai.until}
+            />
+            <details className="reg-compat">
+              <summary>兼容设置 · 原全站服务时段</summary>
+              <p>
+                原限时服务按 UTC
+                运行，保留现有配置。活动发放请使用「全站限时开放」。
+              </p>
+              <div className="reg-form-grid">
+                <label>
+                  <span>启用全站限时服务</span>
+                  <input
+                    name="enabled"
+                    type="checkbox"
+                    defaultChecked={policy.data.schedule.enabled}
+                  />
+                </label>
+                <PolicyTimeField
+                  name="startsAt"
+                  label="服务开始时间"
+                  value={policy.data.schedule.startsAt}
+                  required
+                />
+                <PolicyTimeField
+                  name="endsAt"
+                  label="服务结束时间"
+                  value={policy.data.schedule.endsAt}
+                  required
+                />
+              </div>
+            </details>
+            <div className="reg-save">
+              <button className="primary">
+                {busy ? '保存中…' : '保存服务策略'}
+              </button>
+            </div>
           </fieldset>
         </form>
       )}
-    </Card>
+    </>
   );
 }
 

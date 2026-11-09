@@ -1,15 +1,11 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
-import {
-  Card,
-  DataState,
-  useApp,
-  useData,
-} from '../../../../packages/ui/src/core';
-import { Field, Options, Toggle } from './AccessCenter';
+import { DataState, useApp, useData } from '../../../../packages/ui/src/core';
+import { Field, Toggle } from './AccessCenter';
+import { PolicyMultiSelect, PolicyTimeField } from './RegistrationControls';
 
 type Item = { id: string; name: string };
-type Activity = {
+export type Activity = {
   name?: string;
   enabled: boolean;
   timeZone: string;
@@ -18,6 +14,7 @@ type Activity = {
   startsAt?: string;
   endsAt?: string;
   paused?: boolean;
+  mode?: string;
   allMembers?: boolean;
   userIds?: string[];
   durationHours?: number;
@@ -36,10 +33,17 @@ type Activity = {
   concurrency: number;
 };
 
-function ActivityCard({ trial }: { trial: boolean }) {
+export function AccessActivityForm({
+  trial,
+  settings,
+  onSaved,
+}: {
+  trial: boolean;
+  settings: ReturnType<typeof useData<Activity>>;
+  onSaved?: () => void;
+}) {
   const { request, toast } = useApp();
   const path = '/api/admin/access/' + (trial ? 'trial-policy' : 'campaign');
-  const settings = useData<Activity>(path);
   const resources = useData<{ sources: Item[] }>('/api/admin/access/resources');
   const users = useData<(Item & { role: string })[]>('/api/admin/access/users');
   const [busy, setBusy] = useState(false);
@@ -99,6 +103,7 @@ function ActivityCard({ trial }: { trial: boolean }) {
             }),
       });
       settings.refresh();
+      onSaved?.();
       toast(title + '已保存并记录审计');
     } catch {
       // The shared request handler displays API errors.
@@ -107,14 +112,7 @@ function ActivityCard({ trial }: { trial: boolean }) {
     }
   }
   return (
-    <Card
-      title={title}
-      description={
-        trial
-          ? '仅发给活动时段内完成验证的新用户。默认关闭，每个用户只发放一次。'
-          : '按服务端时间自动生效。暂停或到期后，用户继续使用其原有权限。'
-      }
-    >
+    <>
       <DataState
         error={settings.error || resources.error || users.error}
         loading={!value || !resources.data || !users.data}
@@ -125,8 +123,12 @@ function ActivityCard({ trial }: { trial: boolean }) {
         }}
       />
       {value && resources.data && users.data && (
-        <form key={JSON.stringify(value)} className="fields" onSubmit={submit}>
-          <fieldset disabled={busy}>
+        <form
+          key={JSON.stringify(value)}
+          className="fields reg-form"
+          onSubmit={submit}
+        >
+          <fieldset className="reg-form-grid" disabled={busy}>
             <Field
               name="name"
               label="活动名称"
@@ -140,15 +142,15 @@ function ActivityCard({ trial }: { trial: boolean }) {
               value={value.timeZone}
               required
             />
-            <Field
+            <PolicyTimeField
               name={start}
-              label="开始时间（ISO，含时区偏移）"
+              label="开始时间"
               value={value[start]}
               required
             />
-            <Field
+            <PolicyTimeField
               name={end}
-              label="结束时间（ISO，含时区偏移）"
+              label="结束时间"
               value={value[end]}
               required
             />
@@ -188,12 +190,11 @@ function ActivityCard({ trial }: { trial: boolean }) {
                   label="面向所有普通用户"
                   checked={value.allMembers}
                 />
-                <Options
+                <PolicyMultiSelect
                   name="userIds"
                   label="或选择指定普通用户"
                   items={users.data.filter((user) => user.role === 'Member')}
                   values={value.userIds}
-                  multiple
                 />
               </>
             )}
@@ -207,12 +208,11 @@ function ActivityCard({ trial }: { trial: boolean }) {
               label="开放个人订阅"
               checked={value.services.subscription !== false}
             />
-            <Options
+            <PolicyMultiSelect
               name="sourceIds"
               label="开放的平台节点源"
               items={resources.data.sources}
               values={value.sourceIds}
-              multiple
             />
             <Toggle
               name="server"
@@ -255,18 +255,14 @@ function ActivityCard({ trial }: { trial: boolean }) {
               value={value.concurrency}
               required
             />
-            <button>保存{title}</button>
+            <div className="reg-save">
+              <button className="primary">
+                {busy ? '保存中…' : '保存' + title}
+              </button>
+            </div>
           </fieldset>
         </form>
       )}
-    </Card>
-  );
-}
-export function AccessActivities() {
-  return (
-    <>
-      <ActivityCard trial />
-      <ActivityCard trial={false} />
     </>
   );
 }
