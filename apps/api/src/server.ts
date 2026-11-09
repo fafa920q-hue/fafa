@@ -55,6 +55,8 @@ import { registerWorkspace } from './workspace';
 import { registerSsh } from './ssh';
 import { registerAdmin } from './admin';
 import { registerAi } from './ai';
+import { registerPlatformAi } from './platform-ai';
+import { platformAiEnabled } from '../../../packages/shared/src/platform-ai';
 import {
   beginOwnerCredential,
   completeOwnerCredential,
@@ -159,6 +161,18 @@ export async function visibleNodes(owner: string) {
 function sharedCookieDomain() {
   return process.env.COOKIE_DOMAIN ? { domain: process.env.COOKIE_DOMAIN } : {};
 }
+function visiblePersonalAccount(
+  table: string,
+  role: Parameters<typeof isAdmin>[0],
+  provider: unknown,
+) {
+  return (
+    table !== 'ai_accounts' ||
+    !platformAiEnabled() ||
+    isAdmin(role) ||
+    provider === 'ANTHROPIC_API'
+  );
+}
 export async function buildApp() {
   const app = Fastify({
     logger: false,
@@ -235,6 +249,13 @@ export async function buildApp() {
     if (!identity) throw new AppError(401, 'UNAUTHENTICATED', '请先登录');
     const actor = await resolveAccess(identity);
     req.actor = actor;
+    if (
+      platformAiEnabled() &&
+      !anthropicApiEnabled() &&
+      !isAdmin(actor.role) &&
+      /^\/api\/ai_accounts(\/|$)/.test(path)
+    )
+      throw new AppError(403, 'AI_PLATFORM_ONLY', '请使用平台 AI 服务');
     const capability = /^\/api\/(servers|server_connections)(\/|$)/.test(path)
       ? 'server'
       : /^\/api\/(ai|ai_accounts)(\/|$)/.test(path)
@@ -535,7 +556,11 @@ export async function buildApp() {
     app.get(`/api/${table}`, async (req) =>
       (
         await sql`select * from ${sql(table)} where owner_id=${req.actor.id} and revoked_at is null order by created_at desc`
-      ).map(publicRow),
+      )
+        .filter((row) =>
+          visiblePersonalAccount(table, req.actor.role, row.data.provider),
+        )
+        .map(publicRow),
     );
     app.get(`/api/${table}/:id`, async (req) => {
       const r = await own(table, z.uuid().parse(params(req).id), req.actor.id);
@@ -543,6 +568,8 @@ export async function buildApp() {
         await audit(req.actor.id, 'access.denied', params(req).id, req.id);
         throw notFound();
       }
+      if (!visiblePersonalAccount(table, req.actor.role, r.data.provider))
+        throw notFound();
       return publicRow(r);
     });
     const save = async (req: FastifyRequest) => {
@@ -592,6 +619,8 @@ export async function buildApp() {
             ? (existing.data.provider ?? 'OPENAI_API')
             : (data.provider ?? 'OPENAI_API'),
         );
+        if (!visiblePersonalAccount(table, req.actor.role, provider))
+          throw new AppError(403, 'AI_PLATFORM_ONLY', '请使用平台 AI 服务');
         if (data.provider && data.provider !== provider)
           throw new AppError(
             400,
@@ -677,8 +706,12 @@ export async function buildApp() {
       const id = z.uuid().parse(params(req).id);
       await sql.begin(async (tx) => {
         const [row] =
-          await tx`select id from ${tx(table)} where id=${id} and owner_id=${req.actor.id} and revoked_at is null for update`;
-        if (!row) throw notFound();
+          await tx`select id,data from ${tx(table)} where id=${id} and owner_id=${req.actor.id} and revoked_at is null for update`;
+        if (
+          !row ||
+          !visiblePersonalAccount(table, req.actor.role, row.data.provider)
+        )
+          throw notFound();
         await tx`update ${tx(table)} set revoked_at=now() where id=${id} and owner_id=${req.actor.id}`;
         if (table === 'node_sources')
           await tx`update background_jobs set data=data || '{"status":"CANCELLED"}'::jsonb,updated_at=now() where source_id=${id} and data->>'status' in ('QUEUED','RUNNING')`;
@@ -925,6 +958,7 @@ export async function buildApp() {
   await registerAdmin(app);
   await registerAccessCenter(app);
   await registerAi(app, origins);
+  await registerPlatformAi(app);
   await registerSsh(app, origins);
   return app;
 }

@@ -1,3 +1,4 @@
+import { PlatformCodex, type PlatformService } from './PlatformCodex';
 import { useEffect, useMemo, useState } from 'react';
 import type { AiProvider } from '../../../../packages/shared/src';
 import { backendUrl } from '../../../../packages/ui/src/endpoints';
@@ -14,7 +15,7 @@ import {
   DataState,
   type Row,
 } from '../../../../packages/ui/src/core';
-export function Codex() {
+function LegacyCodex({ onlyClaude = false }: { onlyClaude?: boolean }) {
   const { request, toast, session } = useApp();
   const accounts = useData<Row[]>('/api/ai_accounts');
   const tasks = useData<Row[]>('/api/ai/tasks');
@@ -24,7 +25,9 @@ export function Codex() {
     quota: { dailyLimit: number; concurrency: number };
     chatgptAuthorization?: 'DISABLED' | 'AWAITING_PROVIDER_APPROVAL';
   }>('/api/ai/service');
-  const [provider, setProvider] = useState<AiProvider>('OPENAI_API');
+  const [provider, setProvider] = useState<AiProvider>(
+    onlyClaude ? 'ANTHROPIC_API' : 'OPENAI_API',
+  );
   const [add, setAdd] = useState(false);
   const [remove, setRemove] = useState<Row>();
   const [selected, setSelected] = useState('');
@@ -94,24 +97,26 @@ export function Codex() {
         }
       />
       <div className="stack">
-        <div className="actions" role="group" aria-label="AI 引擎">
-          {(['OPENAI_API', 'ANTHROPIC_API'] as const).map((choice) => (
-            <button
-              key={choice}
-              type="button"
-              aria-pressed={provider === choice}
-              className={provider === choice ? 'primary' : ''}
-              onClick={() => {
-                if (provider === choice) return;
-                setProvider(choice);
-                setSelected('');
-                setTask(undefined);
-              }}
-            >
-              {choice === 'OPENAI_API' ? 'Codex' : 'Claude'}
-            </button>
-          ))}
-        </div>
+        {!onlyClaude && (
+          <div className="actions" role="group" aria-label="AI 引擎">
+            {(['OPENAI_API', 'ANTHROPIC_API'] as const).map((choice) => (
+              <button
+                key={choice}
+                type="button"
+                aria-pressed={provider === choice}
+                className={provider === choice ? 'primary' : ''}
+                onClick={() => {
+                  if (provider === choice) return;
+                  setProvider(choice);
+                  setSelected('');
+                  setTask(undefined);
+                }}
+              >
+                {choice === 'OPENAI_API' ? 'Codex' : 'Claude'}
+              </button>
+            ))}
+          </div>
+        )}
         <div className="callout">
           {isClaude
             ? 'Claude API 费用由所选 Anthropic 账户承担。'
@@ -428,6 +433,44 @@ export function Codex() {
           accounts.refresh();
         }}
       />
+    </>
+  );
+}
+
+export function Codex() {
+  const service = useData<PlatformService>('/api/ai/platform');
+  const [claude, setClaude] = useState(false);
+  if (!service.data)
+    return (
+      <DataState error={service.error} loading onRetry={service.refresh} />
+    );
+  if (!service.data.mode) return <LegacyCodex />;
+  const showClaude = !!service.data.claude && claude;
+  return (
+    <>
+      {service.data.claude && (
+        <div className="actions" role="group" aria-label="AI 引擎">
+          <button
+            type="button"
+            aria-pressed={!showClaude}
+            onClick={() => setClaude(false)}
+          >
+            Codex
+          </button>
+          <button
+            type="button"
+            aria-pressed={showClaude}
+            onClick={() => setClaude(true)}
+          >
+            Claude
+          </button>
+        </div>
+      )}
+      {showClaude ? (
+        <LegacyCodex onlyClaude />
+      ) : (
+        <PlatformCodex service={service} />
+      )}
     </>
   );
 }

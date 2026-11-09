@@ -1,3 +1,11 @@
+import { platformAiEnabled } from '../../../packages/shared/src/platform-ai';
+import {
+  checkPlatformAccount,
+  platformTaskAccount,
+  startPlatformTask,
+  settlePlatformUsage,
+  recordPlatformError,
+} from './platform-ai';
 import { capabilityAllowed } from '../../../packages/auth/src/auto-grant';
 import {
   resolveAccess,
@@ -88,6 +96,15 @@ export async function runSubscriptionJob(job: any) {
   });
 }
 export async function tick() {
+  if (platformAiEnabled()) {
+    await checkPlatformAccount();
+    await sql`update ai_tasks t set data=t.data || '{"status":"CANCELLED"}',updated_at=now()
+      from users u where t.owner_id=u.id and (u.disabled or u.deleted_at is not null)
+      and t.platform_account_id is not null and t.data->>'status'='QUEUED'`;
+    await sql`update ai_platform_usage l set charged_micros=0 from ai_tasks t
+      where t.id=l.task_id and l.dispatched_at is null and l.charged_micros is null
+      and t.data->>'status' not in ('QUEUED','RUNNING')`;
+  }
   await sql.begin(async (tx) => {
     await tx`select pg_advisory_xact_lock(77703)`;
     const sources =
@@ -135,7 +152,7 @@ export async function tick() {
   }
   const task = await sql.begin(async (tx) => {
     const [r] =
-      await tx`select t.* from ai_tasks t join users u on u.id=t.owner_id where t.data->>'status'='QUEUED' and not u.disabled order by t.created_at for update of t skip locked limit 1`;
+      await tx`select t.* from ai_tasks t join users u on u.id=t.owner_id where t.data->>'status'='QUEUED' and (t.platform_account_id is null or ${platformAiEnabled()}) and not u.disabled order by t.created_at for update of t skip locked limit 1`;
     if (r)
       await tx`update ai_tasks set data=data || '{"status":"RUNNING"}',updated_at=now() where id=${r.id}`;
     return r;
@@ -165,16 +182,23 @@ export async function runAiTask(task: any) {
       if (user) await assertServiceOpen(user);
       const policy = await readServicePolicy();
       const quota = await readAiQuota(task.owner_id);
-      const [account] =
-        await sql`SELECT a.id FROM ai_accounts a JOIN users u ON u.id=a.owner_id WHERE a.id=${task.account_id} AND a.revoked_at IS NULL AND NOT u.disabled AND u.deleted_at IS NULL`;
-      if (
-        !account ||
-        quota.dailyLimit === 0 ||
-        (task.data.service &&
-          (!teamServiceAllowed(user, policy) ||
-            policy.ai.accountId !== task.account_id))
-      )
-        throw Error('ACCESS_REVOKED');
+      if (task.platform_account_id) {
+        if (!(await platformTaskAccount(task, user)))
+          throw Error('ACCESS_REVOKED');
+      } else {
+        if (platformAiEnabled() && task.data.service)
+          throw Error('ACCESS_REVOKED');
+        const [account] =
+          await sql`SELECT a.id FROM ai_accounts a JOIN users u ON u.id=a.owner_id WHERE a.id=${task.account_id} AND a.revoked_at IS NULL AND NOT u.disabled AND u.deleted_at IS NULL`;
+        if (
+          !account ||
+          quota.dailyLimit === 0 ||
+          (task.data.service &&
+            (!teamServiceAllowed(user, policy) ||
+              policy.ai.accountId !== task.account_id))
+        )
+          throw Error('ACCESS_REVOKED');
+      }
       if (!user || !capabilityAllowed(user, 'codex')) {
         accessRevoked = true;
         controller.abort();
@@ -194,67 +218,26 @@ export async function runAiTask(task: any) {
     const policy = await readServicePolicy();
     const quota = await readAiQuota(task.owner_id);
     if (quota.dailyLimit === 0) throw Error('AI_QUOTA_REVOKED');
-    if (
-      task.data.service &&
-      (!teamServiceAllowed(user, policy) ||
-        policy.ai.accountId !== task.account_id)
-    )
+    if (platformAiEnabled() && task.data.service)
       throw Error('AI_SERVICE_CLOSED');
-    const [account] =
-      await sql`select a.* from ai_accounts a join users u on u.id=a.owner_id where a.id=${task.account_id} and (a.owner_id=${task.owner_id} or (${task.data.service === true} and u.role='Owner')) and not u.disabled and u.deleted_at is null and a.revoked_at is null`;
-    if (process.env.DEMO_MODE === 'true' || !account) throw Error('未配置');
-    const provider = aiProviderSchema.parse(task.data.provider ?? 'OPENAI_API');
-    if (
-      (account.data.provider ?? 'OPENAI_API') !== provider ||
-      (task.data.service && provider !== 'OPENAI_API')
-    )
-      throw Error('AI_PROVIDER_MISMATCH');
-    if (provider === 'ANTHROPIC_API' && !anthropicApiEnabled())
-      throw Error('CLAUDE_API_DISABLED');
-    const credential =
-      provider === 'ANTHROPIC_API' ? account.anthropic_secret : account.secret;
-    if (!credential) throw Error('未配置');
-    const apiKey = unseal(credential);
-    const maxTokens = Math.min(
-      Number(task.data.maxOutputTokens) || 2000,
-      task.data.service ? policy.ai.maxOutputTokens : 2000,
-    );
-    const stream =
-      provider === 'ANTHROPIC_API'
-        ? await new Anthropic({
-            apiKey,
-            authToken: null,
-            logLevel: 'off',
-            baseURL: 'https://api.anthropic.com',
-            timeout: 120000,
-            maxRetries: 0,
-          }).messages.create(
-            {
-              model: process.env.ANTHROPIC_MODEL || 'claude-sonnet-5-5',
-              messages: [{ role: 'user', content: task.data.prompt }],
-              max_tokens: maxTokens,
-              stream: true,
-            },
-            { signal: controller.signal },
-          )
-        : await new OpenAI({
-            apiKey,
-            timeout: 120000,
-            maxRetries: 0,
-          }).responses.create(
-            {
-              model: process.env.OPENAI_MODEL || 'gpt-4.1-mini',
-              input: task.data.prompt,
-              max_output_tokens: maxTokens,
-              stream: true,
-              store: false,
-            },
-            { signal: controller.signal },
-          );
+    const stream = task.platform_account_id
+      ? await startPlatformTask(task, user, controller.signal)
+      : await legacyAiStream(task, user, policy, controller.signal);
+
     let claudeUsage:
       { input_tokens: number; output_tokens: number } | undefined;
     let last = 0;
     for await (const event of stream) {
+      if (
+        task.platform_account_id &&
+        [
+          'response.completed',
+          'response.failed',
+          'response.incomplete',
+        ].includes(event.type) &&
+        'response' in event
+      )
+        await settlePlatformUsage(task, event.response);
       const [rawState] =
         await sql`select t.data->>'status' as status,u.* from ai_tasks t join users u on u.id=t.owner_id where t.id=${task.id}`;
       const state = rawState ? await resolveAccess(rawState) : null;
@@ -302,7 +285,7 @@ export async function runAiTask(task: any) {
     }
     if (status === 'COMPLETED' && (!completed || controller.signal.aborted))
       throw Error('PROVIDER_RESPONSE_INCOMPLETE');
-    if (status === 'COMPLETED') {
+    if (status === 'COMPLETED' && !task.platform_account_id) {
       const lastUsedAt = new Date().toISOString();
       await sql`update ai_accounts set data=data || ${sql.json({ status: 'VERIFIED', verifiedAt: lastUsedAt, lastUsedAt })} where id=${task.account_id} and revoked_at is null`;
     }
@@ -320,10 +303,75 @@ export async function runAiTask(task: any) {
       : controller.signal.aborted
         ? 'TIMEOUT'
         : 'FAILED';
+    if (task.platform_account_id) await recordPlatformError(task, error);
   } finally {
     clearTimeout(timeout);
     clearInterval(accessWatchdog);
     await sql`update ai_tasks set data=data || ${sql.json({ status, output, error: status === 'FAILED' ? failure : null })},updated_at=now() where id=${task.id} and data->>'status'='RUNNING'`;
     await audit(task.owner_id, 'ai.task_finished', task.id);
   }
+}
+
+async function legacyAiStream(
+  task: any,
+  user: any,
+  policy: Awaited<ReturnType<typeof readServicePolicy>>,
+  signal: AbortSignal,
+) {
+  if (
+    task.data.service &&
+    (!teamServiceAllowed(user, policy) ||
+      policy.ai.accountId !== task.account_id)
+  )
+    throw Error('AI_SERVICE_CLOSED');
+  const [account] =
+    await sql`select a.* from ai_accounts a join users u on u.id=a.owner_id where a.id=${task.account_id} and (a.owner_id=${task.owner_id} or (${task.data.service === true} and u.role='Owner')) and not u.disabled and u.deleted_at is null and a.revoked_at is null`;
+  if (process.env.DEMO_MODE === 'true' || !account) throw Error('未配置');
+  const provider = aiProviderSchema.parse(task.data.provider ?? 'OPENAI_API');
+  if (
+    (account.data.provider ?? 'OPENAI_API') !== provider ||
+    (task.data.service && provider !== 'OPENAI_API')
+  )
+    throw Error('AI_PROVIDER_MISMATCH');
+  if (provider === 'ANTHROPIC_API' && !anthropicApiEnabled())
+    throw Error('CLAUDE_API_DISABLED');
+  const credential =
+    provider === 'ANTHROPIC_API' ? account.anthropic_secret : account.secret;
+  if (!credential) throw Error('未配置');
+  const apiKey = unseal(credential);
+  const maxTokens = Math.min(
+    Number(task.data.maxOutputTokens) || 2000,
+    task.data.service ? policy.ai.maxOutputTokens : 2000,
+  );
+  return provider === 'ANTHROPIC_API'
+    ? await new Anthropic({
+        apiKey,
+        authToken: null,
+        logLevel: 'off',
+        baseURL: 'https://api.anthropic.com',
+        timeout: 120000,
+        maxRetries: 0,
+      }).messages.create(
+        {
+          model: process.env.ANTHROPIC_MODEL || 'claude-sonnet-5-5',
+          messages: [{ role: 'user', content: task.data.prompt }],
+          max_tokens: maxTokens,
+          stream: true,
+        },
+        { signal: signal },
+      )
+    : await new OpenAI({
+        apiKey,
+        timeout: 120000,
+        maxRetries: 0,
+      }).responses.create(
+        {
+          model: process.env.OPENAI_MODEL || 'gpt-4.1-mini',
+          input: task.data.prompt,
+          max_output_tokens: maxTokens,
+          stream: true,
+          store: false,
+        },
+        { signal: signal },
+      );
 }

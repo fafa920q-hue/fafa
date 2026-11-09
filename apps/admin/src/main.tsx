@@ -1,3 +1,4 @@
+import { PlatformAiAccounts } from './pages/PlatformAiAccounts';
 import { AiRuntimeTasks } from './pages/AiRuntimeTasks';
 import { AccessCenter } from './pages/AccessCenter';
 import { MemberAccessControls } from './pages/MemberDeliveryAdmin';
@@ -55,13 +56,25 @@ function Admin() {
       </div>
     );
   return (
-    <Shell nav={nav} bottom={[nav[0], nav[1], nav[3], nav[6], nav[7]]} admin>
+    <Shell
+      nav={
+        session.user.role === 'Owner'
+          ? [
+              ...nav,
+              { to: '/ai/service-accounts', label: 'AI 服务管理', icon: Code2 },
+            ]
+          : nav
+      }
+      bottom={[nav[0], nav[1], nav[3], nav[6], nav[7]]}
+      admin
+    >
       <Routes>
         <Route path="/" element={<Overview />} />
         <Route path="/users" element={<UserManagement />} />
         <Route path="/sources" element={<SourcesAdmin />} />
         <Route path="/servers" element={<ResourceAdmin kind="servers" />} />
         <Route path="/ai" element={<ResourceAdmin kind="ai" />} />
+        <Route path="/ai/service-accounts" element={<PlatformAiAccounts />} />
         <Route
           path="/jobs"
           element={

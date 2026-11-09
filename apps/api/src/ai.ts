@@ -1,3 +1,4 @@
+import { platformAiEnabled } from '../../../packages/shared/src/platform-ai';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { sql, own, audit } from '../../../packages/db/src';
@@ -43,6 +44,8 @@ export async function registerAi(app: FastifyInstance, origins: string[]) {
     const provider = aiProviderSchema.parse(
       account.data.provider ?? 'OPENAI_API',
     );
+    if (platformAiEnabled() && provider === 'OPENAI_API')
+      throw new AppError(403, 'AI_PLATFORM_ONLY', '请使用平台 AI 服务');
     await sql.begin(async (tx) => {
       await tx`select pg_advisory_xact_lock(hashtext(${'ai-select:' + req.actor.id}))`;
       await tx`update ai_accounts set data=data || '{"selected":false}'::jsonb where owner_id=${req.actor.id} and revoked_at is null and coalesce(data->>'provider','OPENAI_API')=${provider}`;
@@ -74,6 +77,8 @@ export async function registerAi(app: FastifyInstance, origins: string[]) {
         workspace: z.string().max(300).default(''),
       })
       .parse(req.body);
+    if (platformAiEnabled() && d.provider === 'OPENAI_API')
+      throw new AppError(403, 'AI_PLATFORM_ONLY', '请使用平台 AI 服务');
     const policy = await readServicePolicy();
     const quota = await readAiQuota(req.actor.id);
     if (d.provider === 'ANTHROPIC_API' && !anthropicApiEnabled())
