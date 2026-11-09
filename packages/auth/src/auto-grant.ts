@@ -72,6 +72,8 @@ export function capabilityAllowed(
 export async function applyAutoGrant(userId: string, db: any = sql) {
   const trial = await issueTrial(userId, db);
   if (trial !== undefined) return trial;
+  if (process.env.MEMBER_SELF_SERVICE === 'true')
+    return { applied: false, reason: 'SELF_SERVICE_NO_TRIAL' };
   const policy = await readAutoGrantPolicy(db);
   const [user] = await db.unsafe(
     'SELECT * FROM users WHERE id=$1 AND deleted_at IS NULL FOR UPDATE',

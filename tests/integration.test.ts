@@ -24,6 +24,12 @@ import { safeFetch } from '../packages/subscription/src/network';
 const providerMock = vi.hoisted(() => ({
   create: vi.fn(async function* () {
     yield { type: 'response.output_text.delta', delta: '真实适配器测试输出' };
+    yield {
+      type: 'response.completed',
+      response: {
+        usage: { input_tokens: 3, output_tokens: 5, total_tokens: 8 },
+      },
+    };
   }),
 }));
 vi.mock('openai', () => ({
@@ -54,6 +60,14 @@ const send = (
     },
     ...(body ? { payload: body } : {}),
   });
+async function withTestAdmin<T>(index: number, run: () => Promise<T>) {
+  await sql`UPDATE users SET role='Admin' WHERE id=${ids[index]}`;
+  try {
+    return await run();
+  } finally {
+    await sql`UPDATE users SET role='Member' WHERE id=${ids[index]}`;
+  }
+}
 beforeAll(async () => {
   app = await buildApp();
   for (const [i, role] of ['Owner', 'Member', 'Member', 'Viewer'].entries()) {
@@ -416,6 +430,13 @@ describe('真实数据库 API 闭环', () => {
     expect(
       (await send(1, '/api/nodes/' + node.id, 'PATCH', { enabled: false }))
         .statusCode,
+    ).toBe(403);
+    expect(
+      (
+        await withTestAdmin(1, () =>
+          send(1, '/api/nodes/' + node.id, 'PATCH', { enabled: false }),
+        )
+      ).statusCode,
     ).toBe(404);
     await send(0, '/api/admin/grants', 'POST', {
       kind: 'source',
@@ -504,14 +525,16 @@ describe('真实数据库 API 闭环', () => {
     await send(0, '/api/node_sources/' + id, 'DELETE');
   });
   it('自有订阅创建、持久化、密钥不同节点保留', async () => {
-    const r = await send(1, '/api/node_sources', 'POST', {
-      name: '真实配置测试',
-      kind: 'OWNED_NODE',
-      content:
-        'trojan://one@node.example.com:443#A\ntrojan://two@node.example.com:443#B',
-      country: '日本',
-      authorized: true,
-    });
+    const r = await withTestAdmin(1, () =>
+      send(1, '/api/node_sources', 'POST', {
+        name: '真实配置测试',
+        kind: 'OWNED_NODE',
+        content:
+          'trojan://one@node.example.com:443#A\ntrojan://two@node.example.com:443#B',
+        country: '日本',
+        authorized: true,
+      }),
+    );
     expect(r.statusCode, r.body).toBe(200);
     sources.push(r.json().id);
     const list = (await send(1, '/api/node_sources')).json();
@@ -705,6 +728,13 @@ describe('真实数据库 API 闭环', () => {
       expect(
         (await send(1, '/api/node_sources/' + id, 'PATCH', { name: '越权' }))
           .statusCode,
+      ).toBe(403);
+      expect(
+        (
+          await withTestAdmin(1, () =>
+            send(1, '/api/node_sources/' + id, 'PATCH', { name: '越权' }),
+          )
+        ).statusCode,
       ).toBe(404);
       expect(
         (await send(0, '/api/node_sources/' + id, 'PATCH', { url: privateUrl }))
@@ -875,6 +905,13 @@ describe('真实数据库 API 闭环', () => {
     ).toBe(false);
     expect(
       (await send(2, '/api/node_sources/' + id, 'DELETE')).statusCode,
+    ).toBe(403);
+    expect(
+      (
+        await withTestAdmin(2, () =>
+          send(2, '/api/node_sources/' + id, 'DELETE'),
+        )
+      ).statusCode,
     ).toBe(404);
     await send(0, '/api/admin/grants/source/' + id + '/' + ids[2], 'DELETE');
     expect(
@@ -894,7 +931,7 @@ describe('真实数据库 API 闭环', () => {
     expect(grants).toHaveLength(1);
     await send(0, '/api/node_sources/' + id, 'DELETE');
   });
-  it('流量额度仅持久化策略，明确没有真实计量或数据面限流', async () => {
+  it('无真实流量计量时有限额度拒绝订阅，清除限额恢复访问', async () => {
     const update = await send(0, '/api/admin/users/' + ids[1], 'PATCH', {
       trafficLimitBytes: 10737418240,
     });
@@ -905,8 +942,8 @@ describe('真实数据库 API 闭环', () => {
     expect(user).toMatchObject({
       trafficLimitBytes: 10737418240,
       trafficUsageBytes: null,
-      trafficMeteringStatus: 'UNAVAILABLE',
-      trafficQuotaEnforcement: 'NOT_ACTIVE',
+      trafficMeteringStatus: 'UNCONFIGURED',
+      trafficQuotaEnforcement: 'METER_REQUIRED_ACCESS_BLOCKED',
     });
     expect(
       (
@@ -932,6 +969,9 @@ describe('真实数据库 API 闭环', () => {
     const [stored] =
       await sql`select traffic_limit_bytes from users where id=${ids[1]}`;
     expect(stored.traffic_limit_bytes).toBeNull();
+    expect((await send(1, '/api/subscription/rotate', 'POST')).statusCode).toBe(
+      200,
+    );
   });
   it('邀请、未验证邮箱、席位超额与 Google sub 绑定', async () => {
     const email = token() + '@example.invalid';
@@ -1078,6 +1118,7 @@ describe('真实数据库 API 闭环', () => {
     const [stored] = await sql`select data from ai_tasks where id=${task.id}`;
     expect(stored.data.status).toBe('COMPLETED');
     expect(stored.data.output).toBe('真实适配器测试输出');
+    expect(stored.data.usage.total_tokens).toBe(8);
     const blockedStream = await send(
       1,
       `/api/ai/tasks/${task.id}/events`,
@@ -1327,11 +1368,10 @@ describe('真实数据库 API 闭环', () => {
     expect((await send(1, '/api/subscription/rotate', 'POST')).statusCode).toBe(
       403,
     );
-    const sourceWrite = await send(
-      1,
-      '/api/node_sources/' + sources[0],
-      'PATCH',
-      { name: '过期会话拒绝' },
+    const sourceWrite = await withTestAdmin(1, () =>
+      send(1, '/api/node_sources/' + sources[0], 'PATCH', {
+        name: '过期会话拒绝',
+      }),
     );
     expect(sourceWrite.statusCode).toBe(403);
     expect(sourceWrite.json().code).toBe('REAUTH_REQUIRED');

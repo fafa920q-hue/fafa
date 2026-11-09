@@ -1,3 +1,4 @@
+import { AccessActivities } from './AccessActivities';
 import { useRef, useState } from 'react';
 import { MemberAiQuota, ServicePolicyAdmin } from './ServicePolicyAdmin';
 import {
@@ -72,6 +73,7 @@ export function MemberDeliveryAdmin() {
   return (
     <>
       <ServicePolicyAdmin />
+      <AccessActivities />
       {policy.data && !policy.data.retired && (
         <Card
           title="首次三天自动授权"

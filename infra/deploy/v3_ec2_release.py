@@ -18,7 +18,7 @@ import urllib.request
 from urllib.parse import urlsplit, urlunsplit
 
 ROOT = Path('/opt/fafa-one')
-SOURCE = ROOT / 'source'
+SOURCE = Path(__file__).resolve().parents[2]
 TABLES = ['users', 'google_identities', 'node_sources', 'nodes', 'subscription_profiles', 'subscription_tokens', 'ai_accounts', 'server_connections']
 
 def need(condition, reason):

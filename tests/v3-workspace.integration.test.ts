@@ -91,7 +91,8 @@ it('订阅授权后也不能自行添加或修改平台节点', async () => {
     content:
       'ss://aes-128-gcm:synthetic-private@203.0.113.45:443#legacy_private',
   });
-  expect(privateImport.statusCode).toBe(200);
+  expect(privateImport.statusCode).toBe(403);
+  expect(privateImport.json().code).toBe('ADMIN_NODE_MANAGEMENT');
   expect(
     (await send(1, '/api/catalog/nodes'))
       .json()
@@ -112,7 +113,7 @@ it('订阅授权后也不能自行添加或修改平台节点', async () => {
         catalogVisible: false,
       })
     ).statusCode,
-  ).toBe(404);
+  ).toBe(403);
 });
 it('单独授权、节点选择和订阅内容都维持资源隔离', async () => {
   await sql`INSERT INTO node_group_grants(owner_id,source_id,user_id,data) VALUES(${users[0]},${sources[0]},${users[1]},${sql.json({ scope: 'USE', expiresAt: new Date(Date.now() + 3600000).toISOString() })})`;
@@ -153,4 +154,90 @@ it('管理员隐藏节点后目录立即停止展示', async () => {
       .json()
       .nodes.some((n: any) => n.id === nodes[0]),
   ).toBe(false);
+});
+
+it('全站开放按范围发放订阅，明确撤销、停用和旧令牌不会被活动覆盖', async () => {
+  const target = users[2];
+  const url = '/api/admin/access/users/' + target;
+  const campaign = {
+    enabled: true,
+    startsAt: new Date(Date.now() - 60000).toISOString(),
+    endsAt: new Date(Date.now() + 60000).toISOString(),
+    allMembers: false,
+    userIds: [target],
+    sourceIds: [sources[1]],
+    services: { node: true, subscription: false, server: false, codex: false },
+  };
+  const updateCampaign = (patch: object) =>
+    send(0, '/api/admin/access/campaign', 'PATCH', { ...campaign, ...patch });
+  try {
+    expect((await updateCampaign({})).statusCode).toBe(200);
+    const catalog = (await send(2, '/api/catalog/nodes')).json().nodes;
+    expect(catalog.find((n: any) => n.id === nodes[1])).toMatchObject({
+      authorized: true,
+      canSubscribe: false,
+    });
+    expect(
+      (await send(2, '/api/subscription/rotate', 'POST', {})).statusCode,
+    ).toBe(403);
+    expect(
+      (
+        await updateCampaign({
+          services: { ...campaign.services, subscription: true },
+        })
+      ).statusCode,
+    ).toBe(200);
+    const link = await send(2, '/api/subscription/rotate', 'POST', {});
+    expect(link.statusCode).toBe(200);
+    const path = new URL(link.json().url).pathname;
+    expect((await app.inject(path + '?format=shadowrocket')).statusCode).toBe(
+      200,
+    );
+    expect((await app.inject(path + '?format=v2rayn')).statusCode).toBe(200);
+    expect((await send(1, url, 'PATCH', { disabled: true })).statusCode).toBe(
+      403,
+    );
+    expect(
+      (
+        await send(0, '/api/admin/access/bulk', 'POST', {
+          userIds: [target, users[0]],
+          patch: { disabled: true },
+        })
+      ).statusCode,
+    ).toBe(403);
+    expect((await app.inject(path)).statusCode).toBe(200);
+    expect(
+      (await send(0, url, 'PATCH', { subscriptionEnabled: false })).statusCode,
+    ).toBe(200);
+    expect((await app.inject(path)).statusCode).toBe(404);
+    expect(
+      (
+        await send(0, url, 'PATCH', {
+          subscriptionEnabled: true,
+          revokeSubscriptions: true,
+        })
+      ).statusCode,
+    ).toBe(200);
+    expect((await app.inject(path)).statusCode).toBe(404);
+    const replacement = await send(2, '/api/subscription/rotate', 'POST', {});
+    expect(replacement.statusCode).toBe(200);
+    const replacementPath = new URL(replacement.json().url).pathname;
+    expect(
+      (
+        await updateCampaign({
+          services: { ...campaign.services, subscription: true },
+          paused: true,
+        })
+      ).statusCode,
+    ).toBe(200);
+    expect((await app.inject(replacementPath)).statusCode).toBe(403);
+    expect((await send(0, url, 'PATCH', { disabled: true })).statusCode).toBe(
+      200,
+    );
+    expect((await send(2, '/api/workspace')).statusCode).toBe(401);
+    expect((await app.inject(replacementPath)).statusCode).toBe(404);
+  } finally {
+    await updateCampaign({ enabled: false });
+    await sql`DELETE FROM settings WHERE key=${'business_access_' + target} OR key='service_policy_v3'`;
+  }
 });

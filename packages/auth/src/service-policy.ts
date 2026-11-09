@@ -8,15 +8,44 @@ export const servicePolicySchema = z.object({
       enabled: z.boolean(),
       startsAt: z.iso.datetime(),
       endsAt: z.iso.datetime(),
+      name: z.string().trim().min(1).max(120).default('全站限时开放'),
       mode: z.enum(['WINDOW_ONLY', 'TEMPORARY_GRANT']).default('WINDOW_ONLY'),
-      timeZone: z.string().default('Asia/Shanghai').refine((v) => { try { new Intl.DateTimeFormat('en', { timeZone: v }); return true; } catch { return false; } }, '无效时区'),
+      timeZone: z
+        .string()
+        .default('Asia/Shanghai')
+        .refine((v) => {
+          try {
+            new Intl.DateTimeFormat('en', { timeZone: v });
+            return true;
+          } catch {
+            return false;
+          }
+        }, '无效时区'),
       paused: z.boolean().default(false),
       allMembers: z.boolean().default(true),
       userIds: z.array(z.uuid()).max(500).default([]),
-      services: z.object({ node: z.boolean(), server: z.boolean(), codex: z.boolean() }).default({ node: true, server: false, codex: false }),
+      services: z
+        .object({
+          node: z.boolean(),
+          server: z.boolean(),
+          codex: z.boolean(),
+          subscription: z.boolean().default(true),
+        })
+        .default({
+          node: true,
+          server: false,
+          codex: false,
+          subscription: true,
+        }),
       sourceIds: z.array(z.uuid()).max(500).default([]),
       nodeLimit: z.number().int().min(0).max(5000).default(20),
-      trafficLimitBytes: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).nullable().default(null),
+      trafficLimitBytes: z
+        .number()
+        .int()
+        .min(0)
+        .max(Number.MAX_SAFE_INTEGER)
+        .nullable()
+        .default(null),
       aiDailyLimit: z.number().int().min(0).max(1000).default(20),
       concurrency: z.number().int().min(1).max(10).default(2),
     })
@@ -41,9 +70,18 @@ export const defaultServicePolicy: ServicePolicy = {
     enabled: false,
     startsAt: '2026-11-08T00:00:00Z',
     endsAt: '2026-11-09T00:00:00Z',
-    mode: 'WINDOW_ONLY', timeZone: 'Asia/Shanghai', paused: false, allMembers: true, userIds: [],
-    services: { node: true, server: false, codex: false }, sourceIds: [], nodeLimit: 20,
-    trafficLimitBytes: null, aiDailyLimit: 20, concurrency: 2,
+    name: '全站限时开放',
+    mode: 'WINDOW_ONLY',
+    timeZone: 'Asia/Shanghai',
+    paused: false,
+    allMembers: true,
+    userIds: [],
+    services: { node: true, server: false, codex: false, subscription: true },
+    sourceIds: [],
+    nodeLimit: 20,
+    trafficLimitBytes: null,
+    aiDailyLimit: 20,
+    concurrency: 2,
   },
   ai: {
     enabled: false,
@@ -51,7 +89,9 @@ export const defaultServicePolicy: ServicePolicy = {
     dailyLimit: 20,
     concurrency: 2,
     maxOutputTokens: 2000,
-    allMembers: true, userIds: [], until: null,
+    allMembers: true,
+    userIds: [],
+    until: null,
   },
 };
 export async function readServicePolicy(db: any = sql): Promise<ServicePolicy> {
@@ -67,7 +107,12 @@ export function serviceOpen(
 ) {
   if (user.disabled || user.deleted_at) return false;
   if (user.role === 'Owner' || user.role === 'Admin') return true;
-  if (policy.schedule.mode === 'TEMPORARY_GRANT' || (policy.schedule.allMembers === false && !policy.schedule.userIds?.includes(user.id))) return true;
+  if (
+    policy.schedule.mode === 'TEMPORARY_GRANT' ||
+    (policy.schedule.allMembers === false &&
+      !policy.schedule.userIds?.includes(user.id))
+  )
+    return true;
   return (
     !policy.schedule.enabled ||
     (now >= Date.parse(policy.schedule.startsAt) &&

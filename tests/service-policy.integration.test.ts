@@ -1,3 +1,7 @@
+import {
+  defaultTrialPolicy,
+  resolveAccess,
+} from '../packages/auth/src/business-access';
 import { beforeAll, afterAll, it, expect, vi } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { sql } from '../packages/db/src';
@@ -59,7 +63,7 @@ beforeAll(async () => {
     await sql`INSERT INTO ai_accounts(id,owner_id,data,secret) VALUES(${accounts[i]},${ids[i]},'{"provider":"OPENAI_API"}',${sql.json(seal('synthetic-key-no-outbound'))})`;
 });
 afterAll(async () => {
-  await sql`DELETE FROM settings WHERE key IN ${sql(['service_policy_v3', ...ids.map((id) => 'ai_quota_' + id)])}`;
+  await sql`DELETE FROM settings WHERE key IN ${sql(['service_policy_v3', 'registration_trial_v3', ...ids.map((id) => 'trial_entitlement_' + id), ...ids.map((id) => 'ai_quota_' + id)])}`;
   for (const row of saved)
     await sql`INSERT INTO settings(key,value) VALUES(${row.key},coalesce(${sql.json(row.value)},'null'::jsonb)) ON CONFLICT(key) DO UPDATE SET value=excluded.value`;
   await sql`UPDATE users SET deleted_at=now() WHERE id IN ${sql(ids)}`;
@@ -178,9 +182,16 @@ it('自助注册仅在显式启用的注册窗口内获得体验，补发不延�
   vi.stubEnv('MEMBER_SELF_SERVICE', 'true');
   const start = new Date(Date.now() - 60000).toISOString();
   const end = new Date(Date.now() + 60000).toISOString();
-  const values = [true, start, end, null, null, 1];
-  for (let i = 0; i < AUTO_GRANT_POLICY_KEYS.length; i++)
-    await sql`UPDATE settings SET value=coalesce(${sql.json(values[i])},'null'::jsonb) WHERE key=${AUTO_GRANT_POLICY_KEYS[i]}`;
+  await sql`INSERT INTO google_identities(user_id,sub) VALUES(${ids[2]},${'verified-test-' + ids[2]})`;
+  const save = await send(0, '/api/admin/access/trial-policy', 'PATCH', {
+    ...defaultTrialPolicy,
+    enabled: true,
+    windowStart: start,
+    windowEnd: end,
+    durationHours: 24,
+    registrationMethod: 'google',
+  });
+  expect(save.statusCode).toBe(200);
   await sql`UPDATE users SET node_access_enabled=false,server_connect_enabled=false,codex_tasks_enabled=false WHERE id=${ids[2]}`;
   const first = await sql.begin((tx) => applyAutoGrant(ids[2], tx));
   expect(first.applied).toBe(true);
@@ -189,10 +200,16 @@ it('自助注册仅在显式启用的注册窗口内获得体验，补发不延�
     reason: 'ALREADY_PROCESSED',
   });
   const [user] = await sql`SELECT * FROM users WHERE id=${ids[2]}`;
-  expect(new Date(user.node_access_until).getTime()).toBe(
+  expect(user.node_access_until).toBeNull();
+  const current = await resolveAccess(user);
+  expect(current._access.capabilities.node).toBe(true);
+  expect(Date.parse(current._access.overlays[0].endsAt)).toBe(
     new Date(user.created_at).getTime() + 86400000,
   );
-  await sql.begin((tx) => applyAutoGrant(ids[1], tx));
+  expect(await sql.begin((tx) => applyAutoGrant(ids[1], tx))).toMatchObject({
+    applied: false,
+    reason: 'AUDIENCE_NOT_ELIGIBLE',
+  });
   const [manual] =
     await sql`SELECT node_access_until FROM users WHERE id=${ids[1]}`;
   expect(manual.node_access_until).toBeNull();

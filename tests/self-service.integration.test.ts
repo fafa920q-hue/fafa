@@ -88,7 +88,7 @@ it('自行注册仍须邮箱验证码，用户名和邮箱均可登录，不附�
   expect(named.user.id).toBe(mailed.user.id);
   expect(named.user.role).toBe('Member');
   const grant = await applyAutoGrant(named.user.id);
-  expect(grant).toEqual({ applied: false, reason: 'OUTSIDE_WINDOW' });
+  expect(grant).toEqual({ applied: false, reason: 'SELF_SERVICE_NO_TRIAL' });
   const [user] = await sql.unsafe(
     'SELECT node_access_enabled,server_connect_enabled,codex_tasks_enabled FROM users WHERE id=$1',
     [named.user.id],

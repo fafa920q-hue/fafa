@@ -397,8 +397,14 @@ test('后台统一管理：服务时段、注册体验策略与普通用户AI额
       }),
     ).toBeVisible();
     await expect(
-      page.getByRole('heading', { name: '首次三天自动授权', exact: true }),
+      page.getByRole('heading', { name: '注册体验策略', exact: true }),
     ).toBeVisible();
+    await expect(
+      page.getByRole('heading', { name: '全站限时开放', exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole('heading', { name: '首次三天自动授权', exact: true }),
+    ).toHaveCount(0);
     await page
       .getByLabel('服务开始时间（UTC ISO）', { exact: true })
       .fill('2026-11-08T00:00:00Z');
@@ -422,6 +428,15 @@ test('后台统一管理：服务时段、注册体验策略与普通用户AI额
       page.getByLabel('每任务输出 token 上限', { exact: true }),
     ).toHaveValue('2100');
     await page.goto(admin + '/users');
+    await expect(
+      page.getByRole('heading', { name: '用户权限中心', exact: true }),
+    ).toBeVisible();
+    await page
+      .getByLabel('选择普通用户', { exact: true })
+      .selectOption({ index: 1 });
+    await expect(
+      page.getByRole('button', { name: '保存用户权限', exact: true }),
+    ).toBeVisible();
     const details = page
       .locator('details')
       .filter({ has: page.getByText('AI 额度管理', { exact: true }) })

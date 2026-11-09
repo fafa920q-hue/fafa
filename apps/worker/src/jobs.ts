@@ -1,5 +1,8 @@
 import { capabilityAllowed } from '../../../packages/auth/src/auto-grant';
-import { resolveAccess, teamServiceAllowed } from '../../../packages/auth/src/business-access';
+import {
+  resolveAccess,
+  teamServiceAllowed,
+} from '../../../packages/auth/src/business-access';
 import {
   assertServiceOpen,
   readServicePolicy,
@@ -136,6 +139,7 @@ export async function tick() {
 }
 export async function runAiTask(task: any) {
   let output = '';
+  let completed = false;
   let status = 'COMPLETED';
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 120000);
@@ -154,7 +158,8 @@ export async function runAiTask(task: any) {
         !account ||
         quota.dailyLimit === 0 ||
         (task.data.service &&
-          (!teamServiceAllowed(user, policy) || policy.ai.accountId !== task.account_id))
+          (!teamServiceAllowed(user, policy) ||
+            policy.ai.accountId !== task.account_id))
       )
         throw Error('ACCESS_REVOKED');
       if (!user || !capabilityAllowed(user, 'codex')) {
@@ -178,7 +183,8 @@ export async function runAiTask(task: any) {
     if (quota.dailyLimit === 0) throw Error('AI_QUOTA_REVOKED');
     if (
       task.data.service &&
-      (!teamServiceAllowed(user, policy) || policy.ai.accountId !== task.account_id)
+      (!teamServiceAllowed(user, policy) ||
+        policy.ai.accountId !== task.account_id)
     )
       throw Error('AI_SERVICE_CLOSED');
     const [account] =
@@ -205,10 +211,12 @@ export async function runAiTask(task: any) {
     );
     let last = 0;
     for await (const event of stream) {
-      const [rawState] = await sql`select t.data->>'status' as status,u.* from ai_tasks t join users u on u.id=t.owner_id where t.id=${task.id}`;
+      const [rawState] =
+        await sql`select t.data->>'status' as status,u.* from ai_tasks t join users u on u.id=t.owner_id where t.id=${task.id}`;
       const state = rawState ? await resolveAccess(rawState) : null;
       if (
-        !state || state.status === 'CANCELLED' ||
+        !state ||
+        state.status === 'CANCELLED' ||
         state.disabled ||
         !capabilityAllowed(state, 'codex')
       ) {
@@ -217,8 +225,10 @@ export async function runAiTask(task: any) {
         break;
       }
       if (event.type === 'response.output_text.delta') output += event.delta;
-      if (event.type === 'response.completed' && event.response.usage) {
-        await sql`UPDATE ai_tasks SET data=data || ${sql.json({ usage: event.response.usage })},updated_at=now() WHERE id=${task.id}`;
+      if (event.type === 'response.completed') {
+        completed = true;
+        if (event.response.usage)
+          await sql`UPDATE ai_tasks SET data=data || ${sql.json({ usage: event.response.usage })},updated_at=now() WHERE id=${task.id} AND data->>'status'='RUNNING'`;
       }
       if (event.type === 'response.failed' || event.type === 'error')
         throw Error('PROVIDER_RESPONSE_FAILED');
@@ -227,7 +237,10 @@ export async function runAiTask(task: any) {
         last = Date.now();
       }
     }
-    await sql`update ai_accounts set data=data || ${sql.json({ status: 'VERIFIED', verifiedAt: new Date().toISOString() })} where id=${task.account_id}`;
+    if (status === 'COMPLETED' && (!completed || controller.signal.aborted))
+      throw Error('PROVIDER_RESPONSE_INCOMPLETE');
+    if (status === 'COMPLETED')
+      await sql`update ai_accounts set data=data || ${sql.json({ status: 'VERIFIED', verifiedAt: new Date().toISOString() })} where id=${task.account_id} and revoked_at is null`;
   } catch {
     status = accessRevoked
       ? 'CANCELLED'

@@ -55,6 +55,15 @@ export function MemberWorkbench() {
               {new Date(w.service.schedule.endsAt).toLocaleString('zh-CN')}
             </div>
           )}
+          {w.access?.overlays?.map(
+            (activity: { kind: string; name?: string; endsAt: string }) => (
+              <div key={activity.kind} className="callout" role="status">
+                {activity.name ||
+                  (activity.kind === 'TRIAL' ? '注册体验' : '全站开放')}{' '}
+                · 到期 {new Date(activity.endsAt).toLocaleString('zh-CN')}
+              </div>
+            ),
+          )}
           <div className="glass v3-welcome">
             <div>
               <span className="v3-eyebrow">WELCOME BACK</span>

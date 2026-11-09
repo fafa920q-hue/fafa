@@ -10,6 +10,9 @@ export function ServicePolicyAdmin() {
   const { request, session, toast } = useApp();
   const policy = useData<any>('/api/admin/service-policy');
   const accounts = useData<any[]>('/api/ai_accounts');
+  const users = useData<{ id: string; name: string; role: string }[]>(
+    '/api/admin/access/users',
+  );
   const [busy, setBusy] = useState(false);
   return (
     <Card
@@ -43,6 +46,9 @@ export function ServicePolicyAdmin() {
                   dailyLimit: Number(data.get('dailyLimit')),
                   concurrency: Number(data.get('concurrency')),
                   maxOutputTokens: Number(data.get('maxOutputTokens')),
+                  allMembers: data.has('aiAllMembers'),
+                  userIds: data.getAll('aiUserIds'),
+                  until: data.get('aiUntil') || null,
                 },
               });
               policy.refresh();
@@ -133,6 +139,34 @@ export function ServicePolicyAdmin() {
                 defaultValue={policy.data.ai.maxOutputTokens}
                 required
               />
+            </label>
+            <label>
+              <span>AI 服务面向所有已授权普通用户</span>
+              <input
+                name="aiAllMembers"
+                type="checkbox"
+                defaultChecked={policy.data.ai.allMembers !== false}
+              />
+            </label>
+            <label>
+              <span>或选择指定用户</span>
+              <select
+                name="aiUserIds"
+                multiple
+                defaultValue={policy.data.ai.userIds || []}
+              >
+                {users.data
+                  ?.filter((user) => user.role === 'Member')
+                  .map((user) => (
+                    <option key={user.id} value={user.id}>
+                      {user.name}
+                    </option>
+                  ))}
+              </select>
+            </label>
+            <label>
+              <span>AI 服务到期（UTC ISO，可留空）</span>
+              <input name="aiUntil" defaultValue={policy.data.ai.until || ''} />
             </label>
             <button>保存服务策略</button>
           </fieldset>

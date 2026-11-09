@@ -1,6 +1,10 @@
 import { capabilityAllowed } from '../../../packages/auth/src/auto-grant';
 import { assertServiceOpen } from '../../../packages/auth/src/service-policy';
-import { activeGrant, resolveAccess, serverAllowed } from '../../../packages/auth/src/business-access';
+import {
+  activeGrant,
+  resolveAccess,
+  serverAllowed,
+} from '../../../packages/auth/src/business-access';
 import { Client } from 'ssh2';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
@@ -22,12 +26,15 @@ async function target(row: any) {
   return resolvePublic(row.data.host);
 }
 async function accessible(id: string, userId: string) {
-  const [raw] = await sql`SELECT * FROM users WHERE id=${userId} AND NOT disabled AND deleted_at IS NULL`;
+  const [raw] =
+    await sql`SELECT * FROM users WHERE id=${userId} AND NOT disabled AND deleted_at IS NULL`;
   const user = raw ? await resolveAccess(raw) : null;
-  if (!user || !capabilityAllowed(user, 'server') || !serverAllowed(user, id)) throw notFound();
+  if (!user || !capabilityAllowed(user, 'server') || !serverAllowed(user, id))
+    throw notFound();
   const [r] =
     await sql`select s.*,g.data as grant_data from server_connections s join users u on u.id=s.owner_id left join server_access_grants g on g.server_id=s.id and g.user_id=${userId} and g.revoked_at is null where s.id=${id} and s.revoked_at is null and not u.disabled and u.deleted_at is null and (s.owner_id=${userId} or g.id is not null)`;
-  if (!r || (r.owner_id !== userId && !activeGrant(r.grant_data))) throw notFound();
+  if (!r || (r.owner_id !== userId && !activeGrant(r.grant_data)))
+    throw notFound();
   return r;
 }
 function connectionOptions(row: any, address: string) {
@@ -57,7 +64,9 @@ export async function registerSsh(app: FastifyInstance, origins: string[]) {
   app.get('/api/servers/shared', async (req) =>
     (
       await sql`select s.id,s.data from server_connections s join server_access_grants g on g.server_id=s.id where g.user_id=${req.actor.id} and g.revoked_at is null and s.revoked_at is null`
-    ).filter((r) => serverAllowed(req.actor, r.id)).map((r) => ({ id: r.id, ...r.data, shared: true })),
+    )
+      .filter((r) => serverAllowed(req.actor, r.id))
+      .map((r) => ({ id: r.id, ...r.data, shared: true })),
   );
   app.post('/api/servers/:id/probe', async (req) => {
     const { id } = z.object({ id: z.uuid() }).parse(req.params);

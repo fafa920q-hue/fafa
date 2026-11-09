@@ -60,7 +60,7 @@ export function Codex() {
     <>
       <PageTitle
         title="Codex 工作台"
-        description="多账户独立管理，使用你自己的 OpenAI API 凭据。"
+        description="查看个人 Codex 授权状态和可用 AI 服务。"
         action={
           writable && (
             <button className="primary" onClick={() => setAdd(true)}>
@@ -77,9 +77,9 @@ export function Codex() {
         </div>
         <Card
           title="个人 Codex 授权 · 暂未开放"
-          description="本站尚未完成官方个人授权接入。请勿上传 ChatGPT 登录令牌、Cookie 或 Codex 凭据文件。个人 API 账户与管理员 AI 服务使用各自的 API 额度。"
+          description="个人 Codex 计划使用 ChatGPT 账户与官方设备码。本站取得适用的托管接入资格后开放。"
         >
-          <p>当前可使用个人 OpenAI API 账户，或由管理员开放的 AI 服务。</p>
+          <p>已有 API 账户与管理员 AI 服务可在下方独立管理。</p>
         </Card>
         <div className="two-col">
           <Card

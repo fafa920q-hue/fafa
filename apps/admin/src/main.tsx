@@ -1,3 +1,4 @@
+import { AccessCenter } from './pages/AccessCenter';
 import { MemberAccessControls } from './pages/MemberDeliveryAdmin';
 import { useState } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -152,6 +153,7 @@ function UserManagement() {
         description="用户自行注册并验证邮箱；禁用与角色变更会撤销会话。"
       />
       <div className="stack">
+        <AccessCenter />
         <Card title="已注册用户" icon={Users}>
           <DataState
             error={users.error}

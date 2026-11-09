@@ -1,7 +1,11 @@
 import type { FastifyInstance } from 'fastify';
 import { sql } from '../../../packages/db/src';
 import { capabilityAllowed } from '../../../packages/auth/src/auto-grant';
-import { activeGrant, resolveAccess, sourceAllowed } from '../../../packages/auth/src/business-access';
+import {
+  activeGrant,
+  resolveAccess,
+  sourceAllowed,
+} from '../../../packages/auth/src/business-access';
 import {
   readServicePolicy,
   serviceOpen,
@@ -14,7 +18,8 @@ const activeAt = (value: unknown) =>
     Date.parse(value) > Date.now());
 export async function memberNodeCatalog(actor: any) {
   actor = await resolveAccess(actor);
-  if (actor.role === 'Member' && !actor._access.policy.catalogEnabled) return [];
+  if (actor.role === 'Member' && !actor._access.policy.catalogEnabled)
+    return [];
   const open = serviceOpen(await readServicePolicy(), actor);
   const rows = await sql`
   SELECT n.id,n.source_id,n.data,s.data AS source_data,
@@ -34,13 +39,15 @@ export async function memberNodeCatalog(actor: any) {
       (source.authorized === true &&
         source.redistributionAuthorized === true &&
         Boolean(source.authorizationReference?.trim()));
+    const baseGrant =
+      actor._access.base.node && row.grant_data && activeGrant(row.grant_data);
     const authorized =
       open &&
       enabled &&
       sourceActive &&
       legal &&
       sourceAllowed(actor, row.source_id, node.group || source.group || '') &&
-      ((row.grant_data && activeGrant(row.grant_data)) || actor._access.overlaySources.includes(row.source_id)) &&
+      (baseGrant || actor._access.overlaySources.includes(row.source_id)) &&
       capabilityAllowed(actor, 'node');
     return {
       id: row.id,
@@ -62,6 +69,8 @@ export async function memberNodeCatalog(actor: any) {
       authorized,
       canSubscribe:
         authorized &&
+        (baseGrant ||
+          actor._access.subscriptionSources.includes(row.source_id)) &&
         actor.subscription_enabled === true &&
         Number(actor.node_limit) > 0,
     };
@@ -110,8 +119,19 @@ export async function registerWorkspace(app: FastifyInstance) {
         server: open && capabilityAllowed(req.actor, 'server'),
         codex: open && capabilityAllowed(req.actor, 'codex'),
       },
-      service: { open, schedule: policy.schedule },
-      access: { overlays: (req.actor as any)._access?.overlays, traffic: (req.actor as any)._access?.traffic },
+      service: {
+        open,
+        schedule: {
+          enabled:
+            policy.schedule.enabled && policy.schedule.mode === 'WINDOW_ONLY',
+          startsAt: policy.schedule.startsAt,
+          endsAt: policy.schedule.endsAt,
+        },
+      },
+      access: {
+        overlays: (req.actor as any)._access?.overlays,
+        traffic: (req.actor as any)._access?.traffic,
+      },
       history,
       serverTime: new Date().toISOString(),
     };

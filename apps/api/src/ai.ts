@@ -2,7 +2,10 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { sql, own, audit } from '../../../packages/db/src';
 import { AppError, notFound } from '../../../packages/shared/src';
-import { resolveAccess, teamServiceAllowed } from '../../../packages/auth/src/business-access';
+import {
+  resolveAccess,
+  teamServiceAllowed,
+} from '../../../packages/auth/src/business-access';
 import {
   assertServiceOpen,
   readServicePolicy,
@@ -13,7 +16,11 @@ export async function registerAi(app: FastifyInstance, origins: string[]) {
     const policy = await readServicePolicy();
     const quota = await readAiQuota(req.actor.id);
     return {
-      enabled: teamServiceAllowed(req.actor, policy) && !!(await sql`SELECT a.id FROM ai_accounts a JOIN users u ON u.id=a.owner_id WHERE a.id=${policy.ai.accountId} AND a.revoked_at IS NULL AND a.secret IS NOT NULL AND u.role IN ('Owner','Admin') AND NOT u.disabled AND u.deleted_at IS NULL`).length,
+      enabled:
+        teamServiceAllowed(req.actor, policy) &&
+        !!(
+          await sql`SELECT a.id FROM ai_accounts a JOIN users u ON u.id=a.owner_id WHERE a.id=${policy.ai.accountId} AND a.revoked_at IS NULL AND a.secret IS NOT NULL AND u.role IN ('Owner','Admin') AND NOT u.disabled AND u.deleted_at IS NULL`
+        ).length,
       quota,
       personalCodex: 'UNAVAILABLE',
       personalApi: 'AVAILABLE',
@@ -69,9 +76,14 @@ export async function registerAi(app: FastifyInstance, origins: string[]) {
       );
     const task = await sql.begin(async (tx) => {
       await tx`select pg_advisory_xact_lock(hashtext(${req.actor.id}))`;
-      const [rawUser] = await tx`SELECT * FROM users WHERE id=${req.actor.id} FOR SHARE`;
+      const [rawUser] =
+        await tx`SELECT * FROM users WHERE id=${req.actor.id} FOR SHARE`;
       const current = rawUser ? await resolveAccess(rawUser, tx) : null;
-      if (!current?._access.capabilities.codex || (d.service && !teamServiceAllowed(current, await readServicePolicy(tx)))) throw new AppError(403, 'CAPABILITY_REQUIRED', 'AI 权限已撤销或到期');
+      if (
+        !current?._access.capabilities.codex ||
+        (d.service && !teamServiceAllowed(current, await readServicePolicy(tx)))
+      )
+        throw new AppError(403, 'CAPABILITY_REQUIRED', 'AI 权限已撤销或到期');
       await assertServiceOpen(req.actor, tx);
       const [count] =
         await tx`select count(*)::int as n from ai_tasks where owner_id=${req.actor.id} and created_at>now()-interval '1 day'`;
