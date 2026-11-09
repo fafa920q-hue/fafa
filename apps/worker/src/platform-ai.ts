@@ -1,3 +1,7 @@
+import {
+  modelForUser,
+  pricing,
+} from '../../../packages/auth/src/platform-models';
 import OpenAI from 'openai';
 import { sql } from '../../../packages/db/src';
 import { unseal } from '../../../packages/shared/src/crypto';
@@ -41,7 +45,14 @@ export async function checkPlatformAccount() {
   let error: string | null = null;
   try {
     const client = clientFor(account, 8000);
-    for (const model of account.models) await client.models.retrieve(model);
+    const signal = AbortSignal.timeout(30_000);
+    for (const model of account.models) {
+      await client.models.retrieve(model, { signal });
+      await client.responses.inputTokens.count(
+        { model, input: 'FAFA ONE service model access check' },
+        { signal },
+      );
+    }
   } catch (e) {
     error =
       e instanceof OpenAI.APIError && e.status
@@ -66,13 +77,16 @@ export async function platformTaskAccount(task: any, user: any, db: any = sql) {
     !quota.models.includes(task.data.model)
   )
     return;
+  const model = await modelForUser(db, task.data.model, user.id);
+  if (!model) return;
   const [row] =
-    await db`select a.id, a.secret, a.project_id, a.daily_micros, a.monthly_micros, l.reserved_micros
+    await db`select a.id, a.secret, a.project_id, a.daily_micros, a.monthly_micros, l.reserved_micros, l.pricing
     from ai_platform_accounts a join ai_platform_usage l on l.account_id=a.id
     where a.id=${task.platform_account_id} and a.enabled and a.health='READY' and a.secret is not null
     and a.revision=l.account_revision and l.task_id=${task.id} and l.user_id=${task.owner_id}
     and l.model=${task.data.model} and l.model=any(a.models)
-    and l.reserved_micros <= ${quota.task}
+    and l.reserved_micros <= ${Math.min(quota.task, Number(model.task_micros))}
+    and (a.allowed_users is null or l.user_id=any(a.allowed_users))
     and not exists (select 1 from settings where key='platform_ai_pause:' || a.project_id
       and (value #>> '{}')::timestamptz > now())`;
   return row;
@@ -91,18 +105,24 @@ export async function startPlatformTask(
     const account = await platformTaskAccount(task, user, tx);
     if (!account) throw Error('PLATFORM_TASK_CLOSED');
     const { policy, quota } = await configuration(tx, user.id);
+    const global = await budget(tx, {}, policy.timeZone);
     if (
       (policy.routing === 'PROJECT' && policy.target !== account.project_id) ||
       (policy.routing === 'ACCOUNT' && policy.target !== account.id) ||
-      (await budget(tx)).monthly > policy.globalMonthly ||
-      !fits(await budget(tx, { user: user.id }), quota.limits, 0) ||
+      global.monthly > policy.globalMonthly ||
+      global.daily > policy.globalDaily ||
       !fits(
-        await budget(tx, { project: account.project_id }),
+        await budget(tx, { user: user.id }, policy.timeZone),
+        quota.limits,
+        0,
+      ) ||
+      !fits(
+        await budget(tx, { project: account.project_id }, policy.timeZone),
         policy.project,
         0,
       ) ||
       !fits(
-        await budget(tx, { account: account.id }),
+        await budget(tx, { account: account.id }, policy.timeZone),
         {
           daily: Number(account.daily_micros),
           monthly: Number(account.monthly_micros),
@@ -113,15 +133,31 @@ export async function startPlatformTask(
       throw Error('PLATFORM_BUDGET_CHANGED');
     const [dispatch] = await tx`update ai_platform_usage set dispatched_at=now()
       where task_id=${task.id} and dispatched_at is null and charged_micros is null
-        and created_at >= date_trunc('day', now() at time zone 'UTC') at time zone 'UTC'
+        and created_at >= date_trunc('day', now(), ${policy.timeZone})
       returning task_id`;
     if (!dispatch) throw Error('PLATFORM_RESERVATION_EXPIRED');
     return account;
   });
-  return clientFor(account, 120000).responses.create(
+  const client = clientFor(account, 120000);
+  const rate = pricing.parse(
+    account.pricing ?? platformModels[task.data.model as PlatformModel],
+  );
+  const input = task.chat_id
+    ? await chatInput(task)
+    : (task.data.prompt as string);
+  if (task.chat_id) {
+    const count = await client.responses.inputTokens.count(
+      { model: task.data.model, input },
+      { signal },
+    );
+    if (count.input_tokens > rate.context) throw Error('PLATFORM_INPUT_LIMIT');
+  } else if (Buffer.byteLength(input as string) + 128 > rate.context) {
+    throw Error('PLATFORM_INPUT_LIMIT');
+  }
+  return client.responses.create(
     {
       model: task.data.model,
-      input: task.data.prompt,
+      input,
       max_output_tokens: task.data.maxOutputTokens,
       stream: true,
       store: false,
@@ -131,6 +167,32 @@ export async function startPlatformTask(
   );
 }
 
+async function chatInput(task: any): Promise<OpenAI.Responses.ResponseInput> {
+  const root = task.data.turnRoot ?? task.id;
+  const rows = await sql`select data from (
+    select distinct on (coalesce(t.data->>'turnRoot',t.id::text)) t.id,t.data,t.created_at
+    from ai_tasks t join ai_platform_chats c on c.id=t.chat_id and c.owner_id=t.owner_id
+    where c.id=${task.chat_id} and c.owner_id=${task.owner_id} and c.deleted_at is null
+      and t.revoked_at is null and coalesce(t.data->>'turnRoot',t.id::text)<>${root}
+      and t.data->>'status'='COMPLETED'
+    order by coalesce(t.data->>'turnRoot',t.id::text),t.created_at desc,t.id desc
+  ) variants order by created_at desc,id desc limit 20`;
+  const context: OpenAI.Responses.ResponseInput = [];
+  let bytes = Buffer.byteLength(task.data.prompt);
+  for (const { data } of rows) {
+    bytes +=
+      Buffer.byteLength(data.prompt || '') +
+      Buffer.byteLength(data.output || '');
+    if (bytes > 128_000) break;
+    context.unshift(
+      { role: 'user', content: data.prompt },
+      { role: 'assistant', content: data.output },
+    );
+  }
+  context.push({ role: 'user', content: task.data.prompt });
+  return context;
+}
+
 export async function settlePlatformUsage(
   task: any,
   response: {
@@ -138,28 +200,37 @@ export async function settlePlatformUsage(
     usage?: {
       input_tokens: number;
       output_tokens: number;
-      input_tokens_details: { cached_tokens: number };
+      input_tokens_details: {
+        cached_tokens: number;
+        cache_write_tokens?: number;
+      };
     } | null;
   },
 ) {
-  const model = task.data.model as PlatformModel;
   const u = response.usage;
-  if (!u || !Object.hasOwn(platformModels, model)) return;
+  if (!u) return;
+  const [ledger] =
+    await sql`select pricing from ai_platform_usage where task_id=${task.id}`;
+  const rate = pricing.safeParse(
+    ledger?.pricing ?? platformModels[task.data.model as PlatformModel],
+  );
+  if (!rate.success) return;
   const input = u.input_tokens,
     output = u.output_tokens,
-    cached = u.input_tokens_details.cached_tokens;
+    cached = u.input_tokens_details.cached_tokens,
+    cacheWrite = u.input_tokens_details.cache_write_tokens ?? 0;
   if (
-    ![input, output, cached].every(
+    ![input, output, cached, cacheWrite].every(
       (n) => Number.isInteger(n) && n >= 0 && n <= 2_147_483_647,
     ) ||
-    cached > input
+    cached + cacheWrite > input
   )
     return;
-  const charged = platformCost(model, input, cached, output);
+  const charged = platformCost(rate.data, input, cached, output, cacheWrite);
   await sql.begin(async (tx) => {
     const [record] =
       await tx`update ai_platform_usage set input_tokens=${input}, cached_tokens=${cached},
-      output_tokens=${output}, response_id=${response.id}, charged_micros=${charged}
+      output_tokens=${output}, cache_write_tokens=${cacheWrite}, response_id=${response.id}, charged_micros=${charged}
       where task_id=${task.id} and dispatched_at is not null and charged_micros is null
       returning reserved_micros`;
     if (record && charged > Number(record.reserved_micros))

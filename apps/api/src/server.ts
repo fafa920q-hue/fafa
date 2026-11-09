@@ -56,6 +56,7 @@ import { registerSsh } from './ssh';
 import { registerAdmin } from './admin';
 import { registerAi } from './ai';
 import { registerPlatformAi } from './platform-ai';
+import { registerPlatformChat } from './platform-chat';
 import { platformAiEnabled } from '../../../packages/shared/src/platform-ai';
 import {
   beginOwnerCredential,
@@ -251,7 +252,6 @@ export async function buildApp() {
     req.actor = actor;
     if (
       platformAiEnabled() &&
-      !anthropicApiEnabled() &&
       !isAdmin(actor.role) &&
       /^\/api\/ai_accounts(\/|$)/.test(path)
     )
@@ -959,6 +959,7 @@ export async function buildApp() {
   await registerAccessCenter(app);
   await registerAi(app, origins);
   await registerPlatformAi(app);
+  await registerPlatformChat(app);
   await registerSsh(app, origins);
   return app;
 }

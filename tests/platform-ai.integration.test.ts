@@ -104,6 +104,8 @@ it('checks Owner permissions and encrypts newly registered service credentials',
 
 it('checks configured models through the Worker and makes available service visible to a member', async () => {
   const mock = vi.fn(async (url: string, init: RequestInit) => {
+    if (String(url).endsWith('/responses/input_tokens'))
+      return Response.json({ input_tokens: 12 });
     expect(String(url)).toBe('https://api.openai.com/v1/models/' + model);
     expect(new Headers(init.headers).get('openai-project')).toBe(
       'proj_fixture',
@@ -116,7 +118,7 @@ it('checks configured models through the Worker and makes available service visi
     health: 'CHECK_PENDING',
   });
   await tick();
-  expect(mock).toHaveBeenCalledTimes(1);
+  expect(mock).toHaveBeenCalledTimes(2);
   const edit = await send(0, path, 'PATCH', {
     name: 'Test Project Account',
     note: '',

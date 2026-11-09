@@ -163,7 +163,9 @@ export async function runAiTask(task: any) {
   let output = '';
   let completed = false;
   let status = 'COMPLETED';
-  let failure = '请求失败，请检查 API Key、额度和模型权限';
+  let failure = task.platform_account_id
+    ? '平台 AI 请求失败，请稍后重试或联系管理员'
+    : '请求失败，请检查 API Key、额度和模型权限';
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 120000);
   let accessRevoked = false;
@@ -290,6 +292,18 @@ export async function runAiTask(task: any) {
       await sql`update ai_accounts set data=data || ${sql.json({ status: 'VERIFIED', verifiedAt: lastUsedAt, lastUsedAt })} where id=${task.account_id} and revoked_at is null`;
     }
   } catch (error) {
+    if (task.platform_account_id && error instanceof OpenAI.APIError) {
+      if (error.status === 429) failure = 'OpenAI 项目请求受到频率或额度限制';
+      if (error.status === 401 || error.status === 403)
+        failure = '平台服务账户权限异常，请联系管理员';
+      if (error.status === 404) failure = '当前模型在平台服务账户上不可用';
+    }
+    if (
+      task.platform_account_id &&
+      error instanceof Error &&
+      error.message === 'PLATFORM_INPUT_LIMIT'
+    )
+      failure = '对话上下文超出当前模型配置的长度，请开启新对话';
     if (error instanceof Anthropic.APIError) {
       if (error.status === 401 || error.status === 403)
         failure = 'Claude API Key 无效或没有所选模型的访问权限';

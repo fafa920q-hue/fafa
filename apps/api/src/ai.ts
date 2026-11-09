@@ -58,7 +58,7 @@ export async function registerAi(app: FastifyInstance, origins: string[]) {
   });
   app.get('/api/ai/tasks', async (req) =>
     (
-      await sql`select id,account_id,data,created_at from ai_tasks where owner_id=${req.actor.id} and revoked_at is null order by created_at desc limit 50`
+      await sql`select id,account_id,data,created_at from ai_tasks where owner_id=${req.actor.id} and revoked_at is null and chat_id is null order by created_at desc limit 50`
     ).map((r) => ({
       id: r.id,
       accountId: r.account_id,
@@ -165,7 +165,8 @@ export async function registerAi(app: FastifyInstance, origins: string[]) {
       throw new AppError(403, 'ORIGIN', '来源不允许');
     const { id } = z.object({ id: z.uuid() }).parse(req.params);
     const [t] =
-      await sql`select id from ai_tasks where id=${id} and owner_id=${req.actor.id}`;
+      await sql`select t.id from ai_tasks t where t.id=${id} and t.owner_id=${req.actor.id} and
+      (t.chat_id is null or exists(select 1 from ai_platform_chats c where c.id=t.chat_id and c.owner_id=t.owner_id and c.deleted_at is null))`;
     if (!t) throw notFound();
     reply.hijack();
     reply.raw.writeHead(200, {
@@ -182,6 +183,7 @@ export async function registerAi(app: FastifyInstance, origins: string[]) {
     for (let i = 0; i < 180 && !closed; i++) {
       const [r] =
         await sql`select data from ai_tasks where id=${id} and owner_id=${req.actor.id}`;
+      if (!r) break;
       reply.raw.write(`data: ${JSON.stringify(r.data)}\n\n`);
       if (!['QUEUED', 'RUNNING'].includes(r.data.status)) break;
       await new Promise((r) => setTimeout(r, 1000));

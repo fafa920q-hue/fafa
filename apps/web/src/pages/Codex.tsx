@@ -438,6 +438,8 @@ function LegacyCodex({ onlyClaude = false }: { onlyClaude?: boolean }) {
 }
 
 export function Codex() {
+  const { session } = useApp();
+  const admin = ['Owner', 'Admin'].includes(session.user.role);
   const service = useData<PlatformService>('/api/ai/platform');
   const [claude, setClaude] = useState(false);
   if (!service.data)
@@ -445,10 +447,10 @@ export function Codex() {
       <DataState error={service.error} loading onRetry={service.refresh} />
     );
   if (!service.data.mode) return <LegacyCodex />;
-  const showClaude = !!service.data.claude && claude;
+  const showClaude = !!service.data.claude && admin && claude;
   return (
     <>
-      {service.data.claude && (
+      {admin && service.data.claude && (
         <div className="actions" role="group" aria-label="AI 引擎">
           <button
             type="button"
@@ -466,11 +468,7 @@ export function Codex() {
           </button>
         </div>
       )}
-      {showClaude ? (
-        <LegacyCodex onlyClaude />
-      ) : (
-        <PlatformCodex service={service} />
-      )}
+      {showClaude ? <LegacyCodex onlyClaude /> : <PlatformCodex />}
     </>
   );
 }

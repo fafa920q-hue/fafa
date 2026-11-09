@@ -1,0 +1,65 @@
+.gpt-layout {
+  display: grid;
+  grid-template-columns: minmax(12rem, 1fr) minmax(0, 3fr);
+  gap: 1rem;
+  align-items: start;
+}
+.gpt-history,
+.gpt-messages {
+  display: grid;
+  gap: 0.75rem;
+  max-height: 55vh;
+  overflow-y: auto;
+  margin-block: 0.8rem;
+}
+.gpt-history-item,
+.gpt-turn {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.gpt-history-item {
+  display: grid;
+  gap: 0.35rem;
+}
+.gpt-history-item > button {
+  text-align: start;
+  white-space: normal;
+}
+.gpt-question {
+  margin-inline-start: 12%;
+  padding: 0.65rem 0.9rem;
+  border-radius: 1rem;
+  white-space: pre-wrap;
+  background: rgba(112, 84, 233, 0.18);
+}
+.gpt-turn {
+  border-bottom: 1px solid rgba(148, 132, 213, 0.25);
+  padding-bottom: 0.85rem;
+}
+.gpt-turn pre {
+  overflow-x: auto;
+  padding: 0.75rem;
+  border-radius: 0.75rem;
+  background: #15142a;
+  color: #ece9ff;
+}
+.gpt-turn .hljs-keyword {
+  color: #b49aff;
+}
+.gpt-turn .hljs-string {
+  color: #9dd9ac;
+}
+.gpt-turn .hljs-comment {
+  color: #a4aac1;
+}
+.gpt-turn .hljs-number {
+  color: #ffc38a;
+}
+@media (max-width: 840px) {
+  .gpt-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .gpt-history {
+    max-height: 28vh;
+  }
+}

@@ -1,3 +1,4 @@
+import { PlatformAiModels, audienceIds } from './PlatformAiModels';
 import { useEffect, useState } from 'react';
 import {
   Card,
@@ -72,6 +73,8 @@ function quotaFields(q: any, available: string[]) {
     },
     ...budgetFields(q.limits),
     numeric('task', '单任务预算 (USD)', q.task),
+    numeric('dailyTokens', '每日 tokens 上限', q.dailyTokens, false),
+    numeric('requestsPerMinute', '每分钟请求数', q.requestsPerMinute, false),
     numeric('concurrency', '并发任务数', q.concurrency, false),
     ...pickModels(available, q.models),
   ];
@@ -81,6 +84,8 @@ function readQuota(d: any, available: string[]) {
     enabled: d.userEnabled,
     limits: readBudget(d),
     task: toMoney(d.task),
+    dailyTokens: d.dailyTokens,
+    requestsPerMinute: d.requestsPerMinute,
     concurrency: d.concurrency,
     models: chosenModels(d, available),
   };
@@ -218,6 +223,7 @@ function Accounts({
                 {health[a.health]}
               </summary>
               <p>
+                {a.has_key ? '密钥 •••••••• · ' : ''}
                 {a.id} · {a.project_id} · {a.service_account_id} ·{' '}
                 {a.models.join('、')}
               </p>
@@ -257,6 +263,7 @@ function Accounts({
           ))}
         </Card>
       )}
+      {policy && <PlatformAiModels accounts={rows} onSaved={info.refresh} />}
       <FormDialog
         open={!!account}
         onClose={() => setAccount(undefined)}
@@ -292,6 +299,17 @@ function Accounts({
             monthly: Number(editing?.monthly_micros ?? 10_000_000),
           }),
           numeric(
+            'priority',
+            '优先级（数值越小优先）',
+            editing?.priority ?? 100,
+            false,
+          ),
+          {
+            name: 'audience',
+            label: '指定共享用户 UUID（逗号分隔，留空对已授权用户开放）',
+            value: editing?.allowed_users?.join(', '),
+          },
+          numeric(
             'concurrency',
             '账户并发限制',
             editing?.concurrency ?? 2,
@@ -303,6 +321,8 @@ function Accounts({
           const payload = {
             ...d,
             note: d.note ?? '',
+            priority: d.priority,
+            allowedUsers: audienceIds(d.audience),
             enabled: d.enabled ?? false,
             limits: readBudget(d),
             models: chosenModels(d, available),
@@ -318,7 +338,7 @@ function Accounts({
               ? d.enabled && !result.enabled
                 ? '已保存，账户仍需通过连接检查'
                 : '已保存'
-              : '已保存，请测试连接后启用',
+              : '已保存，等待连接检查后启用',
           );
         }}
       />
@@ -379,6 +399,19 @@ function Accounts({
               label: '指定账户编号或 OpenAI Project ID',
               value: policy.target,
             },
+            {
+              name: 'allowTextAttachments',
+              label: '允许对话上传小型文本文件',
+              type: 'checkbox',
+              value: String(policy.allowTextAttachments),
+            },
+            numeric('globalDaily', '全局每日预算 (USD)', policy.globalDaily),
+            {
+              name: 'timeZone',
+              label: '额度重置时区（IANA）',
+              value: policy.timeZone,
+              required: true,
+            },
             numeric('global', '全局每月预算 (USD)', policy.globalMonthly),
             ...budgetFields(policy.project, 'project_', '单个项目'),
             numeric(
@@ -395,6 +428,9 @@ function Accounts({
               routing: d.routing,
               target: d.target ?? '',
               globalMonthly: toMoney(d.global),
+              globalDaily: toMoney(d.globalDaily),
+              timeZone: d.timeZone,
+              allowTextAttachments: d.allowTextAttachments,
               project: readBudget(d, 'project_'),
               maxOutput: d.maxOutput,
               defaultUser: readQuota(d, available),
