@@ -16,7 +16,9 @@ export function PolicyTimeField({
   return (
     <div className="reg-time">
       <label>
-        <span>{label}</span>
+        <span>
+          {label} <small>（UTC）</small>
+        </span>
         <input
           aria-label={label + '（UTC）'}
           type="datetime-local"
