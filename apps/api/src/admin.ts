@@ -331,6 +331,57 @@ export async function registerAdmin(app: FastifyInstance) {
     await audit(req.actor.id, 'settings.updated');
     return { ok: true };
   });
+  app.get(
+    '/api/admin/ai-tasks',
+    async () =>
+      sql`SELECT t.id,t.owner_id AS "ownerId",u.name AS "ownerName",u.role AS "ownerRole",
+      t.account_id AS "accountId",coalesce(t.data->>'provider','OPENAI_API') AS provider,
+      t.data->>'status' AS status,t.created_at AS "createdAt",t.updated_at AS "updatedAt",
+      CASE WHEN jsonb_typeof(t.data#>'{usage,input_tokens}')='number' THEN t.data#>'{usage,input_tokens}' END AS "inputTokens",
+      CASE WHEN jsonb_typeof(t.data#>'{usage,output_tokens}')='number' THEN t.data#>'{usage,output_tokens}' END AS "outputTokens",
+      CASE WHEN t.data->>'error' IN (
+        '请求失败，请检查 API Key、额度和模型权限',
+        'Claude API Key 无效或没有所选模型的访问权限',
+        'Claude API 账单或可用余额异常',
+        'Claude API 请求受到频率或额度限制',
+        'Claude API 暂时不可用'
+      ) THEN t.data->>'error'
+      WHEN t.data->>'status'='FAILED' THEN '任务执行失败'
+      WHEN t.data->>'status'='TIMEOUT' THEN '任务超时或 Worker 中断'
+      END AS error
+      FROM ai_tasks t JOIN users u ON u.id=t.owner_id
+      WHERE t.revoked_at IS NULL
+      ORDER BY (t.data->>'status' IN ('QUEUED','RUNNING')) DESC NULLS LAST,t.created_at DESC
+      LIMIT 100`,
+  );
+  app.post('/api/admin/ai-tasks/cancel', async (req) => {
+    const { target, id } = z
+      .object({
+        target: z.enum(['task', 'owner']),
+        id: z.uuid(),
+      })
+      .strict()
+      .parse(req.body);
+    return sql.begin(async (tx) => {
+      const cancelled = await tx`UPDATE ai_tasks t
+        SET data=t.data || '{"status":"CANCELLED"}'::jsonb,updated_at=now()
+        FROM users u
+        WHERE u.id=t.owner_id AND t.revoked_at IS NULL
+        AND t.data->>'status' IN ('QUEUED','RUNNING')
+        AND (t.id=${target === 'task' ? id : null} OR t.owner_id=${target === 'owner' ? id : null})
+        AND (${req.actor.role === 'Owner'} OR u.role NOT IN ('Owner','Admin') OR u.id=${req.actor.id})
+        RETURNING t.id`;
+      if (!cancelled.length) throw notFound();
+      const action =
+        target === 'task'
+          ? 'ai.admin_task_cancelled'
+          : 'ai.admin_owner_tasks_cancelled';
+      for (const row of cancelled)
+        await tx`INSERT INTO audit_events(owner_id,action,target_id,correlation_id)
+          VALUES(${req.actor.id},${action},${row.id},${req.id})`;
+      return { cancelled: cancelled.length };
+    });
+  });
   app.post('/api/admin/jobs/:id/retry', async (req) => {
     const { id } = z.object({ id: z.uuid() }).parse(req.params);
     await sql`update background_jobs set data=data || ${sql.json({ status: 'QUEUED', attempt: 0, nextRun: new Date().toISOString() })} where id=${id} and data->>'status'='FAILED'`;

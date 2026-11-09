@@ -1,3 +1,4 @@
+import { AiRuntimeTasks } from './pages/AiRuntimeTasks';
 import { AccessCenter } from './pages/AccessCenter';
 import { MemberAccessControls } from './pages/MemberDeliveryAdmin';
 import { useState } from 'react';
@@ -61,7 +62,15 @@ function Admin() {
         <Route path="/sources" element={<SourcesAdmin />} />
         <Route path="/servers" element={<ResourceAdmin kind="servers" />} />
         <Route path="/ai" element={<ResourceAdmin kind="ai" />} />
-        <Route path="/jobs" element={<ResourceAdmin kind="jobs" />} />
+        <Route
+          path="/jobs"
+          element={
+            <>
+              <ResourceAdmin kind="jobs" />
+              <AiRuntimeTasks />
+            </>
+          }
+        />
         <Route path="/audit" element={<ResourceAdmin kind="audit" />} />
         <Route path="/settings" element={<SystemSettings />} />
         <Route

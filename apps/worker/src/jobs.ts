@@ -310,6 +310,7 @@ export async function runAiTask(task: any) {
     if (error instanceof Anthropic.APIError) {
       if (error.status === 401 || error.status === 403)
         failure = 'Claude API Key 无效或没有所选模型的访问权限';
+      if (error.status === 402) failure = 'Claude API 账单或可用余额异常';
       if (error.status === 429) failure = 'Claude API 请求受到频率或额度限制';
       if (error.status === 503 || error.status === 529)
         failure = 'Claude API 暂时不可用';

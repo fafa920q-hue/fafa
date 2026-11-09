@@ -236,6 +236,50 @@ it('Claude 账户密文、默认配置、任务计费与流式执行按用户和
     ).toBe(200);
     await activeWorker;
     expect(aborted).toBe(true);
+    const failureCases = [
+      [401, 'Claude API Key 无效或没有所选模型的访问权限'],
+      [402, 'Claude API 账单或可用余额异常'],
+      [429, 'Claude API 请求受到频率或额度限制'],
+      [503, 'Claude API 暂时不可用'],
+      [200, '请求失败，请检查 API Key、额度和模型权限'],
+    ] as const;
+    for (const [code, message] of failureCases) {
+      const [fault] = await sql`INSERT INTO ai_tasks(owner_id,account_id,data)
+        VALUES(${ids[1]},${id},${sql.json({ ...taskPayload, status: 'RUNNING' })}) RETURNING *`;
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async () =>
+          code === 200
+            ? new Response(
+                streamEvents
+                  .slice(0, -1)
+                  .map(
+                    (e) =>
+                      'event: ' +
+                      e.type +
+                      '\ndata: ' +
+                      JSON.stringify(e) +
+                      '\n\n',
+                  )
+                  .join(''),
+                { headers: { 'content-type': 'text/event-stream' } },
+              )
+            : Response.json(
+                {
+                  type: 'error',
+                  error: { type: 'test_fixture', message: sampleKey },
+                },
+                { status: code },
+              ),
+        ),
+      );
+      await runAiTask(fault);
+      const [failed] =
+        await sql`SELECT data FROM ai_tasks WHERE id=${fault.id}`;
+      expect(failed.data).toMatchObject({ status: 'FAILED', error: message });
+      expect(JSON.stringify(failed.data)).not.toContain(sampleKey);
+      await sql`DELETE FROM ai_tasks WHERE id=${fault.id}`;
+    }
     const others = await send(2, '/api/ai/tasks');
     expect(others.json()).toEqual([]);
     expect(
@@ -408,4 +452,60 @@ it('自助注册仅在显式启用的注册窗口内获得体验，补发不延�
   const [manual] =
     await sql`SELECT node_access_until FROM users WHERE id=${ids[1]}`;
   expect(manual.node_access_until).toBeNull();
+});
+
+it('AI 后台只返回必要元数据，强停按角色授权并原子写入审计', async () => {
+  const hidden = 'synthetic-private-prompt-and-error';
+  const create = async (who: number, status: string) => {
+    const [r] = await sql`INSERT INTO ai_tasks(owner_id,account_id,data) VALUES(
+      ${ids[who]},${accounts[who]},${sql.json({ provider: 'OPENAI_API', prompt: hidden, output: hidden, error: hidden, status })}) RETURNING id`;
+    return r.id;
+  };
+  const protectedId = await create(0, 'RUNNING');
+  const memberId = await create(1, 'RUNNING');
+  const queued = await create(1, 'QUEUED');
+  const route = '/api/admin/ai-tasks';
+  expect((await send(1, route)).statusCode).toBe(403);
+  await sql`UPDATE users SET role='Admin' WHERE id=${ids[2]}`;
+  try {
+    const listed = await send(2, route);
+    expect(listed.statusCode).toBe(200);
+    expect(listed.body).not.toContain(hidden);
+    expect(listed.body).not.toContain('anthropic_secret');
+    expect(listed.json()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: memberId,
+          ownerId: ids[1],
+          accountId: accounts[1],
+          status: 'RUNNING',
+        }),
+      ]),
+    );
+    const stop = (who: number, target: string, id: string) =>
+      send(who, route + '/cancel', 'POST', { target, id });
+    expect((await stop(2, 'task', protectedId)).statusCode).toBe(404);
+    expect((await stop(1, 'task', memberId)).statusCode).toBe(403);
+    expect((await stop(2, 'task', memberId)).json()).toEqual({ cancelled: 1 });
+    expect((await stop(0, 'owner', ids[1])).json()).toEqual({ cancelled: 1 });
+    const actions =
+      await sql`SELECT owner_id,action,target_id FROM audit_events WHERE target_id IN (${memberId},${queued})`;
+    expect(actions).toEqual(
+      expect.arrayContaining([
+        {
+          owner_id: ids[2],
+          action: 'ai.admin_task_cancelled',
+          target_id: memberId,
+        },
+        {
+          owner_id: ids[0],
+          action: 'ai.admin_owner_tasks_cancelled',
+          target_id: queued,
+        },
+      ]),
+    );
+    await stop(0, 'task', protectedId);
+  } finally {
+    await sql`UPDATE users SET role='Member' WHERE id=${ids[2]}`;
+  }
 });
