@@ -1,32 +1,35 @@
-"""Exercise the official local App Server in an empty, offline EC2 container."""
+"""Verify two isolated Codex profiles using the official CLI and offline App Server."""
 
 import argparse
 import json
+import os
 from pathlib import Path
 import queue
 import subprocess
+import tempfile
 import threading
 
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('binary', type=Path)
-    args = parser.parse_args()
-    binary = args.binary.resolve(strict=True)
-    image = 'mcr.microsoft.com/playwright:v1.64.1-noble'
-    name = 'fafa-codex-offline-smoke'
-    command = [
-        'docker', 'run', '--rm', '-i', '--name', name, '--pull=never',
+def docker_profile(binary, home, workspace):
+    return [
+        'docker', 'run', '--rm', '--pull=never',
         '--network=none', '--cap-drop=ALL', '--security-opt=no-new-privileges',
         '--read-only', '--user=10001:10001', '--pids-limit=64', '--memory=384m',
-        '--tmpfs=/home/codex:rw,nosuid,nodev,mode=700,uid=10001,gid=10001',
         '--tmpfs=/tmp:rw,nosuid,nodev,mode=1777',
-        '--tmpfs=/workspace:rw,nosuid,nodev,mode=700,uid=10001,gid=10001',
         '--env=HOME=/home/codex', '--env=CODEX_HOME=/home/codex',
         '--workdir=/workspace',
         '--mount', f'type=bind,source={binary},target=/usr/local/bin/codex,readonly',
-        image, '/usr/local/bin/codex', 'app-server', '--stdio',
+        '--mount', f'type=bind,source={home},target=/home/codex',
+        '--mount', f'type=bind,source={workspace},target=/workspace',
     ]
+
+
+IMAGE = 'mcr.microsoft.com/playwright:v1.64.1-noble'
+CLI = '/usr/local/bin/codex'
+
+
+def check_app_server(profile, name):
+    command = profile + ['-i', '--name', name, IMAGE, CLI, 'app-server', '--stdio']
     messages = queue.Queue()
     with subprocess.Popen(
         command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
@@ -65,15 +68,63 @@ def main():
             thread = send('thread/start', {
                 'cwd': '/workspace', 'approvalPolicy': 'never', 'sandbox': 'read-only',
             }, 3)
-            if not thread.get('thread', {}).get('id'):
+            thread_id = thread.get('thread', {}).get('id')
+            if not thread_id:
                 raise RuntimeError('THREAD_NOT_CREATED')
-            print('PASS initialize, independent signed-out account, restricted thread creation')
+            return thread_id
         finally:
             process.stdin.close()
             try:
                 process.wait(timeout=10)
             except subprocess.TimeoutExpired:
                 subprocess.run(['docker', 'stop', '-t', '2', name], check=False, stdout=subprocess.DEVNULL)
+
+
+def check_profile(profile, identity, other):
+    probe = profile + [
+        IMAGE, 'sh', '-ec',
+        'test "$(cat /home/codex/.profile-id)" = "$1"; '
+        'test -f "/workspace/$1"; test ! -e "/workspace/$2"; '
+        'test ! -e "/home/codex/$2"; test ! -e /var/run/docker.sock; '
+        'test ! -e /opt/fafa-one/source',
+        'isolation-probe', identity, other,
+    ]
+    subprocess.run(probe, check=True, timeout=20, stdout=subprocess.DEVNULL)
+    status = subprocess.run(
+        profile + [IMAGE, CLI, 'login', 'status'],
+        capture_output=True, text=True, timeout=25,
+    )
+    if status.returncode != 1 or 'not logged in' not in (status.stdout + status.stderr).lower():
+        raise RuntimeError('EXPECTED_ISOLATED_SIGNED_OUT_STATUS')
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('binary', type=Path)
+    args = parser.parse_args()
+    binary = args.binary.resolve(strict=True)
+    with tempfile.TemporaryDirectory(prefix='fafa-codex-profile-test-') as tmp:
+        root = Path(tmp)
+        ids = ('test-profile-a', 'test-profile-b')
+        threads = set()
+        for identity, other in (ids, ids[::-1]):
+            home = root / (identity + '-home')
+            work = root / (identity + '-work')
+            for folder in (home, work):
+                folder.mkdir(mode=0o700)
+                os.chown(folder, 10001, 10001)
+            for marker in (home / '.profile-id', home / identity, work / identity):
+                marker.write_text(identity + '\n')
+                marker.chmod(0o600)
+                os.chown(marker, 10001, 10001)
+            profile = docker_profile(binary, home, work)
+            check_profile(profile, identity, other)
+            threads.add(check_app_server(profile, f'fafa-codex-offline-{os.getpid()}-{identity}'))
+            check_profile(profile, identity, other)
+            print('PASS', identity, 'isolated workspace and home, official signed-out status across restarts')
+        if len(threads) != len(ids):
+            raise RuntimeError('EXPECTED_DISTINCT_APP_SERVER_THREADS')
+        print('PASS two independent official App Server processes and restricted threads')
 
 
 if __name__ == '__main__':
