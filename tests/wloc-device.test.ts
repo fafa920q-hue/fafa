@@ -4,6 +4,8 @@ import {
   queryDevice,
   saveDevice,
   clearDevice,
+  diagnoseDevice,
+  diagnoseDevices,
   deviceFailure,
 } from '../apps/web/src/locations/device';
 const host = 'gs-loc.apple.com';
@@ -103,4 +105,64 @@ it('rejects unsupported zero coordinates and invalid parameters before network a
     expect(() => deviceUrl(host, 'save', point)).toThrow('零');
   expect(() => deviceUrl('evil.invalid' as any, 'query')).toThrow();
   expect(() => deviceUrl(host, 'save', point, NaN)).toThrow();
+});
+it('diagnosis distinguishes network, http and invalid failures', async () => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () => {
+      throw new TypeError('Failed to fetch');
+    }),
+  );
+  await expect(diagnoseDevice(host)).resolves.toMatchObject({
+    host,
+    detected: false,
+    kind: 'network',
+  });
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () => new Response('<html>Apple</html>')),
+  );
+  await expect(diagnoseDevice(host)).resolves.toMatchObject({
+    detected: false,
+    kind: 'http',
+  });
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () => json({ success: 'yes' })),
+  );
+  await expect(diagnoseDevice(host)).resolves.toMatchObject({
+    detected: false,
+    kind: 'invalid',
+  });
+});
+it('diagnosis reports empty state as detected module without saved coordinates', async () => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () => json({ success: false, error: '无已保存的坐标' })),
+  );
+  await expect(diagnoseDevice(host)).resolves.toMatchObject({
+    host,
+    detected: true,
+    kind: 'empty',
+  });
+});
+it('diagnosis reports saved settings as detected module', async () => {
+  vi.stubGlobal('fetch', vi.fn(async () => json(settings)));
+  const result = await diagnoseDevice(host);
+  expect(result.detected).toBe(true);
+  expect(result.kind).toBe('ok');
+  expect(result.settings).toMatchObject(point);
+});
+it('diagnosis covers both device hosts', async () => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () => json({ success: false, error: '无已保存的坐标' })),
+  );
+  const results = await diagnoseDevices();
+  expect(results).toHaveLength(2);
+  expect(results.map((r) => r.host)).toEqual([
+    'gs-loc.apple.com',
+    'gs-loc-cn.apple.com',
+  ]);
+  expect(results.every((r) => r.detected)).toBe(true);
 });
