@@ -1015,6 +1015,15 @@ describe('真实数据库 API 闭环', () => {
     await sql`update settings set value=${sql.json(previous.value)} where key='seat_limit'`;
   });
   it('AI 账户加密、切换隔离、演示任务不得调用外部', async () => {
+    // 个人 AI 账户流程仅在平台 AI 未启用时开放：平台启用时，非管理员对
+    // /api/ai_accounts 的请求会在 onRequest 被 403 AI_PLATFORM_ONLY 拦截，
+    // 账户根本建不出来（平台启用时的门控行为由
+    // tests/platform-ai.integration.test.ts 覆盖）。本测试沿用仓库默认测试
+    // 环境（.env.example 与 vitest.config.ts：DEMO_MODE=true、
+    // PLATFORM_AI_ENABLED 未设置），在此显式固定两者，使套件在任何外层
+    // 环境变量下都能稳定通过。
+    vi.stubEnv('PLATFORM_AI_ENABLED', 'false');
+    vi.stubEnv('DEMO_MODE', 'true');
     const key = 'sk-test-fixture-not-real';
     const a = (
       await send(1, '/api/ai_accounts', 'POST', { name: '开发', apiKey: key })
@@ -1037,6 +1046,7 @@ describe('真实数据库 API 闭环', () => {
     ).toBe(409);
     const [stored] = await sql`select secret from ai_accounts where id=${a.id}`;
     expect(JSON.stringify(stored)).not.toContain(key);
+    vi.unstubAllEnvs();
   });
   it('SSH 未授权与演示出站必须拒绝', async () => {
     const r = await send(1, '/api/server_connections', 'POST', {
