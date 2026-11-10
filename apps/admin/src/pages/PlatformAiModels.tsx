@@ -17,19 +17,33 @@ const toggle = (name: string, label: string, value: boolean): Field => ({
   type: 'checkbox',
   value: String(value),
 });
-const amount = (name: string, label: string, value: number): Field => ({
+const amount = (
+  name: string,
+  label: string,
+  value: number,
+  min = 0,
+): Field => ({
   name,
   label,
   type: 'number',
   required: true,
-  min: 0,
+  // 下限与后端 platformModelConfig 一致：context ≥256，费率 ≥0.000001 USD
+  //（后端 money 要求 ≥1 微美元），cached/cacheWrite 可为 0。
+  min,
   step: '0.000001',
   value: String(value),
 });
 const micros = (value: number) => Math.round(value * 1_000_000);
 const usd = (value?: number) => (value ?? 0) / 1_000_000;
+const uuidPattern =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export function audienceIds(value?: string) {
-  return value?.trim() ? [...new Set(value.trim().split(/[\s,，]+/))] : null;
+  if (!value?.trim()) return null;
+  const ids = [...new Set(value.trim().split(/[\s,，]+/))];
+  // 后端 audience 要求每项都是 UUID；不在此校验会以笼统 400 驳回。
+  const bad = ids.find((id) => !uuidPattern.test(id));
+  if (bad) throw new Error(`指定用户不是有效的 UUID：${bad}`);
+  return ids;
 }
 
 export function PlatformAiModels({
@@ -119,11 +133,13 @@ export function PlatformAiModels({
             'context',
             '输入 tokens 上限（256–262144）',
             model?.pricing.context ?? 32768,
+            256,
           ),
           amount(
             'input',
             '标准输入 USD / 百万 tokens',
             usd(model?.pricing.input),
+            0.000001,
           ),
           amount(
             'cached',
@@ -139,14 +155,24 @@ export function PlatformAiModels({
             'output',
             '标准输出 USD / 百万 tokens',
             usd(model?.pricing.output),
+            0.000001,
           ),
           amount(
             'task',
             '单次费用上限 USD',
             usd(model?.task_micros ?? 1_000_000),
+            0.000001,
           ),
         ]}
         onSubmit={async (d) => {
+          // 与后端 platformModelConfig 的 refine 一致，提交前先给出明确提示，
+          // 避免以笼统 400 驳回。
+          if (d.defaultChat && (!d.supportsChat || !d.enabled))
+            throw new Error(
+              '设为 GPT 默认模型需同时开启“允许 GPT 对话”和“启用模型”',
+            );
+          if (micros(d.cached) > micros(d.input))
+            throw new Error('缓存读取费率不能高于标准输入费率');
           await request(
             api + '/' + encodeURIComponent(model?.model_id ?? d.id),
             'PUT',
