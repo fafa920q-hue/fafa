@@ -1,0 +1,4368 @@
+diff --git a/apps/admin/src/pages/NodesMonitor.tsx b/apps/admin/src/pages/NodesMonitor.tsx
+index 2e4da69..002c5ac 100644
+--- a/apps/admin/src/pages/NodesMonitor.tsx
++++ b/apps/admin/src/pages/NodesMonitor.tsx
+@@ -1,9 +1,99 @@
++import { useMemo } from 'react';
+ import { Link } from 'react-router-dom';
+-import { Empty, PageTitle } from '../../../../packages/ui/src/core';
++import {
++  Badge,
++  Card,
++  DataState,
++  Empty,
++  PageTitle,
++  useData,
++  type Row,
++} from '../../../../packages/ui/src/core';
++
++// 阶段 3：由占位升级为真实探测总览（GET /api/probe/status + /api/probe/runs）。
++// 无任何探测数据时仍保留诚实空态，不编数字。
++type ProbeStatusInfo = {
++  probePoint: string | null;
++  lastFinishedAt: string | null;
++  queued: number;
++  running: number;
++  budgetRemainingMb: number;
++  budgetLimitMb: number;
++  recentFailures: number;
++  lastRunOk: number | null;
++};
++type ProbeRun = {
++  id: string;
++  nodeId: string;
++  probePoint: string;
++  target: string;
++  startedAt: string;
++  finishedAt: string | null;
++  status: string;
++  latencyMs: number | null;
++  downloadMbps: number | null;
++  uploadMbps: number | null;
++  errorCode: string | null;
++  errorMessage: string | null;
++  createdAt: string;
++};
++const runStatus: Record<
++  string,
++  { text: string; tone: 'neutral' | 'success' | 'warning' | 'danger' }
++> = {
++  OK: { text: '可用', tone: 'success' },
++  TIMEOUT: { text: '超时', tone: 'warning' },
++  FAILED: { text: '失败', tone: 'danger' },
++};
++const fmtTime = (value: string | null | undefined) =>
++  value
++    ? new Date(value).toLocaleString('zh-CN', {
++        month: 'numeric',
++        day: 'numeric',
++        hour: '2-digit',
++        minute: '2-digit',
++      })
++    : '尚未探测';
++const quantile = (sorted: number[], q: number) => {
++  if (!sorted.length) return null;
++  return sorted[Math.min(sorted.length - 1, Math.ceil(q * sorted.length) - 1)];
++};
+ 
+-// 阶段 1 占位页：只呈现诚实空态，不调任何 API、不编数字。
+-// 真实探测总览（可用率、延迟分布、异常告警）是阶段 3 的工作。
+ export function NodesMonitor() {
++  const status = useData<ProbeStatusInfo>('/api/probe/status');
++  const runs = useData<{ items: ProbeRun[]; total: number }>(
++    '/api/probe/runs?limit=50',
++  );
++  const nodes = useData<Row[]>('/api/nodes');
++  const items = runs.data?.items ?? [];
++  const total = runs.data?.total ?? 0;
++  const okItems = useMemo(
++    () => items.filter((r) => r.status === 'OK'),
++    [items],
++  );
++  const okRate =
++    items.length > 0 ? Math.round((okItems.length / items.length) * 100) : null;
++  const latencies = useMemo(
++    () =>
++      okItems
++        .map((r) => r.latencyMs)
++        .filter((v): v is number => typeof v === 'number')
++        .sort((a, b) => a - b),
++    [okItems],
++  );
++  const p50 = quantile(latencies, 0.5);
++  const p90 = quantile(latencies, 0.9);
++  const p99 = quantile(latencies, 0.99);
++  const failures = useMemo(
++    () => items.filter((r) => r.status !== 'OK').slice(0, 10),
++    [items],
++  );
++  const nameOf = (id: string) =>
++    nodes.data?.find((n) => String(n.id) === id)?.name ??
++    `节点 ${String(id).slice(0, 8)}`;
++  const loaded = Boolean(status.data) && Boolean(runs.data);
++  const hasData = total > 0 || Boolean(status.data?.lastFinishedAt);
++  const budget = status.data;
+   return (
+     <>
+       <PageTitle
+@@ -11,11 +101,143 @@ export function NodesMonitor() {
+         description="节点探测总览与异常告警。"
+         eyebrow="FAFA ONE / ADMINISTRATION"
+       />
+-      <Empty
+-        title="暂无探测数据"
+-        description="节点检测（第 3 步）尚未上线；已导入节点的状态仍为『未检测』，不标在线。"
+-        action={<Link to="/sources">前往第三方订阅源</Link>}
++      <DataState
++        error={status.error || runs.error}
++        loading={!loaded && !status.error && !runs.error}
++        onRetry={() => {
++          status.refresh();
++          runs.refresh();
++        }}
+       />
++      {loaded && !hasData && (
++        <Empty
++          title="暂无探测数据"
++          description="节点检测尚未产生任何探测记录；已导入节点的状态仍为『未探测』，不标在线。"
++          action={<Link to="/sources">前往第三方订阅源</Link>}
++        />
++      )}
++      {loaded && hasData && (
++        <>
++          <div className="stats">
++            {[
++              {
++                label: '可用率',
++                value: okRate == null ? '未探测' : `${okRate}%`,
++                hint:
++                  items.length > 0
++                    ? `最近 ${items.length} 条探测记录中可用占比` +
++                      (budget?.lastRunOk != null
++                        ? ` · 最近一次运行可用 ${budget.lastRunOk} 个`
++                        : '')
++                    : '暂无探测记录',
++              },
++              {
++                label: '延迟中位数',
++                value: p50 == null ? '未探测' : `${p50} ms`,
++                hint:
++                  latencies.length > 0
++                    ? `基于最近 ${latencies.length} 条可用记录`
++                    : '暂无可用探测记录',
++              },
++              {
++                label: '测速预算',
++                value:
++                  budget == null
++                    ? '未探测'
++                    : `${budget.budgetRemainingMb} / ${budget.budgetLimitMb} MB`,
++                hint: budget?.probePoint
++                  ? `当日剩余 / 上限 · 测点 ${budget.probePoint}`
++                  : '当日剩余 / 上限',
++              },
++              {
++                label: '24 小时内失败',
++                value:
++                  budget?.recentFailures == null
++                    ? '未探测'
++                    : `${budget.recentFailures} 条`,
++                hint: '最近 24 小时非可用探测记录',
++              },
++            ].map((item) => (
++              <div className="glass stat" key={item.label}>
++                <div>
++                  <label>{item.label}</label>
++                  <strong>{item.value}</strong>
++                  <small>{item.hint}</small>
++                </div>
++              </div>
++            ))}
++          </div>
++          <p className="pro-table-more">
++            上次同步：{fmtTime(budget?.lastFinishedAt)} · 排队中{' '}
++            {budget?.queued ?? '未探测'} · 进行中 {budget?.running ?? '未探测'}
++            {budget?.probePoint ? ` · 测点 ${budget.probePoint}` : ''}
++          </p>
++          <div className="two-col">
++            <Card
++              title="延迟分布"
++              description="最近可用记录的分位数（真实样本，非模型估算）"
++            >
++              {latencies.length === 0 ? (
++                <Empty
++                  title="暂无可用探测记录"
++                  description="最近 50 条探测记录中没有状态为可用的行，无法计算延迟分布。"
++                />
++              ) : (
++                <div className="list">
++                  {[
++                    ['p50', p50],
++                    ['p90', p90],
++                    ['p99', p99],
++                  ].map(([label, value]) => (
++                    <div className="list-item" key={label as string}>
++                      <strong>{label}</strong>
++                      <span>{value == null ? '未探测' : `${value} ms`}</span>
++                    </div>
++                  ))}
++                  <p className="pro-table-more">
++                    基于最近 {latencies.length} 条可用记录
++                    {total > 50 ? `（共 ${total} 条记录，取最近 50 条）` : ''}。
++                  </p>
++                </div>
++              )}
++            </Card>
++            <Card
++              title="最近失败"
++              description="最近 50 条探测记录中的非可用行（最多 10 条）"
++            >
++              {failures.length === 0 ? (
++                <Empty
++                  title="最近暂无失败"
++                  description="最近 50 条探测记录全部可用。"
++                />
++              ) : (
++                <div className="list">
++                  {failures.map((r) => {
++                    const st = runStatus[r.status] ?? {
++                      text: r.status,
++                      tone: 'neutral' as const,
++                    };
++                    return (
++                      <div className="list-item" key={String(r.id)}>
++                        <div>
++                          <strong>{String(nameOf(String(r.nodeId)))}</strong>
++                          <small>
++                            {fmtTime(r.startedAt)} ·{' '}
++                            {String(
++                              r.errorMessage || r.errorCode || '未说明原因',
++                            )}
++                          </small>
++                        </div>
++                        <Badge tone={st.tone}>{st.text}</Badge>
++                      </div>
++                    );
++                  })}
++                </div>
++              )}
++            </Card>
++          </div>
++        </>
++      )}
+     </>
+   );
+ }
+diff --git a/apps/api/src/nodes.ts b/apps/api/src/nodes.ts
+index 61caa8b..b2d3819 100644
+--- a/apps/api/src/nodes.ts
++++ b/apps/api/src/nodes.ts
+@@ -13,6 +13,7 @@ import {
+   nodeMetadata,
+   type Node,
+ } from '../../../packages/subscription/src';
++import { latestProbeByNode } from './probe';
+ const batchSchema = z.object({
+   name: z.string().min(1).max(80),
+   group: z.string().max(80).default(''),
+@@ -22,7 +23,7 @@ const batchSchema = z.object({
+   redistributionAuthorized: z.boolean().default(false),
+   authorizationReference: z.string().max(200).default(''),
+ });
+-function summary(row: any, actorId: string) {
++function summary(row: any, actorId: string, probe?: any) {
+   return {
+     id: row.id,
+     sourceId: row.source_id,
+@@ -46,7 +47,17 @@ function summary(row: any, actorId: string) {
+             new Date(row.source_data.expiresAt) <= new Date()
+           ? 'EXPIRED'
+           : 'PENDING_VERIFICATION',
+-    latency: null,
++    // 探测结果取该节点最新一行 probe_results；无行即未探测。
++    // summary() 只对可见行调用，未授权节点在 map 之前已被过滤，不走这条。
++    latencyMs: probe?.latency_ms ?? null,
++    downloadMbps:
++      probe?.download_mbps == null ? null : Number(probe.download_mbps),
++    uploadMbps: probe?.upload_mbps == null ? null : Number(probe.upload_mbps),
++    lastProbeAt: probe?.finished_at ?? row.last_probe_at ?? null,
++    probeStatus: probe ? probe.status : 'UNPROBED',
++    // 兼容旧前端：latency 与 latencyMs 同值。
++    latency: probe?.latency_ms ?? null,
++    // 无用户流量统计，保持 null，不得编数。
+     traffic: null,
+   };
+ }
+@@ -132,18 +143,19 @@ export async function registerNodes(app: FastifyInstance) {
+   app.get('/api/nodes', async (req) => {
+     const rows =
+       await sql`select n.*,s.data as source_data,g.data as grant_data from nodes n join node_sources s on s.id=n.source_id join users u on u.id=s.owner_id left join node_group_grants g on g.source_id=s.id and g.user_id=${req.actor.id} and g.revoked_at is null where n.revoked_at is null and s.revoked_at is null and not u.disabled and u.deleted_at is null and (s.owner_id=${req.actor.id} or ((s.data->>'kind'='OWNED_NODE' or (s.data->>'authorized'='true' and s.data->>'redistributionAuthorized'='true' and length(trim(coalesce(s.data->>'authorizationReference','')))>0)) and g.id is not null)) order by n.created_at limit 5000`;
+-    return rows
+-      .filter((row) => {
+-        const group = row.data.group || row.source_data.group || '';
+-        return (
+-          row.owner_id === req.actor.id ||
+-          (row.grant_data &&
+-            activeGrant(row.grant_data) &&
+-            sourceAllowed(req.actor, row.source_id, group) &&
+-            withinNodeGrantScope(row.grant_data, row.id, group))
+-        );
+-      })
+-      .map((row) => summary(row, req.actor.id));
++    const visible = rows.filter((row) => {
++      const group = row.data.group || row.source_data.group || '';
++      return (
++        row.owner_id === req.actor.id ||
++        (row.grant_data &&
++          activeGrant(row.grant_data) &&
++          sourceAllowed(req.actor, row.source_id, group) &&
++          withinNodeGrantScope(row.grant_data, row.id, group))
++      );
++    });
++    // 最新探测行一次批量查出再合并，禁止每行一次查询。
++    const probes = await latestProbeByNode(visible.map((row) => row.id));
++    return visible.map((row) => summary(row, req.actor.id, probes.get(row.id)));
+   });
+   app.patch('/api/nodes/:id', async (req) => {
+     const { id } = z.object({ id: z.uuid() }).parse(req.params);
+diff --git a/apps/api/src/probe.ts b/apps/api/src/probe.ts
+new file mode 100644
+index 0000000..5be731f
+--- /dev/null
++++ b/apps/api/src/probe.ts
+@@ -0,0 +1,359 @@
++import type { FastifyInstance } from 'fastify';
++import { z } from 'zod';
++import {
++  activeGrant,
++  sourceAllowed,
++  withinNodeGrantScope,
++} from '../../../packages/auth/src/business-access';
++import { sql, audit } from '../../../packages/db/src';
++import { AppError, notFound, isAdmin } from '../../../packages/shared/src';
++
++// 阶段 3（节点探测）：探测设置、预算与共享查询助手。
++// 设置全部走 settings 表（key/value jsonb），不在迁移里插种子行；
++// 未配置的键一律用下面的代码默认值，首次读取时不写回。
++export const PROBE_DEFAULTS = {
++  latencyIntervalSeconds: 90,
++  speedIntervalSeconds: 3600,
++  dailyBudgetMb: 10240,
++  concurrency: 5,
++  timeoutSeconds: 30,
++  speedBytes: 5242880,
++  probePoint: 'kong-us-east-2',
++  retentionDays: 30,
++} as const;
++export const PROBE_DELAY_TARGET = 'https://www.gstatic.com/generate_204';
++export const PROBE_SPEED_URL = (bytes: number) =>
++  `https://speed.cloudflare.com/__down?bytes=${bytes}`;
++const clamp = (value: number, min: number, max: number) =>
++  Math.min(max, Math.max(min, value));
++const asNumber = (value: unknown, fallback: number) => {
++  const n = Number(value);
++  return Number.isFinite(n) ? n : fallback;
++};
++const asString = (value: unknown, fallback: string) =>
++  typeof value === 'string' && value ? value : fallback;
++export type ProbeSettings = {
++  latencyIntervalSeconds: number;
++  speedIntervalSeconds: number;
++  dailyBudgetMb: number;
++  concurrency: number;
++  timeoutSeconds: number;
++  speedBytes: number;
++  probePoint: string;
++  retentionDays: number;
++  dailyUsageMb: number;
++  usageDate: string;
++  lastLatencyAt: string | null;
++  lastSpeedAt: string | null;
++  lastRetentionAt: string | null;
++  lastRun: {
++    finishedAt: string;
++    ok: number;
++    total: number;
++    kind: string;
++  } | null;
++};
++export async function readProbeSettings(): Promise<ProbeSettings> {
++  const rows =
++    await sql`select key, value from settings where key like 'probe_%'`;
++  const byKey = new Map(rows.map((r: any) => [r.key, r.value]));
++  const usage =
++    byKey.get('probe_daily_usage') &&
++    typeof byKey.get('probe_daily_usage') === 'object'
++      ? (byKey.get('probe_daily_usage') as any)
++      : null;
++  const today = new Date().toISOString().slice(0, 10);
++  const lastRun =
++    byKey.get('probe_last_run') &&
++    typeof byKey.get('probe_last_run') === 'object'
++      ? (byKey.get('probe_last_run') as any)
++      : null;
++  return {
++    latencyIntervalSeconds: clamp(
++      asNumber(
++        byKey.get('probe_latency_interval_seconds'),
++        PROBE_DEFAULTS.latencyIntervalSeconds,
++      ),
++      60,
++      120,
++    ),
++    speedIntervalSeconds: clamp(
++      asNumber(
++        byKey.get('probe_speed_interval_seconds'),
++        PROBE_DEFAULTS.speedIntervalSeconds,
++      ),
++      300,
++      86400,
++    ),
++    dailyBudgetMb: Math.max(
++      0,
++      asNumber(
++        byKey.get('probe_daily_budget_mb'),
++        PROBE_DEFAULTS.dailyBudgetMb,
++      ),
++    ),
++    concurrency: clamp(
++      asNumber(byKey.get('probe_concurrency'), PROBE_DEFAULTS.concurrency),
++      1,
++      10,
++    ),
++    timeoutSeconds: clamp(
++      asNumber(
++        byKey.get('probe_timeout_seconds'),
++        PROBE_DEFAULTS.timeoutSeconds,
++      ),
++      5,
++      60,
++    ),
++    speedBytes: clamp(
++      asNumber(byKey.get('probe_speed_bytes'), PROBE_DEFAULTS.speedBytes),
++      1048576,
++      10485760,
++    ),
++    probePoint: asString(
++      byKey.get('probe_point'),
++      // 部署时可配：settings 键优先，其次环境变量，最后默认值。
++      asString(process.env.PROBE_POINT, PROBE_DEFAULTS.probePoint),
++    ),
++    // 探测结果保留期（天）：settings 键 probe_retention_days，clamp 1–365。
++    retentionDays: clamp(
++      asNumber(byKey.get('probe_retention_days'), PROBE_DEFAULTS.retentionDays),
++      1,
++      365,
++    ),
++    // 当日累计按 UTC 日期归属；日期不是今天即视为 0（由 Worker 写回时重置）。
++    dailyUsageMb:
++      usage?.date === today ? Math.max(0, asNumber(usage?.mb, 0)) : 0,
++    usageDate: today,
++    lastLatencyAt: asString(byKey.get('probe_last_latency_at'), '') || null,
++    lastSpeedAt: asString(byKey.get('probe_last_speed_at'), '') || null,
++    lastRetentionAt: asString(byKey.get('probe_last_retention_at'), '') || null,
++    lastRun:
++      lastRun && typeof lastRun.ok === 'number'
++        ? {
++            finishedAt: String(lastRun.finishedAt || ''),
++            ok: lastRun.ok,
++            total: Number(lastRun.total) || 0,
++            kind: String(lastRun.kind || ''),
++          }
++        : null,
++  };
++}
++export async function probeBudgetRemaining() {
++  const settings = await readProbeSettings();
++  const usedMb = settings.dailyUsageMb;
++  return {
++    limitMb: settings.dailyBudgetMb,
++    usedMb,
++    remainingMb: Math.max(0, settings.dailyBudgetMb - usedMb),
++  };
++}
++export function probeRowJson(row: any) {
++  return {
++    id: row.id,
++    nodeId: row.node_id,
++    probePoint: row.probe_point,
++    target: row.target,
++    startedAt: row.started_at,
++    finishedAt: row.finished_at,
++    status: row.status,
++    latencyMs: row.latency_ms,
++    downloadMbps: row.download_mbps == null ? null : Number(row.download_mbps),
++    uploadMbps: row.upload_mbps == null ? null : Number(row.upload_mbps),
++    errorCode: row.error_code,
++    errorMessage: row.error_message,
++    createdAt: row.created_at,
++  };
++}
++// 每节点最新一行 probe_results（一次查询，禁止每行一次查询）。
++export async function latestProbeByNode(
++  ids: string[],
++): Promise<Map<string, any>> {
++  const map = new Map<string, any>();
++  if (!ids.length) return map;
++  const rows =
++    await sql`select distinct on (node_id) * from probe_results where node_id = any(${ids}::uuid[]) order by node_id, created_at desc`;
++  for (const row of rows) map.set(row.node_id, row);
++  return map;
++}
++// 与 GET /api/nodes 同一套可见规则：本人节点，或有有效授权。
++// Owner/Admin 可见任意未撤销节点（探测是管理动作，不走订阅授权）。
++export async function visibleNodeIds(actor: any): Promise<string[]> {
++  if (isAdmin(actor.role)) {
++    const rows =
++      await sql`select n.id from nodes n join node_sources s on s.id=n.source_id join users u on u.id=s.owner_id where n.revoked_at is null and s.revoked_at is null and not u.disabled and u.deleted_at is null`;
++    return rows.map((r: any) => r.id);
++  }
++  const rows =
++    await sql`select n.*,s.data as source_data,g.data as grant_data from nodes n join node_sources s on s.id=n.source_id join users u on u.id=s.owner_id left join node_group_grants g on g.source_id=s.id and g.user_id=${actor.id} and g.revoked_at is null where n.revoked_at is null and s.revoked_at is null and not u.disabled and u.deleted_at is null and (s.owner_id=${actor.id} or ((s.data->>'kind'='OWNED_NODE' or (s.data->>'authorized'='true' and s.data->>'redistributionAuthorized'='true' and length(trim(coalesce(s.data->>'authorizationReference','')))>0)) and g.id is not null)) order by n.created_at limit 5000`;
++  return rows
++    .filter((row: any) => {
++      const group = row.data.group || row.source_data.group || '';
++      return (
++        row.owner_id === actor.id ||
++        (row.grant_data &&
++          activeGrant(row.grant_data) &&
++          sourceAllowed(actor, row.source_id, group) &&
++          withinNodeGrantScope(row.grant_data, row.id, group))
++      );
++    })
++    .map((row: any) => row.id);
++}
++export async function visibleNodeFor(actor: any, nodeId: string) {
++  if (isAdmin(actor.role)) {
++    const [row] =
++      await sql`select n.* from nodes n join node_sources s on s.id=n.source_id join users u on u.id=s.owner_id where n.id=${nodeId} and n.revoked_at is null and s.revoked_at is null and not u.disabled and u.deleted_at is null`;
++    return row || null;
++  }
++  const [row] =
++    await sql`select n.*,s.data as source_data,g.data as grant_data from nodes n join node_sources s on s.id=n.source_id join users u on u.id=s.owner_id left join node_group_grants g on g.source_id=s.id and g.user_id=${actor.id} and g.revoked_at is null where n.id=${nodeId} and n.revoked_at is null and s.revoked_at is null and not u.disabled and u.deleted_at is null and (s.owner_id=${actor.id} or ((s.data->>'kind'='OWNED_NODE' or (s.data->>'authorized'='true' and s.data->>'redistributionAuthorized'='true' and length(trim(coalesce(s.data->>'authorizationReference','')))>0)) and g.id is not null))`;
++  if (!row) return null;
++  const group = row.data.group || row.source_data.group || '';
++  if (
++    row.owner_id === actor.id ||
++    (row.grant_data &&
++      activeGrant(row.grant_data) &&
++      sourceAllowed(actor, row.source_id, group) &&
++      withinNodeGrantScope(row.grant_data, row.id, group))
++  )
++    return row;
++  return null;
++}
++// 探测范围：未撤销、来源未撤销且启用、节点未禁用、来源未过期、
++// 来源 kind 为 OWNED_NODE 或授权完整的第三方源。
++// 与 apps/worker 的 runProbeJob 共用同一 SQL，改动只改这一处。
++export async function probeEligibleNodeRows() {
++  return sql`select n.*,s.data as source_data from nodes n join node_sources s on s.id=n.source_id join users u on u.id=s.owner_id where n.revoked_at is null and s.revoked_at is null and not u.disabled and u.deleted_at is null and coalesce(s.data->>'enabled','true')='true' and n.data->>'enabled' is distinct from 'false' and (s.data->>'expiresAt' is null or (s.data->>'expiresAt')::timestamptz>now()) and (s.data->>'kind'='OWNED_NODE' or (s.data->>'authorized'='true' and s.data->>'redistributionAuthorized'='true' and length(trim(coalesce(s.data->>'authorizationReference','')))>0)) order by n.created_at`;
++}
++// 与 apps/probe/src/probe.ts 的 isProbeEligible 同口径的原因版：
++// 返回 null 表示可探测，否则返回应向调用方展示的原因文案。
++// isProbeEligible 只返回 boolean，手动重测需要区分原因，故此处按同一
++// 条件逐项判断；改动任一处时须同步另一处与 probeEligibleNodeRows。
++// 来源行缺失时视为未获授权（visibleNodeFor 的 join 本已保证来源存在）。
++export function probeIneligibilityReason(
++  node: any,
++  source: any,
++): string | null {
++  const n = node?.data || {};
++  const s = source?.data || {};
++  if (n.enabled === false) return '该节点已停用，无法探测';
++  if (s.enabled === false) return '所属订阅源已停用，无法探测';
++  if (s.expiresAt && new Date(s.expiresAt) <= new Date())
++    return '所属订阅源已过期，无法探测';
++  if (s.kind === 'OWNED_NODE') return null;
++  return s.authorized === true &&
++    s.redistributionAuthorized === true &&
++    Boolean(s.authorizationReference?.trim())
++    ? null
++    : '该节点未获授权，无法探测';
++}
++export async function registerProbe(app: FastifyInstance) {
++  app.post('/api/nodes/:id/probe', async (req) => {
++    const { id } = z.object({ id: z.uuid() }).parse(req.params);
++    const node = await visibleNodeFor(req.actor, id);
++    if (!node) throw notFound();
++    // 资格预检（在限流与预算检查之前）：已停用/过期/未授权的节点，
++    // Worker 会静默跳过，此处直接给调用方明确反馈。
++    // visibleNodeFor 对管理员只返回 n.*，来源行需单独查一次。
++    const [source] =
++      await sql`select * from node_sources where id=${node.source_id}`;
++    const reason = probeIneligibilityReason(node, source || null);
++    if (reason) throw new AppError(409, 'NODE_NOT_PROBEABLE', reason);
++    const [recent] =
++      await sql`select id from probe_results where node_id=${id} and created_at>now()-interval '60 seconds' limit 1`;
++    const [pending] =
++      await sql`select id from background_jobs where data->>'type'='PROBE_LATENCY' and data->>'nodeId'=${id} and data->>'status' in ('QUEUED','RUNNING') and revoked_at is null limit 1`;
++    if (recent || pending)
++      throw new AppError(
++        429,
++        'PROBE_RATE_LIMIT',
++        '该节点 1 分钟内只能重测一次，请稍后重试',
++      );
++    const budget = await probeBudgetRemaining();
++    if (budget.remainingMb <= 0)
++      throw new AppError(
++        409,
++        'PROBE_BUDGET_EXCEEDED',
++        '今日探测预算已耗尽，请明日再试或联系管理员',
++      );
++    const [job] =
++      await sql`insert into background_jobs(owner_id,source_id,data) values(${req.actor.id},null,${sql.json({ type: 'PROBE_LATENCY', status: 'QUEUED', attempt: 0, nextRun: new Date().toISOString(), nodeId: id, manual: true, requestedBy: req.actor.id })}) returning id`;
++    await audit(req.actor.id, 'probe.manual_queued', id, req.id);
++    return { jobId: job.id, nodeId: id, queued: true };
++  });
++  app.post('/api/probe/run-all', async (req) => {
++    if (!isAdmin(req.actor.role))
++      throw new AppError(403, 'FORBIDDEN', '需要管理员权限');
++    const budget = await probeBudgetRemaining();
++    if (budget.remainingMb <= 0)
++      throw new AppError(
++        409,
++        'PROBE_BUDGET_EXCEEDED',
++        '今日探测预算已耗尽，请明日再试或联系管理员',
++      );
++    const eligible = await probeEligibleNodeRows();
++    const [job] =
++      await sql`insert into background_jobs(owner_id,source_id,data) values(${req.actor.id},null,${sql.json({ type: 'PROBE_LATENCY', status: 'QUEUED', attempt: 0, nextRun: new Date().toISOString(), all: true, manual: true, requestedBy: req.actor.id })}) returning id`;
++    await audit(req.actor.id, 'probe.run_all_queued', job.id, req.id);
++    return { jobId: job.id, queuedNodes: eligible.length };
++  });
++  app.get('/api/nodes/:id/probe-history', async (req) => {
++    const { id } = z.object({ id: z.uuid() }).parse(req.params);
++    const { limit } = z
++      .object({
++        limit: z.coerce.number().int().min(1).max(200).default(50),
++      })
++      .parse(req.query);
++    const node = await visibleNodeFor(req.actor, id);
++    if (!node) throw notFound();
++    const rows =
++      await sql`select * from probe_results where node_id=${id} order by created_at desc limit ${limit}`;
++    return rows.map(probeRowJson);
++  });
++  app.get('/api/probe/status', async (req) => {
++    const settings = await readProbeSettings();
++    const [lastFinished] =
++      await sql`select max(finished_at) as last_finished_at from probe_results`;
++    const [queued] =
++      await sql`select count(*)::int as total from background_jobs where revoked_at is null and data->>'type' in ('PROBE_LATENCY','PROBE_SPEED') and data->>'status'='QUEUED'`;
++    const [running] =
++      await sql`select count(*)::int as total from background_jobs where revoked_at is null and data->>'type' in ('PROBE_LATENCY','PROBE_SPEED') and data->>'status'='RUNNING'`;
++    const [failures] =
++      await sql`select count(*)::int as total from probe_results where created_at>now()-interval '24 hours' and status<>'OK'`;
++    return {
++      probePoint: settings.probePoint,
++      lastFinishedAt: lastFinished.last_finished_at ?? null,
++      queued: queued.total,
++      running: running.total,
++      budgetRemainingMb: Math.max(
++        0,
++        settings.dailyBudgetMb - settings.dailyUsageMb,
++      ),
++      budgetLimitMb: settings.dailyBudgetMb,
++      recentFailures: failures.total,
++      lastRunOk: settings.lastRun ? settings.lastRun.ok : null,
++    };
++  });
++  app.get('/api/probe/runs', async (req) => {
++    const q = z
++      .object({
++        nodeId: z.uuid().optional(),
++        status: z.enum(['OK', 'TIMEOUT', 'FAILED']).optional(),
++        limit: z.coerce.number().int().min(1).max(200).default(50),
++        offset: z.coerce.number().int().min(0).default(0),
++      })
++      .parse(req.query);
++    if (q.nodeId) {
++      const node = await visibleNodeFor(req.actor, q.nodeId);
++      if (!node) throw notFound();
++    }
++    const admin = isAdmin(req.actor.role);
++    const visibleIds = admin ? [] : await visibleNodeIds(req.actor);
++    const where = sql`(${q.nodeId ?? null}::uuid is null or node_id=${q.nodeId ?? null}::uuid) and (${q.status ?? null}::text is null or status=${q.status ?? null}::text) and (${admin}::boolean or node_id=any(${visibleIds}::uuid[]))`;
++    const rows =
++      await sql`select * from probe_results where ${where} order by created_at desc limit ${q.limit} offset ${q.offset}`;
++    const [count] =
++      await sql`select count(*)::int as total from probe_results where ${where}`;
++    return { items: rows.map(probeRowJson), total: count.total };
++  });
++}
+diff --git a/apps/api/src/server.ts b/apps/api/src/server.ts
+index 41fabd2..ba361d3 100644
+--- a/apps/api/src/server.ts
++++ b/apps/api/src/server.ts
+@@ -52,6 +52,7 @@ import {
+ } from '../../../packages/subscription/src/network';
+ import { registerLocationTools } from './location-tools';
+ import { registerNodes } from './nodes';
++import { registerProbe, latestProbeByNode, visibleNodeIds } from './probe';
+ import { registerWorkspace } from './workspace';
+ import { registerSsh } from './ssh';
+ import { registerAdmin } from './admin';
+@@ -287,7 +288,10 @@ export async function buildApp() {
+         throw new AppError(403, 'CSRF', '安全验证失败，请刷新页面');
+       if (
+         /^\/api\/(node-import|node_sources|nodes)(\/|$)/.test(path) &&
+-        !isAdmin(actor.role)
++        !isAdmin(actor.role) &&
++        // 探测是只读测量动作，不改节点数据、不改凭据、不改订阅；
++        // Member 手动重测必须无摩擦，否则每次都要重新登录。
++        !/^\/api\/nodes\/[^/]+\/probe$/.test(path)
+       )
+         throw new AppError(
+           403,
+@@ -301,6 +305,8 @@ export async function buildApp() {
+           req.url.startsWith('/api/ai_accounts') ||
+           req.url.startsWith('/api/server_connections') ||
+           req.url === '/api/subscription/rotate') &&
++        // 同上：手动重测豁免 10 分钟重认证（其余 /api/nodes 路径不变）。
++        !/^\/api\/nodes\/[^/]+\/probe$/.test(path) &&
+         Date.now() - new Date(actor.reauthenticated_at).getTime() > 600000
+       )
+         throw new AppError(403, 'REAUTH_REQUIRED', '敏感操作需要重新登录');
+@@ -546,12 +552,20 @@ export async function buildApp() {
+       await sql`select count(*)::int as total from users where deleted_at is null`;
+     const [limit] =
+       await sql`select value from settings where key='seat_limit'`;
++    // 在线节点数 = 请求者可见节点中最新探测 status='OK' 的节点数。
++    // 无探测行时为 0（诚实值，不是 null）；分母是面板可见节点
++    //（GET /api/nodes 口径），与 nodes 字段的订阅可见口径可能不同。
++    const probes = await latestProbeByNode(await visibleNodeIds(req.actor));
++    const onlineNodes = [...probes.values()].filter(
++      (p) => p.status === 'OK',
++    ).length;
+     return {
+       nodes: (await visibleNodes(req.actor.id)).length,
+-      onlineNodes: null,
++      onlineNodes,
+       servers: servers.total,
+       seats: isAdmin(req.actor.role) ? seats.total : null,
+       seatLimit: Number(limit.value),
++      // 无用户流量统计，保持 null，不得编数。
+       traffic: null,
+     };
+   });
+@@ -957,6 +971,7 @@ export async function buildApp() {
+   });
+   await registerLocationTools(app);
+   await registerNodes(app);
++  await registerProbe(app);
+   await registerWorkspace(app);
+   await registerAdmin(app);
+   await registerAccessCenter(app);
+diff --git a/apps/api/src/workspace.ts b/apps/api/src/workspace.ts
+index 9417c1a..a68cf3d 100644
+--- a/apps/api/src/workspace.ts
++++ b/apps/api/src/workspace.ts
+@@ -11,6 +11,7 @@ import {
+   readServicePolicy,
+   serviceOpen,
+ } from '../../../packages/auth/src/service-policy';
++import { latestProbeByNode } from './probe';
+ 
+ const activeAt = (value: unknown) =>
+   !value ||
+@@ -30,6 +31,8 @@ export async function memberNodeCatalog(actor: any) {
+    AND NOT u.disabled AND u.deleted_at IS NULL AND n.data->>'catalogVisible' IS DISTINCT FROM 'false'
+    AND s.data->>'demo' IS DISTINCT FROM 'true' AND n.data->>'demo' IS DISTINCT FROM 'true'
+   ORDER BY n.created_at LIMIT 5000`;
++  // 最新探测行一次批量查出再合并，禁止每行一次查询。
++  const probes = await latestProbeByNode(rows.map((row) => row.id));
+   return rows.map((row) => {
+     const node = row.data,
+       source = row.source_data;
+@@ -52,6 +55,9 @@ export async function memberNodeCatalog(actor: any) {
+       withinNodeGrantScope(row.grant_data, row.id, group) &&
+       (baseGrant || actor._access.overlaySources.includes(row.source_id)) &&
+       capabilityAllowed(actor, 'node');
++    // 未授权节点不展示探测数值（探测本就不对它开放），只给 UNAUTHORIZED 状态；
++    // 已授权节点取最新一行 probe_results，无行即 UNPROBED。
++    const probe = authorized ? probes.get(row.id) : undefined;
+     return {
+       id: row.id,
+       sourceId: row.source_id,
+@@ -67,8 +73,19 @@ export async function memberNodeCatalog(actor: any) {
+           : !enabled
+             ? 'DISABLED'
+             : 'EXPIRED',
+-      latency: null,
+-      lastCheckedAt: null,
++      latencyMs: probe?.latency_ms ?? null,
++      downloadMbps:
++        probe?.download_mbps == null ? null : Number(probe.download_mbps),
++      uploadMbps: probe?.upload_mbps == null ? null : Number(probe.upload_mbps),
++      lastProbeAt: probe?.finished_at ?? null,
++      probeStatus: !authorized
++        ? 'UNAUTHORIZED'
++        : probe
++          ? probe.status
++          : 'UNPROBED',
++      // 兼容旧字段名：latency 与 latencyMs 同值，lastCheckedAt 与 lastProbeAt 同值。
++      latency: probe?.latency_ms ?? null,
++      lastCheckedAt: probe?.finished_at ?? null,
+       authorized,
+       canSubscribe:
+         authorized &&
+diff --git a/apps/probe/README.md b/apps/probe/README.md
+new file mode 100644
+index 0000000..3c0fd11
+--- /dev/null
++++ b/apps/probe/README.md
+@@ -0,0 +1,86 @@
++# FAFA ONE 探测服务（apps/probe）
++
++独立进程，供 Worker 经 HTTP 调用；不在 API 进程内跑 Mihomo，不碰数据库。
++
++## 启动
++
++```bash
++# Mihomo 二进制须事先就位（见下）；服务只监听回环地址。
++node --import tsx apps/probe/src/index.ts
++```
++
++## 环境变量
++
++| 变量                     | 默认           | 说明                                              |
++| ------------------------ | -------------- | ------------------------------------------------- |
++| `PROBE_HOST`             | `127.0.0.1`    | 只允许回环地址；配成非回环地址时拒绝启动          |
++| `PROBE_PORT`             | `19090`        | HTTP 服务端口（compose 只绑 `127.0.0.1:19090`）   |
++| `MIHOMO_BIN`             | `./bin/mihomo` | Mihomo 二进制路径                                 |
++| `MIHOMO_CONTROLLER_PORT` | `9090`         | Mihomo 外部控制器端口（回环）                     |
++| `PROBE_MIXED_PORT`       | `7890`         | Mihomo mixed-port（测速下载走 HTTP CONNECT 隧道） |
++
++## Mihomo 版本 pin
++
++**v1.19.33**，官方静态二进制（禁止用 GHCR 镜像——之前拉取被拒）：
++
++```bash
++# 镜像构建时下载（示例，linux/amd64）：
++curl -L -o /tmp/mihomo.gz \
++  https://github.com/MetaCubeX/mihomo/releases/download/v1.19.33/mihomo-linux-amd64-v1.19.33.gz
++gzip -d /tmp/mihomo.gz
++install -m 0755 /tmp/mihomo-linux-amd64-v1.19.33 /usr/local/bin/mihomo
++```
++
++注意：运行镜像须把 Mihomo 二进制做到 `/usr/local/bin/mihomo`（或配
++`MIHOMO_BIN`）；二进制缺失时服务以降级模式运行（`/probe` 返回 503，
++Worker 按现有退避重试），不崩溃循环。
++
++## 接口
++
++- `GET /health` → `{status: 'ok'|'degraded', mihomo: <版本|null>, busy}`
++- `POST /probe` → 接受 `{nodes: [{id, name, node}], kind?: 'latency'|'speed',
++speedBytes?, timeoutSeconds?}`（最多 50 节点），返回每节点
++  `{id, status, latencyMs, downloadMbps, uploadMbps: null, errorCode,
++errorMessage, bytesUsed, startedAt, finishedAt}`。
++  同时已有探测在跑时返回 `409 PROBE_BUSY`（Mihomo 配置是全局状态，
++  不接受并发）；Mihomo 未就绪时返回 `503 PROBE_UNAVAILABLE`。
++
++## 探测方法
++
++- 延迟：`GET /proxies/{name}/delay?url=https://www.gstatic.com/generate_204&timeout=5000`，
++  每节点 3 轮、间隔 1 秒、每轮失败重试 1 次，取中位数；只认 L3 结果
++  （TCP 通不通不作为可用依据）。
++- 下载：白名单 `https://speed.cloudflare.com/__down?bytes={speedBytes}`，
++  逐节点切全局单节点出站，经 Mihomo mixed-port 做 HTTP CONNECT 隧道下载并计时，
++  单节点上限 `speedBytes`（默认 5 MB）、超时 `timeoutSeconds`（默认 30 秒）。
++- 上传测速：本阶段不实现。`upload_mbps` 列存在但所有写入路径保持 NULL；
++  上传测速待 Cloudflare 端点在 Kong staging 验证通过后接入（用户决策 (b)）。
++
++## 配置下发方式（已核实）
++
++`PATCH /configs` 不能下发完整代理配置（它只改 mode / log-level / 端口等通用字段，
++`configSchema` 没有 `proxies` 字段）；`PUT /configs` 只接受 `{path, force}`，
++从磁盘文件重载。来源：Mihomo `hub/route/configs.go`（经 DeepWiki 源码页核实）。
++因此本服务写 **0600 权限的 tmpfs 临时文件**（`/dev/shm`，不可用时退回 `/tmp`，
++容器内同样是 tmpfs）+ `PUT /configs` 重载，用完即删。
++
++## 安全与资源
++
++- 只监听 `127.0.0.1`；Mihomo 外部控制器同样只绑回环；控制器口令每次启动随机生成，
++  只留内存，不落盘、不记日志。
++- 凭据只在内存与 0600 临时配置文件中出现；响应、日志、错误里绝不出现节点密码 /
++  UUID 凭据 / 完整订阅内容；错误入库前经 `classifyProbeError` 归类为固定文案。
++- 测速只访问白名单 URL，不探测任意 URL（不做开放代理）。
++- 资源限制（compose）：CPU `0.5`、内存 `512M`；Worker 侧并发上限默认 5。
++- VMess 时钟偏差会报 `CLOCK_SKEW` 并附“请检查节点服务器时间同步”的提示，
++  绝不静默失败。
++
++## 探测结果保留期
++
++- 延迟轮询每 90 秒 × 全量节点每天约产生数万行 `probe_results`，Worker
++  每日清理一次：删除 `created_at` 早于保留期下限的行，但每节点最新一行
++  永远保留（`nodes.last_probe_at` / `last_probe_status` 不动，状态不失真），
++  每批最多删 10000 行，一次删不完下次 tick 继续。
++- 默认保留 **30 天**，settings 键 `probe_retention_days`（clamp 1–365）；
++  上次清理时间记在 settings 键 `probe_last_retention_at`，超过 24 小时
++  才执行下一次清理。清理不记审计，只输出一行数量日志。
+diff --git a/apps/probe/src/index.ts b/apps/probe/src/index.ts
+new file mode 100644
+index 0000000..1c84b09
+--- /dev/null
++++ b/apps/probe/src/index.ts
+@@ -0,0 +1,141 @@
++// FAFA ONE 探测服务：独立进程，只监听回环地址，供 Worker 经 HTTP 调用。
++// 不碰数据库、不读节点凭据落盘；请求体里的节点配置只在内存中流转，绝不记日志。
++// Mihomo 二进制缺失时不崩溃循环：HTTP 服务仍起，/probe 返回 503，
++// Worker 按现有退避重试，等二进制就位后自动恢复。
++import {
++  createServer,
++  type IncomingMessage,
++  type ServerResponse,
++} from 'node:http';
++import { z } from 'zod';
++import { MihomoClient, probeNodes } from './mihomo';
++import { PROBE_DELAY_TARGET, probeSpeedUrl } from './probe';
++const HOST = process.env.PROBE_HOST || '127.0.0.1';
++const PORT = Number(process.env.PROBE_PORT || 19090);
++const MIHOMO_BIN = process.env.MIHOMO_BIN || './bin/mihomo';
++const CONTROLLER_PORT = Number(process.env.MIHOMO_CONTROLLER_PORT || 9090);
++const MIXED_PORT = Number(process.env.PROBE_MIXED_PORT || 7890);
++if (HOST !== '127.0.0.1' && HOST !== '::1') {
++  console.error('PROBE_HOST 只允许回环地址，拒绝启动');
++  process.exit(1);
++}
++const probeBodySchema = z.object({
++  nodes: z
++    .array(
++      z.object({
++        id: z.uuid(),
++        name: z.string().min(1).max(200),
++        node: z.record(z.string(), z.unknown()),
++      }),
++    )
++    .min(1)
++    .max(50),
++  kind: z.enum(['latency', 'speed']).default('latency'),
++  speedBytes: z.number().int().min(1048576).max(10485760).default(5242880),
++  timeoutSeconds: z.number().int().min(5).max(60).default(30),
++});
++function sendJson(res: ServerResponse, status: number, body: unknown) {
++  res.writeHead(status, { 'content-type': 'application/json' });
++  res.end(JSON.stringify(body));
++}
++async function readJsonBody(req: IncomingMessage, limit = 1048576) {
++  const chunks: Buffer[] = [];
++  let size = 0;
++  for await (const chunk of req) {
++    size += chunk.length;
++    if (size > limit) throw new Error('BODY_TOO_LARGE');
++    chunks.push(chunk as Buffer);
++  }
++  return JSON.parse(Buffer.concat(chunks).toString('utf8'));
++}
++const client = new MihomoClient({
++  bin: MIHOMO_BIN,
++  controllerPort: CONTROLLER_PORT,
++  mixedPort: MIXED_PORT,
++});
++let mihomoReady = false;
++let busy = false;
++try {
++  await client.start();
++  mihomoReady = true;
++  console.log(`FAFA ONE Probe 已启动（Mihomo ${client.version}）`);
++} catch (err) {
++  // 降级运行：不等 Mihomo，/probe 返回 503，Worker 退避重试。
++  console.error(
++    'Mihomo 未就绪，探测服务以降级模式运行（/probe 返回 503）：',
++    err instanceof Error ? err.message : '启动失败',
++  );
++}
++const server = createServer(async (req, res) => {
++  const path = (req.url || '').split('?')[0];
++  if (req.method === 'GET' && path === '/health') {
++    return sendJson(res, 200, {
++      status: mihomoReady ? 'ok' : 'degraded',
++      mihomo: client.version,
++      busy,
++    });
++  }
++  if (req.method === 'POST' && path === '/probe') {
++    if (!mihomoReady)
++      return sendJson(res, 503, {
++        code: 'PROBE_UNAVAILABLE',
++        message: '探测引擎未就绪',
++      });
++    if (busy)
++      return sendJson(res, 409, {
++        code: 'PROBE_BUSY',
++        message: '已有探测任务在进行中',
++      });
++    let body: unknown;
++    try {
++      body = await readJsonBody(req);
++    } catch {
++      return sendJson(res, 400, {
++        code: 'VALIDATION_ERROR',
++        message: '请求体无效',
++      });
++    }
++    const parsed = probeBodySchema.safeParse(body);
++    if (!parsed.success)
++      return sendJson(res, 400, {
++        code: 'VALIDATION_ERROR',
++        message: '请求体不符合要求',
++      });
++    busy = true;
++    try {
++      const { nodes, kind, speedBytes, timeoutSeconds } = parsed.data;
++      const results = await probeNodes(client, nodes, {
++        kind,
++        speedBytes,
++        timeoutSeconds,
++        delayUrl: PROBE_DELAY_TARGET,
++        speedUrl: probeSpeedUrl(speedBytes),
++      });
++      const okCount = results.filter((r) => r.status === 'OK').length;
++      // 只记数量，不记节点 id / 名称 / 任何节点内容。
++      console.log(`探测完成：${results.length} 节点，${okCount} 可用`);
++      return sendJson(res, 200, { results });
++    } catch (err) {
++      console.error(
++        '探测失败（未记录节点内容）：',
++        err instanceof Error ? err.message : '未知错误',
++      );
++      return sendJson(res, 502, {
++        code: 'PROBE_FAILED',
++        message: '探测执行失败',
++      });
++    } finally {
++      busy = false;
++    }
++  }
++  return sendJson(res, 404, { code: 'NOT_FOUND', message: '资源不存在' });
++});
++server.listen(PORT, HOST, () => {
++  console.log(`FAFA ONE Probe 监听 ${HOST}:${PORT}`);
++});
++for (const signal of ['SIGTERM', 'SIGINT'])
++  process.on(signal, async () => {
++    server.close();
++    await client.stop();
++    process.exit(0);
++  });
+diff --git a/apps/probe/src/mihomo.ts b/apps/probe/src/mihomo.ts
+new file mode 100644
+index 0000000..807c9ef
+--- /dev/null
++++ b/apps/probe/src/mihomo.ts
+@@ -0,0 +1,515 @@
++// Mihomo 外部控制器客户端（v1.19.33 官方静态二进制）。
++// 关键核实结论（2026-11-10，经 DeepWiki Mihomo 源码页 hub/route/configs.go 核实）：
++// - PATCH /configs 只改通用字段（mode / log-level / 端口 / tun 等，configSchema
++//   没有 proxies 字段），不能下发完整代理配置；
++// - PUT /configs 只接受 {path, force}，从磁盘上的配置文件重载，不接受请求体配置。
++// 因此完整代理配置的下发方式是：0600 权限的 tmpfs 临时文件 + PUT /configs，
++// 用完即删。凭据只在内存与该临时文件中出现，绝不记日志。
++import { spawn, type ChildProcess } from 'node:child_process';
++import { writeFile, unlink, stat } from 'node:fs/promises';
++import { tmpdir } from 'node:os';
++import { join } from 'node:path';
++import { randomBytes } from 'node:crypto';
++import net from 'node:net';
++import tls from 'node:tls';
++import { stringify } from 'yaml';
++import {
++  buildMihomoConfig,
++  mihomoProxyName,
++  classifyProbeError,
++  median,
++} from './probe';
++const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
++// 延迟测试单轮超时（与 2026-11-10 Mihomo 实测一致）。
++export const DELAY_TIMEOUT_MS = 5000;
++// 测速只允许这一个白名单 URL（其余 URL 一律拒绝，防 SSRF / 开放代理）。
++const SPEED_HOST = 'speed.cloudflare.com';
++const SPEED_PATH = '/__down';
++async function tmpfsDir() {
++  try {
++    if ((await stat('/dev/shm')).isDirectory()) return '/dev/shm';
++  } catch {
++    // /dev/shm 不可用时退回系统临时目录（容器内 /tmp 同样是 tmpfs）。
++  }
++  return tmpdir();
++}
++export class MihomoClient {
++  readonly secret = randomBytes(32).toString('hex');
++  readonly controllerPort: number;
++  readonly mixedPort: number;
++  version: string | null = null;
++  private bin: string;
++  private child: ChildProcess | null = null;
++  private bootstrapPath: string | null = null;
++  private spawnError: Error | null = null;
++  private stderrTail: string[] = [];
++  constructor(opts: {
++    bin: string;
++    controllerPort?: number;
++    mixedPort?: number;
++  }) {
++    this.bin = opts.bin;
++    this.controllerPort = opts.controllerPort ?? 9090;
++    this.mixedPort = opts.mixedPort ?? 7890;
++  }
++  get running() {
++    return !!this.child && this.child.exitCode == null;
++  }
++  async start() {
++    if (this.child) return;
++    const bootstrap = stringify({
++      'external-controller': `127.0.0.1:${this.controllerPort}`,
++      secret: this.secret,
++      'mixed-port': this.mixedPort,
++      mode: 'rule',
++      'log-level': 'warning',
++    });
++    this.bootstrapPath = join(
++      await tmpfsDir(),
++      `fafa-probe-bootstrap-${process.pid}.yaml`,
++    );
++    await writeFile(this.bootstrapPath, bootstrap, { mode: 0o600 });
++    this.child = spawn(this.bin, ['-f', this.bootstrapPath], {
++      stdio: ['ignore', 'pipe', 'pipe'],
++    });
++    this.child.on('error', (err) => {
++      this.spawnError = err;
++    });
++    this.child.stderr?.on('data', (d: Buffer) => {
++      this.stderrTail.push(d.toString('utf8').slice(-500));
++      if (this.stderrTail.length > 20) this.stderrTail.shift();
++    });
++    const deadline = Date.now() + 30000;
++    while (Date.now() < deadline) {
++      if (this.spawnError) throw this.spawnError;
++      if (this.child.exitCode != null)
++        throw new Error(
++          `MIHOMO_EXITED:${this.child.exitCode} ${this.stderrTail.join(' ')}`.slice(
++            0,
++            500,
++          ),
++        );
++      try {
++        const data = await this.request('/version', 'GET', null, 2000);
++        this.version =
++          typeof data?.version === 'string' ? data.version : 'unknown';
++        return;
++      } catch {
++        await sleep(500);
++      }
++    }
++    throw new Error('MIHOMO_START_TIMEOUT');
++  }
++  async stop() {
++    if (this.child) {
++      this.child.kill('SIGTERM');
++      this.child = null;
++    }
++    if (this.bootstrapPath) {
++      await unlink(this.bootstrapPath).catch(() => {});
++      this.bootstrapPath = null;
++    }
++  }
++  async request(
++    path: string,
++    method: string,
++    body: unknown,
++    timeoutMs = 10000,
++  ): Promise<any> {
++    const controller = new AbortController();
++    const timer = setTimeout(() => controller.abort(), timeoutMs);
++    try {
++      const res = await fetch(
++        `http://127.0.0.1:${this.controllerPort}${path}`,
++        {
++          method,
++          headers: {
++            Authorization: `Bearer ${this.secret}`,
++            ...(body ? { 'content-type': 'application/json' } : {}),
++          },
++          body: body ? JSON.stringify(body) : undefined,
++          signal: controller.signal,
++        },
++      );
++      const text = await res.text();
++      let data: any = null;
++      try {
++        data = text ? JSON.parse(text) : null;
++      } catch {
++        // 非 JSON 响应（如纯文本错误）只取状态码，不透传正文。
++      }
++      if (!res.ok)
++        throw new Error(data?.message || `MIHOMO_HTTP_${res.status}`);
++      return data;
++    } finally {
++      clearTimeout(timer);
++    }
++  }
++  // 下发完整配置：0600 tmpfs 临时文件 + PUT /configs {path, force}，用完即删。
++  async applyConfigYaml(yamlText: string) {
++    const file = join(
++      await tmpfsDir(),
++      `fafa-probe-${process.pid}-${randomBytes(8).toString('hex')}.yaml`,
++    );
++    await writeFile(file, yamlText, { mode: 0o600 });
++    try {
++      await this.request('/configs', 'PUT', { path: file, force: true }, 30000);
++    } finally {
++      await unlink(file).catch(() => {});
++    }
++  }
++  async selectGlobal(proxyName: string) {
++    await this.request('/proxies/GLOBAL', 'PUT', { name: proxyName }, 10000);
++  }
++  // L3 延迟：经该节点向目标 URL 发真实请求并计时（TCP 通不通不算数）。
++  async delay(proxyName: string, url: string, timeoutMs: number) {
++    const data = await this.request(
++      `/proxies/${encodeURIComponent(proxyName)}/delay?url=${encodeURIComponent(url)}&timeout=${timeoutMs}`,
++      'GET',
++      null,
++      timeoutMs + 5000,
++    );
++    if (typeof data?.delay !== 'number')
++      throw new Error(data?.message || 'DELAY_NO_RESULT');
++    return data.delay as number;
++  }
++  async testLatency(proxyName: string, url: string, timeoutMs: number) {
++    const successes: number[] = [];
++    let lastError: unknown = null;
++    for (let round = 0; round < 3; round++) {
++      if (round > 0) await sleep(1000);
++      let value: number | null = null;
++      for (let attempt = 0; attempt < 2; attempt++) {
++        try {
++          value = await this.delay(proxyName, url, timeoutMs);
++          break;
++        } catch (err) {
++          lastError = err;
++          if (attempt === 0) await sleep(1000);
++        }
++      }
++      if (value != null) successes.push(value);
++    }
++    const m = median(successes);
++    return m == null
++      ? { latencyMs: null as number | null, error: lastError }
++      : { latencyMs: m, error: null };
++  }
++  // 经指定节点下载白名单测速文件并计时：通过 Mihomo mixed-port 做 HTTP CONNECT
++  // 隧道，再在隧道上建 TLS、发 GET。只认白名单 URL；单节点上限 maxBytes。
++  async downloadViaProxy(urlStr: string, maxBytes: number, timeoutMs: number) {
++    const u = new URL(urlStr);
++    if (
++      u.protocol !== 'https:' ||
++      u.hostname !== SPEED_HOST ||
++      u.pathname !== SPEED_PATH
++    )
++      throw new Error('SPEED_URL_NOT_ALLOWED');
++    const started = Date.now();
++    const socket = await connectTunnel(
++      '127.0.0.1',
++      this.mixedPort,
++      u.hostname,
++      443,
++      timeoutMs,
++    );
++    const tlsSocket = tls.connect({
++      socket,
++      servername: u.hostname,
++      minVersion: 'TLSv1.2',
++    });
++    await new Promise<void>((resolve, reject) => {
++      const timer = setTimeout(() => {
++        tlsSocket.destroy();
++        reject(new Error('TLS_TIMEOUT'));
++      }, timeoutMs);
++      tlsSocket.once('secureConnect', () => {
++        clearTimeout(timer);
++        resolve();
++      });
++      tlsSocket.once('error', (err) => {
++        clearTimeout(timer);
++        reject(err);
++      });
++    });
++    const path = u.pathname + u.search;
++    tlsSocket.write(
++      `GET ${path} HTTP/1.1\r\nHost: ${u.hostname}\r\nConnection: close\r\nUser-Agent: FAFA-One-Probe/1.0\r\nAccept-Encoding: identity\r\n\r\n`,
++    );
++    const bytes = await readHttpBody(tlsSocket, maxBytes, timeoutMs);
++    const ms = Math.max(1, Date.now() - started);
++    return { bytes, ms, mbps: (bytes * 8) / (ms / 1000) / 1e6 };
++  }
++}
++function connectTunnel(
++  proxyHost: string,
++  proxyPort: number,
++  targetHost: string,
++  targetPort: number,
++  timeoutMs: number,
++): Promise<net.Socket> {
++  return new Promise((resolve, reject) => {
++    const socket = net.connect(proxyPort, proxyHost);
++    const timer = setTimeout(() => {
++      socket.destroy();
++      reject(new Error('PROXY_CONNECT_TIMEOUT'));
++    }, timeoutMs);
++    socket.once('error', (err) => {
++      clearTimeout(timer);
++      reject(err);
++    });
++    socket.once('connect', () => {
++      socket.write(
++        `CONNECT ${targetHost}:${targetPort} HTTP/1.1\r\nHost: ${targetHost}:${targetPort}\r\n\r\n`,
++      );
++    });
++    let buf = Buffer.alloc(0);
++    socket.on('data', (chunk: Buffer) => {
++      buf = Buffer.concat([buf, chunk]);
++      const idx = buf.indexOf('\r\n\r\n');
++      if (idx === -1) return;
++      clearTimeout(timer);
++      socket.removeAllListeners('data');
++      const head = buf.subarray(0, idx).toString('latin1');
++      const status = Number(head.split('\r\n')[0].split(' ')[1]);
++      if (status !== 200) {
++        socket.destroy();
++        reject(new Error(`PROXY_CONNECT_${status}`));
++        return;
++      }
++      const rest = buf.subarray(idx + 4);
++      if (rest.length) socket.unshift(rest);
++      resolve(socket);
++    });
++  });
++}
++// 读 HTTP 响应体并计数（支持 Content-Length 与 chunked；超时或失败时
++// 错误对象带 .bytes，记录已实际下载的字节数，供预算扣减）。
++function readHttpBody(
++  socket: tls.TLSSocket,
++  maxBytes: number,
++  timeoutMs: number,
++): Promise<number> {
++  return new Promise((resolve, reject) => {
++    let done = false;
++    let headerBuf = Buffer.alloc(0);
++    let headersParsed = false;
++    let contentLength: number | null = null;
++    let chunked = false;
++    let body = Buffer.alloc(0);
++    let bodyBytes = 0;
++    const timer = setTimeout(() => fail(new Error('SPEED_TIMEOUT')), timeoutMs);
++    const cleanup = () => {
++      clearTimeout(timer);
++      socket.destroy();
++    };
++    const finish = (bytes: number) => {
++      if (done) return;
++      done = true;
++      cleanup();
++      resolve(bytes);
++    };
++    const fail = (err: Error) => {
++      if (done) return;
++      done = true;
++      cleanup();
++      (err as any).bytes = bodyBytes;
++      reject(err);
++    };
++    const processBody = () => {
++      if (chunked) {
++        for (;;) {
++          const lineEnd = body.indexOf('\r\n');
++          if (lineEnd === -1) return;
++          const size = parseInt(
++            body.subarray(0, lineEnd).toString('ascii').trim(),
++            16,
++          );
++          if (Number.isNaN(size)) {
++            fail(new Error('SPEED_CHUNKED_PARSE'));
++            return;
++          }
++          if (size === 0) {
++            finish(bodyBytes);
++            return;
++          }
++          if (body.length < lineEnd + 2 + size + 2) return;
++          bodyBytes += size;
++          if (bodyBytes >= maxBytes) {
++            finish(Math.min(bodyBytes, maxBytes));
++            return;
++          }
++          body = body.subarray(lineEnd + 2 + size + 2);
++        }
++      }
++      const remaining =
++        contentLength == null
++          ? Infinity
++          : Math.max(0, contentLength - bodyBytes);
++      const take = Math.min(body.length, remaining, maxBytes - bodyBytes);
++      bodyBytes += take;
++      body = body.subarray(take);
++      if (bodyBytes >= maxBytes) {
++        finish(bodyBytes);
++        return;
++      }
++      if (contentLength != null && bodyBytes >= contentLength) {
++        finish(bodyBytes);
++      }
++    };
++    socket.on('data', (chunk: Buffer) => {
++      if (done) return;
++      if (!headersParsed) {
++        headerBuf = Buffer.concat([headerBuf, chunk]);
++        const idx = headerBuf.indexOf('\r\n\r\n');
++        if (idx === -1) return;
++        const head = headerBuf.subarray(0, idx).toString('latin1');
++        const status = Number(head.split('\r\n')[0].split(' ')[1]);
++        if (status !== 200) {
++          fail(new Error(`SPEED_HTTP_${status}`));
++          return;
++        }
++        const cl = /content-length:\s*(\d+)/i.exec(head);
++        contentLength = cl ? Number(cl[1]) : null;
++        chunked = /transfer-encoding:\s*chunked/i.test(head);
++        headersParsed = true;
++        body = headerBuf.subarray(idx + 4);
++        processBody();
++      } else {
++        body = Buffer.concat([body, chunk]);
++        processBody();
++      }
++    });
++    socket.on('end', () => {
++      if (!done) finish(bodyBytes);
++    });
++    socket.on('error', fail);
++  });
++}
++export type ProbeInput = { id: string; name: string; node: any };
++export type ProbeResult = {
++  id: string;
++  status: 'OK' | 'TIMEOUT' | 'FAILED';
++  latencyMs: number | null;
++  downloadMbps: number | null;
++  uploadMbps: null;
++  errorCode: string | null;
++  errorMessage: string | null;
++  bytesUsed: number;
++  startedAt: string;
++  finishedAt: string;
++};
++// 一批节点：先一次下发整批配置测延迟；kind=speed 时再对延迟 OK 的节点
++// 逐个切全局单节点出站做下载测速。调用方保证一次只有一个 probeNodes 在跑
++//（Mihomo 配置是全局状态，并发会互相覆盖；HTTP 层用 PROBE_BUSY 挡并发）。
++export async function probeNodes(
++  client: MihomoClient,
++  inputs: ProbeInput[],
++  opts: {
++    kind: 'latency' | 'speed';
++    speedBytes: number;
++    timeoutSeconds: number;
++    delayUrl: string;
++    speedUrl: string;
++  },
++): Promise<ProbeResult[]> {
++  const results: ProbeResult[] = [];
++  const valid: ProbeInput[] = [];
++  for (const input of inputs) {
++    const n = input?.node;
++    const now = new Date().toISOString();
++    if (
++      !n ||
++      typeof n.host !== 'string' ||
++      !n.port ||
++      typeof n.protocol !== 'string' ||
++      typeof n.credential !== 'string'
++    ) {
++      results.push({
++        id: input?.id,
++        status: 'FAILED',
++        latencyMs: null,
++        downloadMbps: null,
++        uploadMbps: null,
++        errorCode: 'PROTOCOL_ERROR',
++        errorMessage: '节点配置不完整',
++        bytesUsed: 0,
++        startedAt: now,
++        finishedAt: now,
++      });
++    } else {
++      valid.push(input);
++    }
++  }
++  if (!valid.length) return results;
++  const base = {
++    controllerSecret: client.secret,
++    controllerPort: client.controllerPort,
++    mixedPort: client.mixedPort,
++  };
++  await client.applyConfigYaml(buildMihomoConfig(valid, base));
++  for (let i = 0; i < valid.length; i++) {
++    const input = valid[i];
++    const startedAt = new Date().toISOString();
++    const lat = await client.testLatency(
++      mihomoProxyName(input.name, i),
++      opts.delayUrl,
++      DELAY_TIMEOUT_MS,
++    );
++    const finishedAt = new Date().toISOString();
++    if (lat.latencyMs == null) {
++      const c = classifyProbeError(lat.error);
++      results.push({
++        id: input.id,
++        status: c.status,
++        latencyMs: null,
++        downloadMbps: null,
++        uploadMbps: null,
++        errorCode: c.errorCode,
++        errorMessage: c.errorMessage,
++        bytesUsed: 0,
++        startedAt,
++        finishedAt,
++      });
++    } else {
++      results.push({
++        id: input.id,
++        status: 'OK',
++        latencyMs: lat.latencyMs,
++        downloadMbps: null,
++        uploadMbps: null,
++        errorCode: null,
++        errorMessage: null,
++        bytesUsed: 0,
++        startedAt,
++        finishedAt,
++      });
++    }
++  }
++  if (opts.kind === 'speed') {
++    for (const r of results.filter((x) => x.status === 'OK')) {
++      const input = valid.find((v) => v.id === r.id)!;
++      // 单节点全局模式：配置里只剩该节点（下标恒为 0），切 GLOBAL 组后下载。
++      await client.applyConfigYaml(
++        buildMihomoConfig([input], { ...base, mode: 'global' }),
++      );
++      await client.selectGlobal(mihomoProxyName(input.name, 0));
++      try {
++        const dl = await client.downloadViaProxy(
++          opts.speedUrl,
++          opts.speedBytes,
++          opts.timeoutSeconds * 1000,
++        );
++        r.downloadMbps = Math.round(dl.mbps * 10) / 10;
++        r.bytesUsed = dl.bytes;
++      } catch (err) {
++        // 测速失败不推翻已确认的延迟可用：保留 OK，download 留空并记原因。
++        r.errorCode = 'SPEED_FAILED';
++        r.errorMessage = '下载测速失败，延迟正常';
++        r.bytesUsed = (err as any)?.bytes || 0;
++      }
++      r.finishedAt = new Date().toISOString();
++    }
++  }
++  return results;
++}
+diff --git a/apps/probe/src/probe.ts b/apps/probe/src/probe.ts
+new file mode 100644
+index 0000000..44af547
+--- /dev/null
++++ b/apps/probe/src/probe.ts
+@@ -0,0 +1,165 @@
++// apps/probe 纯函数：错误分类、中位数、探测资格、Mihomo 配置组装。
++// 本文件不做 I/O、不读环境变量、不记日志；凭据只在内存中流转，绝不输出。
++import { stringify } from 'yaml';
++
++// 与 apps/api/src/probe.ts 的同名常量保持一致（探测组件不依赖 API 包，
++// 改动任一处时须同步另一处）。
++export const PROBE_DELAY_TARGET = 'https://www.gstatic.com/generate_204';
++export const probeSpeedUrl = (bytes: number) =>
++  `https://speed.cloudflare.com/__down?bytes=${bytes}`;
++// Mihomo 延迟/测速只认 L3 结果（经节点的真实请求）：
++// TCP 通不通不作为可用依据；失败的节点一律不标在线。
++export type ProbeOutcome = {
++  status: 'OK' | 'TIMEOUT' | 'FAILED';
++  errorCode: string | null;
++  errorMessage: string | null;
++};
++// 只存分类后的固定文案，不把上游原始错误文本写入数据库
++//（上游文本可能含节点名以外的信息；凭据绝不出现在这里）。
++export function classifyProbeError(err: unknown): ProbeOutcome {
++  const message =
++    err instanceof Error ? err.message : typeof err === 'string' ? err : '';
++  if (/timeout|timed out|ETIMEDOUT|abort|deadline exceeded/i.test(message))
++    return {
++      status: 'TIMEOUT',
++      errorCode: 'TIMEOUT',
++      errorMessage: '探测超时，未收到节点响应',
++    };
++  if (
++    /clock|time (sync|skew|difference|offset)|timestamp|vmess.*time/i.test(
++      message,
++    )
++  )
++    return {
++      status: 'FAILED',
++      errorCode: 'CLOCK_SKEW',
++      errorMessage:
++        '节点时间偏差过大：请检查节点服务器时间同步（VMess 要求偏差在约 120 秒内）',
++    };
++  if (/ENOTFOUND|EAI_AGAIN|getaddrinfo|DNS|domain.*resolv/i.test(message))
++    return {
++      status: 'FAILED',
++      errorCode: 'DNS_ERROR',
++      errorMessage: '域名解析失败',
++    };
++  if (
++    /auth|unauthori[sz]ed|password|credential|uuid.*invalid|alterId|cipher|method/i.test(
++      message,
++    )
++  )
++    return {
++      status: 'FAILED',
++      errorCode: 'AUTH_FAILED',
++      errorMessage: '节点认证失败：请检查凭据与加密方式',
++    };
++  if (/tls|ssl|certificate|SNI/i.test(message))
++    return {
++      status: 'FAILED',
++      errorCode: 'PROTOCOL_ERROR',
++      errorMessage: 'TLS 握手失败：请检查 SNI 与证书配置',
++    };
++  if (/refused|reset|unreachable|network|ECONN/i.test(message))
++    return {
++      status: 'FAILED',
++      errorCode: 'PROTOCOL_ERROR',
++      errorMessage: '节点服务器不可达',
++    };
++  return {
++    status: 'FAILED',
++    errorCode: 'PROTOCOL_ERROR',
++    errorMessage: '节点连接失败',
++  };
++}
++export function median(values: number[]): number | null {
++  if (!values.length) return null;
++  const sorted = [...values].sort((a, b) => a - b);
++  const mid = Math.floor(sorted.length / 2);
++  return sorted.length % 2
++    ? sorted[mid]
++    : Math.round((sorted[mid - 1] + sorted[mid]) / 2);
++}
++// 与 apps/api/src/probe.ts 的 probeEligibleNodeRows 相同口径的 JS 复核
++//（Worker 已在 SQL 层过滤；此处是探测组件侧的防御性二次检查）。
++export function isProbeEligible(
++  node: { data?: any },
++  source: { data?: any },
++): boolean {
++  const n = node?.data || {};
++  const s = source?.data || {};
++  if (n.enabled === false) return false;
++  if (s.enabled === false) return false;
++  if (s.expiresAt && new Date(s.expiresAt) <= new Date()) return false;
++  if (s.kind === 'OWNED_NODE') return true;
++  return (
++    s.authorized === true &&
++    s.redistributionAuthorized === true &&
++    Boolean(s.authorizationReference?.trim())
++  );
++}
++// 同一批次内 Mihomo 代理名必须唯一；用下标后缀保证，绝不把节点 UUID 写入配置。
++export function mihomoProxyName(name: string, index: number) {
++  return `${name}__${index}`;
++}
++export type ProbeNodeInput = {
++  id: string;
++  name: string;
++  node: any;
++};
++// 只在内存组装完整 Mihomo 配置，绝不 console.log、不落盘明文。
++// 代理字段映射与 packages/subscription 的 exportSubscription(mihomo) 分支保持一致。
++export function buildMihomoConfig(
++  nodes: ProbeNodeInput[],
++  opts: {
++    controllerSecret: string;
++    controllerPort?: number;
++    mixedPort?: number;
++    mode?: 'rule' | 'global';
++  },
++): string {
++  const proxies = nodes.map((input, i) => {
++    const n = input.node;
++    return {
++      name: mihomoProxyName(input.name, i),
++      type: n.protocol,
++      server: n.host,
++      port: n.port,
++      ...(['vless', 'vmess'].includes(n.protocol)
++        ? { uuid: n.credential }
++        : { password: n.credential }),
++      ...(n.cipher
++        ? { cipher: n.cipher }
++        : n.protocol === 'vmess'
++          ? { cipher: n.security || 'auto', alterId: n.alterId || 0 }
++          : {}),
++      tls: n.tls,
++      servername: n.sni,
++      network: n.transport,
++      ...(n.transport === 'ws'
++        ? {
++            'ws-opts': {
++              path: n.path || '/',
++              headers: { Host: n.wsHost || n.host },
++            },
++          }
++        : {}),
++    };
++  });
++  return stringify({
++    'external-controller': `127.0.0.1:${opts.controllerPort ?? 9090}`,
++    secret: opts.controllerSecret,
++    'mixed-port': opts.mixedPort ?? 7890,
++    mode: opts.mode ?? 'rule',
++    'log-level': 'warning',
++    proxies,
++    'proxy-groups': [
++      {
++        name: 'FAFA ONE',
++        type: 'select',
++        proxies: proxies.map((p) => p.name),
++      },
++      // global 模式下 Mihomo 走 GLOBAL 组；测速时逐节点切到该组实现单节点出站。
++      { name: 'GLOBAL', type: 'select', proxies: proxies.map((p) => p.name) },
++    ],
++    rules: ['MATCH,FAFA ONE'],
++  });
++}
+diff --git a/apps/web/src/pages/Dashboard.tsx b/apps/web/src/pages/Dashboard.tsx
+index a101c57..da34da3 100644
+--- a/apps/web/src/pages/Dashboard.tsx
++++ b/apps/web/src/pages/Dashboard.tsx
+@@ -1,4 +1,4 @@
+-import { useMemo, useState } from 'react';
++import { Fragment, useMemo, useState } from 'react';
+ import { Link, useLocation } from 'react-router-dom';
+ import {
+   Activity,
+@@ -40,38 +40,242 @@ const formatTime = (value: string) => {
+       });
+ };
+ 
+-const statusOf = (node: Row) =>
+-  node.authorized === true
+-    ? { cls: 'ok', text: '可用' }
+-    : node.canSubscribe === true
+-      ? { cls: 'sub', text: '可订阅' }
+-      : { cls: 'off', text: '未授权' };
++// 探测四态（文案固定，不得用“—”或空白冒充其中任何一种）。
++const probeLabel: Record<string, { text: string; cls: string }> = {
++  UNPROBED: { text: '未探测', cls: 'off' },
++  OK: { text: '可用', cls: 'ok' },
++  TIMEOUT: { text: '超时', cls: 'warn' },
++  FAILED: { text: '失败', cls: 'err' },
++  UNAUTHORIZED: { text: '未授权', cls: 'off' },
++};
++const probeOf = (node: Row) =>
++  probeLabel[String(node.probeStatus ?? 'UNPROBED')] ?? probeLabel.UNPROBED;
++const fmtLatency = (value: unknown) =>
++  typeof value === 'number' ? `${value} ms` : '未探测';
++const fmtSpeed = (value: unknown) =>
++  typeof value === 'number' ? `${Number(value).toFixed(1)} Mbps` : '未探测';
++const relativeTime = (value: string | null | undefined) => {
++  if (!value) return '尚未探测';
++  const date = new Date(value);
++  if (Number.isNaN(date.getTime())) return value;
++  const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
++  if (seconds < 60) return '刚刚';
++  if (seconds < 3600) return `${Math.floor(seconds / 60)} 分钟前`;
++  if (seconds < 86400) return `${Math.floor(seconds / 3600)} 小时前`;
++  return formatTime(value);
++};
++
++type ProbeStatusInfo = {
++  probePoint: string | null;
++  lastFinishedAt: string | null;
++  queued: number;
++  running: number;
++  budgetRemainingMb: number;
++  budgetLimitMb: number;
++  recentFailures: number;
++  lastRunOk: number | null;
++};
++type ProbeRun = {
++  id: string;
++  nodeId: string;
++  probePoint: string;
++  target: string;
++  startedAt: string;
++  finishedAt: string | null;
++  status: string;
++  latencyMs: number | null;
++  downloadMbps: number | null;
++  uploadMbps: number | null;
++  errorCode: string | null;
++  errorMessage: string | null;
++  createdAt: string;
++};
++type SortKey = 'latency' | 'download' | 'name' | 'lastProbe';
++
++const runStatusText: Record<string, string> = {
++  OK: '可用',
++  TIMEOUT: '超时',
++  FAILED: '失败',
++};
++
++function ProbeRuns({
++  nodes,
++  nodeId,
++  onNodeId,
++  status,
++  onStatus,
++  page,
++  onPage,
++}: {
++  nodes: Row[];
++  nodeId: string;
++  onNodeId: (id: string) => void;
++  status: string;
++  onStatus: (s: string) => void;
++  page: number;
++  onPage: (p: number) => void;
++}) {
++  const params = new URLSearchParams({
++    limit: '50',
++    offset: String(page * 50),
++  });
++  if (nodeId) params.set('nodeId', nodeId);
++  if (status) params.set('status', status);
++  const runs = useData<{ items: ProbeRun[]; total: number }>(
++    `/api/probe/runs?${params.toString()}`,
++  );
++  const items = runs.data?.items ?? [];
++  const total = runs.data?.total ?? 0;
++  const nameOf = (id: string) =>
++    nodes.find((n) => String(n.id) === id)?.name ??
++    `节点 ${String(id).slice(0, 8)}`;
++  return (
++    <div role="tabpanel" aria-label="节点测速记录">
++      <div className="pro-filter">
++        <select
++          value={nodeId}
++          onChange={(e) => {
++            onNodeId(e.target.value);
++            onPage(0);
++          }}
++          aria-label="按节点筛选测速记录"
++        >
++          <option value="">全部节点</option>
++          {nodes.map((n) => (
++            <option key={String(n.id)} value={String(n.id)}>
++              {String(n.name ?? '未命名节点')}
++            </option>
++          ))}
++        </select>
++        <select
++          value={status}
++          onChange={(e) => {
++            onStatus(e.target.value);
++            onPage(0);
++          }}
++          aria-label="按状态筛选测速记录"
++        >
++          <option value="">全部状态</option>
++          <option value="OK">可用</option>
++          <option value="TIMEOUT">超时</option>
++          <option value="FAILED">失败</option>
++        </select>
++        <button type="button" className="button" onClick={runs.refresh}>
++          刷新记录
++        </button>
++      </div>
++      {runs.error ? (
++        <div className="callout" role="alert">
++          {runs.error}
++        </div>
++      ) : !runs.data ? (
++        <div className="skeleton" aria-label="正在加载测速记录" />
++      ) : items.length === 0 ? (
++        <Empty
++          title="暂无测速记录"
++          description="尚未产生探测记录，或当前筛选条件下没有记录。"
++        />
++      ) : (
++        <>
++          <div className="pro-table-wrap">
++            <table className="pro-table">
++              <thead>
++                <tr>
++                  <th>时间</th>
++                  <th>节点</th>
++                  <th>状态</th>
++                  <th className="numeric">延迟</th>
++                  <th className="numeric">下载速度</th>
++                  <th>错误原因</th>
++                </tr>
++              </thead>
++              <tbody>
++                {items.map((r) => {
++                  const st = probeLabel[r.status] ?? probeLabel.UNPROBED;
++                  return (
++                    <tr key={String(r.id)}>
++                      <td>{formatTime(String(r.startedAt))}</td>
++                      <td>{String(nameOf(String(r.nodeId)))}</td>
++                      <td>
++                        <span className={`pro-status ${st.cls}`}>
++                          {runStatusText[r.status] ?? st.text}
++                        </span>
++                      </td>
++                      <td className="numeric">{fmtLatency(r.latencyMs)}</td>
++                      <td className="numeric">{fmtSpeed(r.downloadMbps)}</td>
++                      <td>
++                        {r.status === 'OK'
++                          ? '无'
++                          : String(
++                              r.errorMessage || r.errorCode || '未说明原因',
++                            )}
++                      </td>
++                    </tr>
++                  );
++                })}
++              </tbody>
++            </table>
++          </div>
++          <p className="pro-table-more">
++            第 {page + 1} 页 · 共 {total} 条记录
++          </p>
++          <div className="pro-card-actions">
++            <button
++              type="button"
++              className="button"
++              disabled={page === 0}
++              onClick={() => onPage(page - 1)}
++            >
++              上一页
++            </button>
++            <button
++              type="button"
++              className="button"
++              disabled={(page + 1) * 50 >= total}
++              onClick={() => onPage(page + 1)}
++            >
++              下一页
++            </button>
++          </div>
++        </>
++      )}
++    </div>
++  );
++}
+ 
+ function LegacyDashboard() {
+-  const { session } = useApp();
++  const { session, request, toast } = useApp();
+   const summary = useData<any>('/api/summary');
+   const gpt = useData<PlatformService>('/api/ai/platform');
+   const catalog = useData<{ nodes: Row[]; serverTime: string }>(
+     '/api/catalog/nodes',
+   );
++  const probe = useData<ProbeStatusInfo>('/api/probe/status');
+   const usage = useData<Row[]>('/api/ai/platform/usage');
+   const workspace = useData<any>('/api/workspace');
+   const [region, setRegion] = useState('全部地区');
+   const [q, setQ] = useState('');
++  const [tab, setTab] = useState<'list' | 'runs'>('list');
++  const [sortKey, setSortKey] = useState<SortKey>('latency');
++  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
++  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
++  const [actionMsg, setActionMsg] = useState('');
++  const [syncing, setSyncing] = useState(false);
++  const [retestingId, setRetestingId] = useState<string | null>(null);
++  const [runsNodeId, setRunsNodeId] = useState('');
++  const [runsStatus, setRunsStatus] = useState('');
++  const [runsPage, setRunsPage] = useState(0);
+   const s = summary.data;
+   const nodes = catalog.data?.nodes ?? [];
+   const availableNodes = nodes.filter((n) => n.canSubscribe === true).length;
+-  const regions = useMemo(
+-    () => [
+-      '全部地区',
+-      ...Array.from(
+-        new Set(
+-          nodes.map((n) => String(n.country ?? '未标注')).filter(Boolean),
+-        ),
+-      ),
+-    ],
+-    [nodes],
+-  );
++  const regionCounts = useMemo(() => {
++    const counts = new Map<string, number>();
++    nodes.forEach((n) => {
++      const country = String(n.country ?? '未标注');
++      counts.set(country, (counts.get(country) ?? 0) + 1);
++    });
++    return [...counts.entries()].sort((a, b) => b[1] - a[1]);
++  }, [nodes]);
+   const filtered = useMemo(() => {
+     const needle = q.trim().toLowerCase();
+     return nodes.filter(
+@@ -83,6 +287,108 @@ function LegacyDashboard() {
+             .includes(needle)),
+     );
+   }, [nodes, region, q]);
++  const sorted = useMemo(() => {
++    const arr = [...filtered];
++    const numOf = (n: Row) => {
++      const value = n[sortKey === 'latency' ? 'latencyMs' : 'downloadMbps'];
++      return typeof value === 'number' ? value : null;
++    };
++    arr.sort((a, b) => {
++      if (sortKey === 'name')
++        return (
++          String(a.name ?? '').localeCompare(String(b.name ?? ''), 'zh-CN') *
++          (sortDir === 'asc' ? 1 : -1)
++        );
++      if (sortKey === 'lastProbe') {
++        const av = a.lastProbeAt ? Date.parse(String(a.lastProbeAt)) : NaN;
++        const bv = b.lastProbeAt ? Date.parse(String(b.lastProbeAt)) : NaN;
++        if (Number.isNaN(av) && Number.isNaN(bv)) return 0;
++        if (Number.isNaN(av)) return 1;
++        if (Number.isNaN(bv)) return -1;
++        return (av - bv) * (sortDir === 'asc' ? 1 : -1);
++      }
++      const av = numOf(a);
++      const bv = numOf(b);
++      if (av == null && bv == null) return 0;
++      if (av == null) return 1;
++      if (bv == null) return -1;
++      return (av - bv) * (sortDir === 'asc' ? 1 : -1);
++    });
++    return arr;
++  }, [filtered, sortKey, sortDir]);
++  const toggleSort = (key: SortKey) => {
++    if (sortKey === key) {
++      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
++    } else {
++      setSortKey(key);
++      setSortDir(key === 'name' ? 'asc' : key === 'lastProbe' ? 'desc' : 'asc');
++    }
++  };
++  const sortTh = (key: SortKey, label: string, numeric = false) => (
++    <th
++      className={numeric ? 'numeric' : undefined}
++      aria-sort={
++        sortKey === key
++          ? sortDir === 'asc'
++            ? 'ascending'
++            : 'descending'
++          : 'none'
++      }
++    >
++      <button
++        type="button"
++        className="pro-sort-btn"
++        onClick={() => toggleSort(key)}
++      >
++        {label}
++        {sortKey === key ? (sortDir === 'asc' ? ' ↑' : ' ↓') : ''}
++      </button>
++    </th>
++  );
++  const lastFinishedText = probe.data?.lastFinishedAt
++    ? relativeTime(probe.data.lastFinishedAt)
++    : '尚未探测';
++  const canRetest = (n: Row) =>
++    String(n.probeStatus ?? '') !== 'UNAUTHORIZED' && n.enabled !== false;
++  const retest = async (node: Row) => {
++    setRetestingId(String(node.id));
++    setActionMsg('');
++    try {
++      await request(`/api/nodes/${node.id}/probe`, 'POST');
++      setActionMsg(`已排队重测：${String(node.name ?? '未命名节点')}`);
++      toast('已排队重测，稍后刷新查看结果');
++      catalog.refresh();
++      probe.refresh();
++    } catch (e) {
++      setActionMsg((e as Error).message);
++    } finally {
++      setRetestingId(null);
++    }
++  };
++  const runAll = async () => {
++    setSyncing(true);
++    setActionMsg('');
++    try {
++      const result = await request<{ jobId: string; queuedNodes: number }>(
++        '/api/probe/run-all',
++        'POST',
++      );
++      setActionMsg(`已排队 ${result.queuedNodes} 个节点`);
++      toast(`已排队 ${result.queuedNodes} 个节点`);
++      probe.refresh();
++    } catch (e) {
++      setActionMsg((e as Error).message);
++    } finally {
++      setSyncing(false);
++    }
++  };
++  const viewHistory = (node: Row) => {
++    setRunsNodeId(String(node.id));
++    setRunsStatus('');
++    setRunsPage(0);
++    setTab('runs');
++    setOpenMenuId(null);
++  };
+   const monthKey = new Date().toISOString().slice(0, 7);
+   const monthUsage = (usage.data ?? []).filter((u) =>
+     String(u.created_at ?? '').startsWith(monthKey),
+@@ -107,8 +413,15 @@ function LegacyDashboard() {
+     {
+       icon: Globe2,
+       label: '可用节点',
+-      value: s?.nodes ?? '未检测',
+-      hint: s?.nodes != null ? `当前账号可见 ${s.nodes} 个节点` : '暂无数据',
++      value: s?.onlineNodes ?? '未检测',
++      hint:
++        s?.onlineNodes == null
++          ? '暂无数据'
++          : `最近探测可用 ${s.onlineNodes} 个（共可见 ${
++              s?.nodes ?? nodes.length
++            } 个）${
++              probe.data?.probePoint ? ` · 测点 ${probe.data.probePoint}` : ''
++            } · ${lastFinishedText}`,
+     },
+     {
+       icon: Users,
+@@ -140,6 +453,13 @@ function LegacyDashboard() {
+     },
+   ];
+   const history: Row[] = workspace.data?.history ?? [];
++  const footerParts = [
++    `共 ${filtered.length} 个节点${
++      filtered.length > 50 ? '，仅显示前 50 个' : ''
++    }`,
++  ];
++  if (probe.data?.probePoint) footerParts.push(`测点 ${probe.data.probePoint}`);
++  footerParts.push(`上次同步 ${lastFinishedText}`);
+   return (
+     <>
+       <section className="pro-banner" aria-label="欢迎">
+@@ -202,7 +522,12 @@ function LegacyDashboard() {
+             <Link to="/nodes">管理订阅源</Link>
+           </div>
+           <div className="pro-tabs" role="tablist" aria-label="节点视图">
+-            <button className="pro-tab" role="tab" aria-selected="true">
++            <button
++              className="pro-tab"
++              role="tab"
++              aria-selected={tab === 'list'}
++              onClick={() => setTab('list')}
++            >
+               节点列表
+             </button>
+             <button
+@@ -217,94 +542,270 @@ function LegacyDashboard() {
+             <button
+               className="pro-tab"
+               role="tab"
+-              aria-selected="false"
+-              disabled
+-              title="即将推出"
++              aria-selected={tab === 'runs'}
++              onClick={() => setTab('runs')}
+             >
+               节点测速记录
+             </button>
+           </div>
+-          <div className="pro-filter">
+-            <select
+-              value={region}
+-              onChange={(e) => setRegion(e.target.value)}
+-              aria-label="按地区筛选"
+-            >
+-              {regions.map((r) => (
+-                <option key={r} value={r}>
+-                  {r}
+-                </option>
+-              ))}
+-            </select>
+-            <input
+-              type="search"
+-              value={q}
+-              onChange={(e) => setQ(e.target.value)}
+-              placeholder="搜索节点名称或地区"
+-              aria-label="搜索节点名称或地区"
+-            />
++          <div className="pro-sync">
++            <span>上次同步：{lastFinishedText}</span>
++            {(probe.data?.queued ?? 0) > 0 && (
++              <span>排队中 {probe.data?.queued} 个</span>
++            )}
++            {(probe.data?.running ?? 0) > 0 && (
++              <span>进行中 {probe.data?.running} 个</span>
++            )}
++            {isAdminView && (
++              <button
++                type="button"
++                className="button primary"
++                disabled={syncing}
++                onClick={runAll}
++              >
++                {syncing ? '同步中…' : '立即同步'}
++              </button>
++            )}
+           </div>
+-          {catalog.error ? (
+-            <Empty
+-              title="节点列表暂不可用"
+-              description="请稍后重试，或检查订阅源配置。"
+-            />
+-          ) : filtered.length === 0 ? (
+-            <Empty
+-              title="暂无匹配节点"
+-              description={
+-                nodes.length === 0
+-                  ? '尚无可用节点，请先添加授权订阅源。'
+-                  : '当前筛选条件下没有节点。'
+-              }
++          {actionMsg && (
++            <p className="pro-table-more" role="status">
++              {actionMsg}
++            </p>
++          )}
++          {tab === 'runs' ? (
++            <ProbeRuns
++              nodes={nodes}
++              nodeId={runsNodeId}
++              onNodeId={setRunsNodeId}
++              status={runsStatus}
++              onStatus={setRunsStatus}
++              page={runsPage}
++              onPage={setRunsPage}
+             />
+           ) : (
+             <>
+-              <div className="pro-table-wrap">
+-                <table className="pro-table">
+-                  <thead>
+-                    <tr>
+-                      <th>节点名称</th>
+-                      <th>地区</th>
+-                      <th className="numeric">延迟</th>
+-                      <th className="numeric">下载速度</th>
+-                      <th className="numeric">上传速度</th>
+-                      <th>状态</th>
+-                    </tr>
+-                  </thead>
+-                  <tbody>
+-                    {filtered.slice(0, 50).map((n) => {
+-                      const status = statusOf(n);
++              <div className="pro-chips" role="group" aria-label="按地区筛选">
++                <button
++                  type="button"
++                  className="pro-chip"
++                  aria-pressed={region === '全部地区'}
++                  onClick={() => setRegion('全部地区')}
++                >
++                  全部 ({nodes.length})
++                </button>
++                {regionCounts.map(([country, count]) => (
++                  <button
++                    key={country}
++                    type="button"
++                    className="pro-chip"
++                    aria-pressed={region === country}
++                    onClick={() => setRegion(country)}
++                  >
++                    {flag(country)} {country} ({count})
++                  </button>
++                ))}
++              </div>
++              <div className="pro-filter">
++                <input
++                  type="search"
++                  value={q}
++                  onChange={(e) => setQ(e.target.value)}
++                  placeholder="搜索节点名称或地区"
++                  aria-label="搜索节点名称或地区"
++                />
++              </div>
++              {catalog.error ? (
++                <Empty
++                  title="节点列表暂不可用"
++                  description="请稍后重试，或检查订阅源配置。"
++                />
++              ) : filtered.length === 0 ? (
++                <Empty
++                  title="暂无匹配节点"
++                  description={
++                    nodes.length === 0
++                      ? '尚无可用节点，请先添加授权订阅源。'
++                      : '当前筛选条件下没有节点。'
++                  }
++                />
++              ) : (
++                <>
++                  <div className="pro-table-wrap pro-node-table">
++                    <table className="pro-table">
++                      <thead>
++                        <tr>
++                          {sortTh('name', '节点名称')}
++                          <th>地区</th>
++                          {sortTh('latency', '延迟', true)}
++                          {sortTh('download', '下载速度', true)}
++                          <th className="numeric">上传速度</th>
++                          <th>状态</th>
++                          {sortTh('lastProbe', '最后检测')}
++                          <th aria-label="操作">…</th>
++                        </tr>
++                      </thead>
++                      <tbody>
++                        {sorted.slice(0, 50).map((n) => {
++                          const status = probeOf(n);
++                          const open = openMenuId === String(n.id);
++                          return (
++                            <Fragment key={String(n.id)}>
++                              <tr>
++                                <td>
++                                  <span className="pro-node-name">
++                                    {String(n.name ?? '未命名节点')}
++                                  </span>
++                                </td>
++                                <td>
++                                  {flag(String(n.country ?? ''))}{' '}
++                                  {String(n.country ?? '未标注')}
++                                </td>
++                                <td className="numeric">
++                                  {fmtLatency(n.latencyMs)}
++                                </td>
++                                <td className="numeric">
++                                  {fmtSpeed(n.downloadMbps)}
++                                </td>
++                                <td className="numeric">
++                                  {fmtSpeed(n.uploadMbps)}
++                                </td>
++                                <td>
++                                  <span className={`pro-status ${status.cls}`}>
++                                    {status.text}
++                                  </span>
++                                </td>
++                                <td>
++                                  {n.lastProbeAt
++                                    ? relativeTime(String(n.lastProbeAt))
++                                    : '未探测'}
++                                </td>
++                                <td>
++                                  <button
++                                    type="button"
++                                    className="pro-row-menu-btn"
++                                    aria-expanded={open}
++                                    aria-label={`${String(
++                                      n.name ?? '未命名节点',
++                                    )}的操作`}
++                                    onClick={() =>
++                                      setOpenMenuId(open ? null : String(n.id))
++                                    }
++                                  >
++                                    …
++                                  </button>
++                                </td>
++                              </tr>
++                              {open && (
++                                <tr className="pro-row-actions">
++                                  <td colSpan={8}>
++                                    <div className="pro-row-actions-inner">
++                                      <button
++                                        type="button"
++                                        className="button primary"
++                                        disabled={
++                                          !canRetest(n) ||
++                                          retestingId === String(n.id)
++                                        }
++                                        onClick={() => retest(n)}
++                                      >
++                                        {retestingId === String(n.id)
++                                          ? '排队中…'
++                                          : '手动重测'}
++                                      </button>
++                                      <button
++                                        type="button"
++                                        className="button"
++                                        onClick={() => viewHistory(n)}
++                                      >
++                                        查看历史
++                                      </button>
++                                      {!canRetest(n) && (
++                                        <span className="pro-row-note">
++                                          {String(n.probeStatus) ===
++                                          'UNAUTHORIZED'
++                                            ? '该节点未授权，无法重测'
++                                            : '该节点已停用，无法重测'}
++                                        </span>
++                                      )}
++                                    </div>
++                                  </td>
++                                </tr>
++                              )}
++                            </Fragment>
++                          );
++                        })}
++                      </tbody>
++                    </table>
++                  </div>
++                  <div className="pro-node-cards" aria-label="节点卡片">
++                    {sorted.slice(0, 50).map((n) => {
++                      const status = probeOf(n);
+                       return (
+-                        <tr key={String(n.id)}>
+-                          <td>
++                        <article
++                          className="glass pro-node-card"
++                          key={String(n.id)}
++                        >
++                          <div className="pro-node-card-top">
+                             <span className="pro-node-name">
+                               {String(n.name ?? '未命名节点')}
+                             </span>
+-                          </td>
+-                          <td>
+-                            {flag(String(n.country ?? ''))}{' '}
+-                            {String(n.country ?? '未标注')}
+-                          </td>
+-                          <td className="numeric">未探测</td>
+-                          <td className="numeric">未探测</td>
+-                          <td className="numeric">未探测</td>
+-                          <td>
+                             <span className={`pro-status ${status.cls}`}>
+                               {status.text}
+                             </span>
+-                          </td>
+-                        </tr>
++                          </div>
++                          <p className="pro-node-card-meta">
++                            {flag(String(n.country ?? ''))}{' '}
++                            {String(n.country ?? '未标注')} ·{' '}
++                            {String(n.protocol ?? '')} · 延迟{' '}
++                            {fmtLatency(n.latencyMs)} · 下载{' '}
++                            {fmtSpeed(n.downloadMbps)}
++                          </p>
++                          <details className="pro-node-card-details">
++                            <summary>详情与历史</summary>
++                            <dl className="pro-kv">
++                              <dt>上传速度</dt>
++                              <dd>{fmtSpeed(n.uploadMbps)}</dd>
++                              <dt>最后检测</dt>
++                              <dd>
++                                {n.lastProbeAt
++                                  ? formatTime(String(n.lastProbeAt))
++                                  : '未探测'}
++                              </dd>
++                              <dt>地区</dt>
++                              <dd>
++                                {String(n.country ?? '未标注')}
++                                {n.region ? ` · ${String(n.region)}` : ''}
++                              </dd>
++                            </dl>
++                            <div className="pro-node-card-actions">
++                              <button
++                                type="button"
++                                className="button primary"
++                                disabled={
++                                  !canRetest(n) || retestingId === String(n.id)
++                                }
++                                onClick={() => retest(n)}
++                              >
++                                {retestingId === String(n.id)
++                                  ? '排队中…'
++                                  : '手动重测'}
++                              </button>
++                              <button
++                                type="button"
++                                className="button"
++                                onClick={() => viewHistory(n)}
++                              >
++                                查看历史
++                              </button>
++                            </div>
++                          </details>
++                        </article>
+                       );
+                     })}
+-                  </tbody>
+-                </table>
+-              </div>
+-              <p className="pro-table-more">
+-                共 {filtered.length} 个节点
+-                {filtered.length > 50 ? '，仅显示前 50 个' : ''}·
+-                延迟与速度尚未接入探测
+-              </p>
++                  </div>
++                  <p className="pro-table-more">{footerParts.join(' · ')}</p>
++                </>
++              )}
+             </>
+           )}
+         </section>
+diff --git a/apps/web/src/workspace/NodeCatalog.tsx b/apps/web/src/workspace/NodeCatalog.tsx
+index a0e0f45..d51cc83 100644
+--- a/apps/web/src/workspace/NodeCatalog.tsx
++++ b/apps/web/src/workspace/NodeCatalog.tsx
+@@ -19,7 +19,29 @@ type CatalogNode = {
+   health: string;
+   authorized: boolean;
+   canSubscribe: boolean;
++  latencyMs: number | null;
++  downloadMbps: number | null;
++  uploadMbps: number | null;
++  lastProbeAt: string | null;
++  probeStatus: string;
+ };
++// 探测四态（与仪表盘一致；文案固定，不得用“—”或空白冒充）。
++const probeLabel: Record<
++  string,
++  { text: string; tone: 'neutral' | 'success' | 'warning' | 'danger' }
++> = {
++  UNPROBED: { text: '未探测', tone: 'neutral' },
++  OK: { text: '可用', tone: 'success' },
++  TIMEOUT: { text: '超时', tone: 'warning' },
++  FAILED: { text: '失败', tone: 'danger' },
++  UNAUTHORIZED: { text: '未授权', tone: 'neutral' },
++};
++const probeOf = (node: CatalogNode) =>
++  probeLabel[node.probeStatus ?? 'UNPROBED'] ?? probeLabel.UNPROBED;
++const fmtLatency = (value: number | null) =>
++  typeof value === 'number' ? `${value} ms` : '未探测';
++const fmtSpeed = (value: number | null) =>
++  typeof value === 'number' ? `${Number(value).toFixed(1)} Mbps` : '未探测';
+ const flags: Record<string, string> = {
+   香港: '🇭🇰',
+   中国香港: '🇭🇰',
+@@ -119,49 +141,63 @@ export function NodeCatalog() {
+         <>
+           <p className="v3-node-note">
+             共 {filtered.length} 个开放展示节点 ·
+-            未进行连通性检测的节点会如实标记为“未检测”。
++            未探测的节点会如实标记为“未探测”；上传速度尚未接入测速。
+           </p>
+           <div className="v3-node-grid">
+-            {filtered.slice(0, limit).map((node) => (
+-              <article className="glass v3-node" key={node.id}>
+-                <div className="v3-node-top">
+-                  <h2>
+-                    <span aria-hidden="true">
+-                      {flags[node.country] || '🌐'}
+-                    </span>{' '}
+-                    {node.name}
+-                  </h2>
+-                  <Badge>
+-                    {node.health === 'DISABLED'
+-                      ? '已停用'
+-                      : node.health === 'EXPIRED'
+-                        ? '已过期'
+-                        : '未检测'}
+-                  </Badge>
+-                </div>
+-                <div className="v3-node-meta">
+-                  <span>
+-                    {node.country}
+-                    {node.region ? ' · ' + node.region : ''}
+-                  </span>
+-                  <span>{node.protocol.toUpperCase()}</span>
+-                  {node.group && <span>{node.group}</span>}
+-                </div>
+-                <div className="v3-node-bottom">
+-                  <span>
+-                    <ShieldCheck size={13} />{' '}
+-                    {node.authorized ? '已获使用授权' : '尚未授权'}
+-                  </span>
+-                  {node.canSubscribe ? (
+-                    <Link className="button primary" to="/subscription">
+-                      管理订阅
+-                    </Link>
+-                  ) : (
+-                    <button disabled>未开放订阅</button>
+-                  )}
+-                </div>
+-              </article>
+-            ))}
++            {filtered.slice(0, limit).map((node) => {
++              const probe = probeOf(node);
++              return (
++                <article className="glass v3-node" key={node.id}>
++                  <div className="v3-node-top">
++                    <h2>
++                      <span aria-hidden="true">
++                        {flags[node.country] || '🌐'}
++                      </span>{' '}
++                      {node.name}
++                    </h2>
++                    <Badge
++                      tone={
++                        node.health === 'DISABLED' || node.health === 'EXPIRED'
++                          ? 'neutral'
++                          : probe.tone
++                      }
++                    >
++                      {node.health === 'DISABLED'
++                        ? '已停用'
++                        : node.health === 'EXPIRED'
++                          ? '已过期'
++                          : probe.text}
++                    </Badge>
++                  </div>
++                  <div className="v3-node-meta">
++                    <span>
++                      {node.country}
++                      {node.region ? ' · ' + node.region : ''}
++                    </span>
++                    <span>{node.protocol.toUpperCase()}</span>
++                    {node.group && <span>{node.group}</span>}
++                  </div>
++                  <div className="v3-node-probe">
++                    <span>延迟 {fmtLatency(node.latencyMs)}</span>
++                    <span>下载 {fmtSpeed(node.downloadMbps)}</span>
++                    <span>上传 {fmtSpeed(node.uploadMbps)}</span>
++                  </div>
++                  <div className="v3-node-bottom">
++                    <span>
++                      <ShieldCheck size={13} />{' '}
++                      {node.authorized ? '已获使用授权' : '尚未授权'}
++                    </span>
++                    {node.canSubscribe ? (
++                      <Link className="button primary" to="/subscription">
++                        管理订阅
++                      </Link>
++                    ) : (
++                      <button disabled>未开放订阅</button>
++                    )}
++                  </div>
++                </article>
++              );
++            })}
+           </div>
+           {!filtered.length && (
+             <div className="glass v3-node">
+diff --git a/apps/web/src/workspace/workspace.css b/apps/web/src/workspace/workspace.css
+index 70d16a6..c6a7994 100644
+--- a/apps/web/src/workspace/workspace.css
++++ b/apps/web/src/workspace/workspace.css
+@@ -134,6 +134,14 @@
+   color: var(--muted);
+   font-size: 10px;
+ }
++.v3-node-probe {
++  display: flex;
++  gap: 7px;
++  flex-wrap: wrap;
++  color: var(--muted);
++  font-size: 11px;
++  font-variant-numeric: tabular-nums;
++}
+ .v3-node-bottom {
+   display: flex;
+   align-items: center;
+diff --git a/apps/worker/src/jobs.ts b/apps/worker/src/jobs.ts
+index 28fc609..fb6b803 100644
+--- a/apps/worker/src/jobs.ts
++++ b/apps/worker/src/jobs.ts
+@@ -32,6 +32,14 @@ import {
+   nodeMetadata,
+   type Node,
+ } from '../../../packages/subscription/src';
++import {
++  readProbeSettings,
++  probeBudgetRemaining,
++  probeEligibleNodeRows,
++  PROBE_DELAY_TARGET,
++  PROBE_SPEED_URL,
++} from '../../api/src/probe';
++const PROBE_URL = process.env.PROBE_URL || 'http://127.0.0.1:19090';
+ export async function runSubscriptionJob(job: any) {
+   const [source] =
+     await sql`select s.* from node_sources s join users u on u.id=s.owner_id where s.id=${job.source_id} and s.revoked_at is null and not u.disabled and u.deleted_at is null`;
+@@ -96,6 +104,183 @@ export async function runSubscriptionJob(job: any) {
+     return diff;
+   });
+ }
++// ---- 阶段 3：节点探测 ----
++// 探测服务（apps/probe）在回环地址上提供 POST /probe；Worker 只做编排与入库，
++// 不直接握手节点、不在进程内跑 Mihomo。凭据只在内存中流转，绝不记日志。
++async function callProbeService(body: any) {
++  const controller = new AbortController();
++  const timer = setTimeout(() => controller.abort(), 180000);
++  try {
++    const res = await fetch(`${PROBE_URL}/probe`, {
++      method: 'POST',
++      headers: { 'content-type': 'application/json' },
++      body: JSON.stringify(body),
++      signal: controller.signal,
++    });
++    if (!res.ok) throw Error(`PROBE_SERVICE_${res.status}`);
++    const data: any = await res.json();
++    if (!Array.isArray(data?.results))
++      throw Error('PROBE_SERVICE_BAD_RESPONSE');
++    return data.results;
++  } finally {
++    clearTimeout(timer);
++  }
++}
++async function writeProbeResults(settings: any, kind: string, results: any[]) {
++  await sql.begin(async (tx) => {
++    for (const r of results) {
++      const finishedAt = r.finishedAt || new Date().toISOString();
++      await tx`insert into probe_results(node_id,probe_point,target,started_at,finished_at,status,latency_ms,download_mbps,upload_mbps,error_code,error_message) values(${r.id},${settings.probePoint},${kind === 'speed' ? PROBE_SPEED_URL(settings.speedBytes) : PROBE_DELAY_TARGET},${r.startedAt || null},${finishedAt},${r.status},${r.status === 'OK' ? (r.latencyMs ?? null) : null},${r.downloadMbps ?? null},${null},${r.errorCode ?? null},${r.errorMessage ?? null})`;
++      await tx`update nodes set last_probe_at=${finishedAt},last_probe_status=${r.status},updated_at=now() where id=${r.id}`;
++    }
++  });
++}
++async function addProbeUsage(deltaBytes: number) {
++  if (!deltaBytes) return;
++  const deltaMb = deltaBytes / 1048576;
++  await sql.begin(async (tx) => {
++    const today = new Date().toISOString().slice(0, 10);
++    const [row] =
++      await tx`select value from settings where key='probe_daily_usage' for update`;
++    const current =
++      row?.value && typeof row.value === 'object' ? row.value : null;
++    const next =
++      current?.date === today
++        ? { date: today, mb: Math.max(0, Number(current.mb) || 0) + deltaMb }
++        : { date: today, mb: deltaMb };
++    await tx`insert into settings(key,value) values('probe_daily_usage',${tx.json(next)}) on conflict(key) do update set value=excluded.value,updated_at=now()`;
++  });
++}
++async function recordProbeRunCompletion(job: any, result: any) {
++  // 只记全量/轮询任务的完成时间（手动单节点重测不重置轮询计时）。
++  if (!job.data.all) return;
++  const kind = job.data.type === 'PROBE_SPEED' ? 'speed' : 'latency';
++  const finishedAt = new Date().toISOString();
++  const key =
++    kind === 'speed' ? 'probe_last_speed_at' : 'probe_last_latency_at';
++  await sql.begin(async (tx) => {
++    await tx`insert into settings(key,value) values(${key},${tx.json(finishedAt)}) on conflict(key) do update set value=excluded.value,updated_at=now()`;
++    await tx`insert into settings(key,value) values('probe_last_run',${tx.json({ finishedAt, ok: result.ok, total: result.probed, kind })}) on conflict(key) do update set value=excluded.value,updated_at=now()`;
++  });
++}
++// 阶段 3：探测结果保留期清理（每日一次，由 tick 驱动）。
++// 删除 created_at 早于保留期下限的 probe_results 行，但每节点最新一行
++// 永远保留（nodes.last_probe_at/last_probe_status 不动，状态不会失真）。
++// 每批最多删 10000 行；一次删不完不更新清理时间，下次 tick 继续。
++// 不记审计；只 console.info 一行数量。
++const PROBE_RETENTION_BATCH = 10000;
++async function cleanupProbeResults(settings: any) {
++  const lastAt = settings.lastRetentionAt
++    ? new Date(settings.lastRetentionAt).getTime()
++    : NaN;
++  if (Number.isFinite(lastAt) && Date.now() - lastAt < 24 * 3600 * 1000) return;
++  const deleted = await sql.begin(async (tx) => {
++    await tx`select pg_advisory_xact_lock(77704)`;
++    return tx`delete from probe_results where id in (select id from probe_results where created_at<now()-interval '1 day'*${settings.retentionDays} and id not in (select distinct on (node_id) id from probe_results order by node_id, created_at desc, id desc) order by created_at limit ${PROBE_RETENTION_BATCH}) returning id`;
++  });
++  const count = deleted.length;
++  if (count < PROBE_RETENTION_BATCH) {
++    await sql`insert into settings(key,value) values('probe_last_retention_at',${sql.json(new Date().toISOString())}) on conflict(key) do update set value=excluded.value,updated_at=now()`;
++  }
++  console.info(`[probe] retention cleanup deleted ${count} rows`);
++}
++export async function runProbeJob(job: any) {
++  if (process.env.DEMO_MODE === 'true') throw Error('演示模式不探测');
++  const settings = await readProbeSettings();
++  const kind = job.data.type === 'PROBE_SPEED' ? 'speed' : 'latency';
++  const budget = await probeBudgetRemaining();
++  if (budget.remainingMb <= 0)
++    return {
++      budgetExceeded: true,
++      probed: 0,
++      ok: 0,
++      failed: 0,
++      bytesUsedMb: 0,
++    };
++  let rows: any[] = await probeEligibleNodeRows();
++  if (job.data.nodeId) rows = rows.filter((r: any) => r.id === job.data.nodeId);
++  const targets: { id: string; name: string; node: Node }[] = [];
++  let probed = 0;
++  let ok = 0;
++  let failed = 0;
++  let bytesUsed = 0;
++  let flushedBytes = 0;
++  let budgetExceeded = false;
++  for (const row of rows) {
++    try {
++      const node = JSON.parse(unseal(row.secret)) as Node;
++      targets.push({
++        id: row.id,
++        name: row.data?.name || node.name,
++        node,
++      });
++    } catch {
++      // secret 解不开的节点记一条 FAILED 行，不中断整批。
++      await writeProbeResults(settings, kind, [
++        {
++          id: row.id,
++          status: 'FAILED',
++          latencyMs: null,
++          downloadMbps: null,
++          errorCode: 'PROTOCOL_ERROR',
++          errorMessage: '节点配置无法解析',
++        },
++      ]);
++      probed++;
++      failed++;
++    }
++  }
++  for (let i = 0; i < targets.length; i += settings.concurrency) {
++    const chunk = targets.slice(i, i + settings.concurrency);
++    if (kind === 'speed') {
++      // 预算预检：本批测速最多消耗 chunk × speedBytes；余量不足即停。
++      const needMb = (chunk.length * settings.speedBytes) / 1048576;
++      const remaining = (await probeBudgetRemaining()).remainingMb;
++      if (remaining < needMb) {
++        budgetExceeded = true;
++        break;
++      }
++    }
++    const results = await callProbeService({
++      kind,
++      nodes: chunk.map(({ id, name, node }) => ({ id, name, node })),
++      speedBytes: settings.speedBytes,
++      timeoutSeconds: settings.timeoutSeconds,
++    });
++    const byId = new Map(results.map((r: any) => [r.id, r]));
++    const complete = chunk.map((t) => {
++      const r = byId.get(t.id);
++      if (r) return r;
++      // 探测服务漏回的节点记 FAILED，不静默丢弃。
++      return {
++        id: t.id,
++        status: 'FAILED',
++        latencyMs: null,
++        downloadMbps: null,
++        errorCode: 'PROTOCOL_ERROR',
++        errorMessage: '探测服务未返回该节点结果',
++      };
++    });
++    await writeProbeResults(settings, kind, complete);
++    for (const r of complete) {
++      probed++;
++      if (r.status === 'OK') ok++;
++      else failed++;
++      bytesUsed += r.bytesUsed || 0;
++    }
++    await addProbeUsage(bytesUsed - flushedBytes);
++    flushedBytes = bytesUsed;
++    // 心跳：避免 worker/index.ts 的 5 分钟 RUNNING stale 重置把长轮询打回 QUEUED。
++    await sql`update background_jobs set updated_at=now() where id=${job.id}`;
++  }
++  return {
++    budgetExceeded,
++    probed,
++    ok,
++    failed,
++    bytesUsedMb: bytesUsed / 1048576,
++  };
++}
+ export async function tick() {
+   if (platformAccountsEnabled()) {
+     await checkPlatformAccount();
+@@ -106,6 +291,13 @@ export async function tick() {
+       where t.id=l.task_id and l.dispatched_at is null and l.charged_micros is null
+       and t.data->>'status' not in ('QUEUED','PREPARING','RUNNING','PAUSED','TESTING')`;
+   }
++  const probeSettings = await readProbeSettings();
++  // 探测结果保留期清理（每日一次；失败只记一行警告，不中断 tick）。
++  try {
++    await cleanupProbeResults(probeSettings);
++  } catch (err) {
++    console.warn('[probe] retention cleanup failed', err);
++  }
+   await sql.begin(async (tx) => {
+     await tx`select pg_advisory_xact_lock(77703)`;
+     const sources =
+@@ -123,6 +315,35 @@ export async function tick() {
+       await tx`insert into background_jobs(owner_id,source_id,data) values(${s.owner_id},${s.id},${tx.json({ type: 'SUBSCRIPTION_SYNC', status: 'QUEUED', attempt: 0, nextRun: new Date().toISOString() })})`;
+       await tx`update node_sources set data=data || ${tx.json({ lastScheduled: new Date().toISOString() })} where id=${s.id}`;
+     }
++    // 阶段 3 探测轮询：无 QUEUED/RUNNING 的同类任务，且距上次轮询完成
++    // 超过设定间隔时入队一个全量任务。演示模式不排探测。
++    if (process.env.DEMO_MODE !== 'true') {
++      for (const [type, intervalSeconds, lastAt] of [
++        [
++          'PROBE_LATENCY',
++          probeSettings.latencyIntervalSeconds,
++          probeSettings.lastLatencyAt,
++        ],
++        [
++          'PROBE_SPEED',
++          probeSettings.speedIntervalSeconds,
++          probeSettings.lastSpeedAt,
++        ],
++      ] as const) {
++        const due =
++          !lastAt ||
++          Date.now() - new Date(lastAt).getTime() > intervalSeconds * 1000;
++        if (!due) continue;
++        const [pending] =
++          await tx`select id from background_jobs where data->>'type'=${type} and data->>'status' in ('QUEUED','RUNNING') and revoked_at is null limit 1`;
++        if (pending) continue;
++        // 探测任务是全系统任务，owner 取首个 Owner（仅作归属，不代表授权）。
++        const [owner] =
++          await tx`select id from users where role='Owner' and not disabled and deleted_at is null order by created_at limit 1`;
++        if (!owner) continue;
++        await tx`insert into background_jobs(owner_id,source_id,data) values(${owner.id},null,${tx.json({ type, status: 'QUEUED', attempt: 0, nextRun: new Date().toISOString(), all: true })})`;
++      }
++    }
+   });
+   const job = await sql.begin(async (tx) => {
+     const [r] =
+@@ -151,6 +372,36 @@ export async function tick() {
+       });
+     }
+   }
++  // 阶段 3：认领一个探测任务（SKIP LOCKED，沿用订阅任务模式）。
++  // 单节点失败只记 probe_results 行，不失败整批；只有探测服务本身
++  // 不可用等致命错误才走指数退避重试。
++  const probeJob = await sql.begin(async (tx) => {
++    const [r] =
++      await tx`select j.* from background_jobs j where j.revoked_at is null and j.data->>'type' in ('PROBE_LATENCY','PROBE_SPEED') and j.data->>'status'='QUEUED' and (j.data->>'nextRun')::timestamptz<=now() order by j.created_at for update of j skip locked limit 1`;
++    if (r)
++      await tx`update background_jobs set data=data || '{"status":"RUNNING"}',updated_at=now() where id=${r.id}`;
++    return r;
++  });
++  if (probeJob) {
++    try {
++      const result = await runProbeJob(probeJob);
++      if (result.budgetExceeded) {
++        // 预算耗尽即停，不重试（当日预算到次日才恢复）；记审计。
++        await sql`update background_jobs set data=data || ${sql.json({ status: 'FAILED', error: 'PROBE_BUDGET_EXCEEDED' })},updated_at=now() where id=${probeJob.id} and data->>'status'='RUNNING'`;
++        await audit(probeJob.owner_id, 'probe.budget_exceeded', probeJob.id);
++      } else {
++        const changed =
++          await sql`update background_jobs set data=data || ${sql.json({ status: 'COMPLETED', probeSummary: { probed: result.probed, ok: result.ok, failed: result.failed, bytesUsedMb: result.bytesUsedMb } })},updated_at=now() where id=${probeJob.id} and data->>'status'='RUNNING' returning id`;
++        if (changed.length) await recordProbeRunCompletion(probeJob, result);
++      }
++    } catch {
++      await sql.begin(async (tx) => {
++        const attempt = (probeJob.data.attempt || 0) + 1;
++        const status = attempt >= 3 ? 'FAILED' : 'QUEUED';
++        await tx`update background_jobs set data=data || ${tx.json({ status, attempt, error: '节点探测失败，将自动重试', nextRun: new Date(Date.now() + 2 ** attempt * 60000).toISOString() })},updated_at=now() where id=${probeJob.id} and data->>'status'='RUNNING'`;
++      });
++    }
++  }
+   const task = await sql.begin(async (tx) => {
+     const [r] =
+       await tx`select t.* from ai_tasks t join users u on u.id=t.owner_id where t.data->>'status'='QUEUED' and (t.platform_account_id is null or ${platformAiEnabled()}) and not u.disabled order by t.created_at for update of t skip locked limit 1`;
+diff --git a/infra/docker/compose.dev.yaml b/infra/docker/compose.dev.yaml
+index d17f713..69a675f 100644
+--- a/infra/docker/compose.dev.yaml
++++ b/infra/docker/compose.dev.yaml
+@@ -53,6 +53,31 @@ services:
+       timeout: 5s
+       retries: 3
+     depends_on: { seed: { condition: service_completed_successfully } }
++  probe:
++    <<: *runtime
++    command: ['node', '--import', 'tsx', 'apps/probe/src/index.ts']
++    ports: ['127.0.0.1:19090:19090']
++    environment:
++      PROBE_POINT: ${PROBE_POINT:-kong-us-east-2}
++      MIHOMO_BIN: ${MIHOMO_BIN:-/usr/local/bin/mihomo}
++    # 0600 临时 Mihomo 配置写在 tmpfs（/dev/shm；/tmp 本已是 tmpfs），用完即删，凭据不落盘。
++    # worker 不依赖 probe 的启动顺序：probe 未就绪时 /probe 返回 503，任务按现有退避重试。
++    tmpfs: ['/tmp', '/dev/shm']
++    deploy:
++      resources:
++        limits: { cpus: '0.5', memory: 512M }
++    healthcheck:
++      test:
++        [
++          'CMD',
++          'node',
++          '-e',
++          "fetch('http://127.0.0.1:19090/health').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))",
++        ]
++      interval: 15s
++      timeout: 5s
++      retries: 3
++    depends_on: { seed: { condition: service_completed_successfully } }
+   web:
+     build:
+       context: ../..
+diff --git a/infra/docker/compose.production.yaml b/infra/docker/compose.production.yaml
+index a4b5d8f..1a6d708 100644
+--- a/infra/docker/compose.production.yaml
++++ b/infra/docker/compose.production.yaml
+@@ -82,6 +82,32 @@ services:
+       timeout: 5s
+       retries: 3
+     depends_on: { migrate: { condition: service_completed_successfully } }
++  probe:
++    <<: *runtime
++    command: ['node', '--import', 'tsx', 'apps/probe/src/index.ts']
++    ports: ['127.0.0.1:19090:19090']
++    environment:
++      <<: *runtime_environment
++      PROBE_POINT: ${PROBE_POINT:-kong-us-east-2}
++      MIHOMO_BIN: ${MIHOMO_BIN:-/usr/local/bin/mihomo}
++    # 0600 临时 Mihomo 配置写在 tmpfs（/dev/shm；/tmp 本已是 tmpfs），用完即删，凭据不落盘。
++    # worker 不依赖 probe 的启动顺序：probe 未就绪时 /probe 返回 503，任务按现有退避重试。
++    tmpfs: ['/tmp', '/dev/shm']
++    deploy:
++      resources:
++        limits: { cpus: '0.5', memory: 512M }
++    healthcheck:
++      test:
++        [
++          'CMD',
++          'node',
++          '-e',
++          "fetch('http://127.0.0.1:19090/health').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))",
++        ]
++      interval: 15s
++      timeout: 5s
++      retries: 3
++    depends_on: { migrate: { condition: service_completed_successfully } }
+   web:
+     logging: *logging
+     image: fafa-one-web:${IMAGE_TAG:?set IMAGE_TAG}
+diff --git a/package.json b/package.json
+index a539614..0a0f59f 100644
+--- a/package.json
++++ b/package.json
+@@ -14,7 +14,7 @@
+     "format": "prettier --write .",
+     "format:check": "prettier --check .",
+     "typecheck": "tsc --noEmit",
+-    "test": "vitest run tests/unit.test.ts tests/domain.test.ts tests/nodes.test.ts tests/backup.test.ts tests/wloc.test.ts tests/wloc-device.test.ts tests/phase-1-navigation.test.ts",
++    "test": "vitest run tests/unit.test.ts tests/domain.test.ts tests/nodes.test.ts tests/backup.test.ts tests/wloc.test.ts tests/wloc-device.test.ts tests/phase-1-navigation.test.ts tests/probe.test.ts",
+     "test:integration": "tsx infra/scripts/integration.ts",
+     "test:e2e": "playwright test",
+     "build": "vite build --config apps/web/vite.config.ts && vite build --config apps/admin/vite.config.ts && tsc --noEmit",
+diff --git a/packages/db/migrations/012_probe_results.sql b/packages/db/migrations/012_probe_results.sql
+new file mode 100644
+index 0000000..02ab4f5
+--- /dev/null
++++ b/packages/db/migrations/012_probe_results.sql
+@@ -0,0 +1,39 @@
++-- 012_probe_results: FAFA ONE 2.0 阶段 3（节点探测）.
++-- 新建 probe_results（每次探测一行，只追加，不原地改写历史）；
++-- nodes 补 last_probe_at / last_probe_status（回填缓存，真实来源仍是 probe_results 最新行）。
++-- 不加 group_id；不建 node_groups（001 已有，复用）；不动 node_health_checks。
++-- D-N5 结论 (a)：node_health_checks 自 001 建表后，全仓库无任何应用代码读写
++-- （工作区 grep 仅命中 001 DDL 与 packages/db/src/schema.ts 的 drizzle 导出；
++-- GitHub search_code 对本私库返回 total_count 0，该索引不可靠，不作为反证），
++-- 标记为遗留表；012 仍新建 probe_results 作为唯一探测结果表，不得两套探测结果表并存。
++-- 上传测速：upload_mbps 列存在但本阶段所有写入路径保持 NULL
++-- （上传测速待 Cloudflare 端点在 Kong staging 验证通过后接入，用户决策 (b)）。
++-- ROLLBACK: DROP TABLE probe_results;
++--   ALTER TABLE nodes DROP COLUMN last_probe_status;
++--   ALTER TABLE nodes DROP COLUMN last_probe_at;
++-- （回滚不得 DROP node_groups / node_health_checks，不得动探测以外的任何数据。）
++-- 注意：011 预留给阶段 2（订阅源），本迁移直接编号 012。
++CREATE TABLE probe_results (
++ id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
++ node_id uuid NOT NULL REFERENCES nodes(id),
++ probe_point text,
++ target text,
++ started_at timestamptz,
++ finished_at timestamptz,
++ status text NOT NULL CHECK (status IN ('OK','TIMEOUT','FAILED')),
++ latency_ms integer CHECK (latency_ms IS NULL OR latency_ms >= 0),
++ download_mbps numeric CHECK (download_mbps IS NULL OR download_mbps >= 0),
++ upload_mbps numeric CHECK (upload_mbps IS NULL OR upload_mbps >= 0),
++ error_code text,
++ error_message text,
++ created_at timestamptz NOT NULL DEFAULT now(),
++ CHECK (
++  (status = 'OK' AND latency_ms IS NOT NULL) OR
++  (status <> 'OK' AND latency_ms IS NULL)
++ )
++);
++CREATE INDEX probe_results_node_time ON probe_results(node_id, created_at DESC);
++CREATE INDEX probe_results_started ON probe_results(started_at DESC);
++ALTER TABLE nodes ADD COLUMN last_probe_at timestamptz;
++ALTER TABLE nodes ADD COLUMN last_probe_status text NOT NULL DEFAULT 'UNPROBED'
++ CHECK (last_probe_status IN ('UNPROBED','OK','TIMEOUT','FAILED'));
+diff --git a/packages/db/src/migrate.ts b/packages/db/src/migrate.ts
+index b895194..fb94a01 100644
+--- a/packages/db/src/migrate.ts
++++ b/packages/db/src/migrate.ts
+@@ -12,6 +12,8 @@ for (const name of [
+   '008_anthropic_credentials.sql',
+   '009_platform_ai.sql',
+   '010_platform_chat.sql',
++  // 011 预留给阶段 2（订阅源）。
++  '012_probe_results.sql',
+ ]) {
+   await sql.begin(async (tx) => {
+     await tx`select pg_advisory_xact_lock(77701)`;
+diff --git a/packages/db/src/schema.ts b/packages/db/src/schema.ts
+index 0987388..c0ecd25 100644
+--- a/packages/db/src/schema.ts
++++ b/packages/db/src/schema.ts
+@@ -5,6 +5,8 @@ import {
+   jsonb,
+   timestamp,
+   boolean,
++  integer,
++  numeric,
+ } from 'drizzle-orm/pg-core';
+ export const users = pgTable('users', {
+   id: uuid('id').primaryKey().defaultRandom(),
+@@ -58,3 +60,25 @@ export const server_access_grants = resource('server_access_grants');
+ export const ssh_sessions = resource('ssh_sessions');
+ export const location_presets = resource('location_presets');
+ export const background_jobs = resource('background_jobs');
++// 阶段 3（探测引擎）：probe_results 是唯一探测结果表。
++// node_health_checks 是 001 遗留表，全仓库无应用代码读写，不动它。
++// 注意：nodes 的 last_probe_at / last_probe_status 两列只在 012 迁移里存在，
++// schema.ts 是不完整镜像（与 ai_platform_* 的 raw-SQL-only 约定一致），
++// 探测读写走 raw SQL，不走 drizzle。
++export const probe_results = pgTable('probe_results', {
++  id: uuid('id').primaryKey().defaultRandom(),
++  nodeId: uuid('node_id')
++    .notNull()
++    .references(() => nodes.id),
++  probePoint: text('probe_point'),
++  target: text('target'),
++  startedAt: timestamp('started_at'),
++  finishedAt: timestamp('finished_at'),
++  status: text('status').notNull(),
++  latencyMs: integer('latency_ms'),
++  downloadMbps: numeric('download_mbps'),
++  uploadMbps: numeric('upload_mbps'),
++  errorCode: text('error_code'),
++  errorMessage: text('error_message'),
++  createdAt: timestamp('created_at').defaultNow(),
++});
+diff --git a/packages/ui/src/style.css b/packages/ui/src/style.css
+index b90c3ec..11e9ad5 100644
+--- a/packages/ui/src/style.css
++++ b/packages/ui/src/style.css
+@@ -2357,11 +2357,142 @@ td .actions {
+   background: rgba(83, 94, 129, 0.14);
+   color: var(--muted);
+ }
++.pro-status.warn {
++  background: rgba(217, 119, 6, 0.16);
++  color: #b45309;
++}
++.pro-status.err {
++  background: rgba(220, 38, 38, 0.14);
++  color: #b91c1c;
++}
+ .pro-table-more {
+   margin: 0.75rem 0 0;
+   color: var(--muted);
+   font-size: 0.82rem;
+ }
++/* 探测同步行 */
++.pro-sync {
++  display: flex;
++  flex-wrap: wrap;
++  align-items: center;
++  gap: 0.6rem;
++  margin-block-end: 0.85rem;
++  color: var(--muted);
++  font-size: 0.85rem;
++}
++.pro-sync .button {
++  min-height: 44px;
++}
++/* 地区筛选 chips */
++.pro-chips {
++  display: flex;
++  flex-wrap: wrap;
++  gap: 0.45rem;
++  margin-block-end: 0.85rem;
++}
++.pro-chip {
++  min-height: 40px;
++  padding: 0.4rem 0.8rem;
++  border: 1px solid var(--line);
++  border-radius: 999px;
++  background: var(--surface);
++  color: var(--text);
++  font: inherit;
++  font-size: 0.88rem;
++  font-weight: 600;
++  cursor: pointer;
++}
++.pro-chip[aria-pressed='true'] {
++  border-color: var(--primary);
++  background: rgba(124, 58, 237, 0.12);
++  color: var(--primary);
++}
++/* 可排序表头 */
++.pro-sort-btn {
++  padding: 0;
++  border: 0;
++  background: none;
++  color: inherit;
++  font: inherit;
++  font-weight: 700;
++  letter-spacing: 0.04em;
++  cursor: pointer;
++  white-space: nowrap;
++}
++/* 行内“…”操作 */
++.pro-row-menu-btn {
++  min-width: 44px;
++  min-height: 44px;
++  padding: 0.25rem 0.5rem;
++  border: 0;
++  border-radius: 0.6rem;
++  background: transparent;
++  color: var(--text);
++  font: inherit;
++  font-weight: 700;
++  cursor: pointer;
++}
++.pro-row-menu-btn:hover,
++.pro-row-menu-btn:focus-visible {
++  background: rgba(124, 58, 237, 0.1);
++}
++.pro-row-actions td {
++  white-space: normal;
++  background: var(--surface);
++}
++.pro-row-actions .pro-row-actions-inner {
++  display: flex;
++  flex-wrap: wrap;
++  align-items: center;
++  gap: 0.6rem;
++}
++.pro-row-actions .button {
++  min-height: 44px;
++}
++.pro-row-note {
++  color: var(--muted);
++  font-size: 0.82rem;
++}
++/* 节点表小屏卡片（默认隐藏桌面表格的替代） */
++.pro-node-cards {
++  display: none;
++}
++.pro-node-card {
++  display: flex;
++  flex-direction: column;
++  gap: 0.5rem;
++  padding: 0.8rem 0.9rem;
++}
++.pro-node-card-top {
++  display: flex;
++  align-items: center;
++  justify-content: space-between;
++  gap: 0.6rem;
++}
++.pro-node-card-meta {
++  margin: 0;
++  color: var(--muted);
++  font-size: 0.85rem;
++  line-height: 1.6;
++}
++.pro-node-card-details summary {
++  min-height: 44px;
++  display: flex;
++  align-items: center;
++  color: var(--primary);
++  font-size: 0.88rem;
++  font-weight: 600;
++  cursor: pointer;
++}
++.pro-node-card-actions {
++  display: flex;
++  flex-wrap: wrap;
++  gap: 0.6rem;
++  margin-block-start: 0.6rem;
++}
++.pro-node-card-actions .button {
++  min-height: 44px;
++}
+ /* 快捷操作与系统动态 */
+ .pro-quick {
+   display: grid;
+@@ -2469,3 +2600,13 @@ td .actions {
+     grid-template-columns: minmax(0, 1fr);
+   }
+ }
++@media (max-width: 760px) {
++  .pro-node-table {
++    display: none;
++  }
++  .pro-node-cards {
++    display: flex;
++    flex-direction: column;
++    gap: 0.6rem;
++  }
++}
+diff --git a/tests/e2e/probe.spec.ts b/tests/e2e/probe.spec.ts
+new file mode 100644
+index 0000000..343c088
+--- /dev/null
++++ b/tests/e2e/probe.spec.ts
+@@ -0,0 +1,268 @@
++import { test, expect, type Page } from '@playwright/test';
++import postgres from 'postgres';
++
++// 阶段 3（节点探测）e2e：显示层验证。
++// 做法：先经 API 导入 fixture 节点，再直接向 probe_results 插行，刷新页面断言显示。
++// 真实探测往返（Mihomo 真跑、真实延迟/下载）不在 e2e 里跑，只在 Kong 手动验收做。
++// 插行需要直连开发服务器所用的数据库：Kong 上跑 e2e 时须导出 TEST_DATABASE_URL
++//（与开发服务器的 DATABASE_URL 相同）；未导出时插行用例跳过，手动重测用例仍可跑。
++// 凭据一律用明显假值，不得放真实节点密码/UUID。
++
++const webOrigin = 'http://localhost:5173';
++const dbUrl = process.env.TEST_DATABASE_URL || process.env.DATABASE_URL || '';
++
++async function login(page: Page, profile = '管理员演示') {
++  await page.route('https://tile.openstreetmap.org/**', (r: any) => r.abort());
++  await page.goto('/');
++  await page.getByRole('button', { name: profile, exact: true }).click();
++  await expect(page.getByRole('heading', { name: /欢迎回来/ })).toBeVisible();
++}
++
++async function api(page: Page, path: string, method = 'GET', body?: unknown) {
++  const client = page.context().request;
++  const me = await client.get(webOrigin + '/api/me', { timeout: 5000 });
++  expect(me.status()).toBe(200);
++  const session = await me.json();
++  const response = await client.fetch(webOrigin + path, {
++    method,
++    timeout: 5000,
++    headers: {
++      origin: webOrigin,
++      ...(!['GET', 'HEAD'].includes(method)
++        ? { 'x-csrf-token': session.csrf }
++        : {}),
++    },
++    ...(body === undefined ? {} : { data: body }),
++  });
++  return { status: response.status(), data: await response.json() };
++}
++
++function ssLink(name: string) {
++  return (
++    'ss://' +
++    Buffer.from('aes-256-gcm:fictional-fixture-password').toString(
++      'base64url',
++    ) +
++    '@node.example.com:8388#' +
++    encodeURIComponent(name)
++  );
++}
++
++async function importFixtureNode(page: Page, name: string) {
++  const imported = await api(page, '/api/node-import', 'POST', {
++    name: '探测 e2e ' + name,
++    group: '',
++    kind: 'THIRD_PARTY_NODE',
++    content: ssLink(name),
++    authorized: true,
++    redistributionAuthorized: true,
++    authorizationReference: '虚构提供商授权 fixture',
++  });
++  expect(imported.status, JSON.stringify(imported.data)).toBe(200);
++  const sourceId = imported.data.sourceId as string;
++  const nodes = await api(page, '/api/nodes');
++  const node = nodes.data.find((n: any) => n.sourceId === sourceId);
++  expect(node?.id).toBeTruthy();
++  return { sourceId, nodeId: node.id as string, name: node.name as string };
++}
++
++type ProbeRowInput = {
++  status: 'OK' | 'TIMEOUT' | 'FAILED';
++  latencyMs?: number | null;
++  downloadMbps?: number | null;
++  errorCode?: string | null;
++  errorMessage?: string | null;
++};
++
++async function insertProbeRow(nodeId: string, row: ProbeRowInput) {
++  const db = postgres(dbUrl);
++  try {
++    const now = new Date().toISOString();
++    await db`insert into probe_results(node_id,probe_point,target,started_at,finished_at,status,latency_ms,download_mbps,upload_mbps,error_code,error_message) values(${nodeId},${'kong-us-east-2'},${'https://www.gstatic.com/generate_204'},${now},${now},${row.status},${row.latencyMs ?? null},${row.downloadMbps ?? null},${null},${row.errorCode ?? null},${row.errorMessage ?? null})`;
++  } finally {
++    await db.end();
++  }
++}
++
++async function cleanup(sourceIds: string[], nodeIds: string[]) {
++  if (!dbUrl) return;
++  const db = postgres(dbUrl);
++  try {
++    if (nodeIds.length) {
++      await db`delete from probe_results where node_id = any(${nodeIds})`;
++      await db`delete from background_jobs where data->>'nodeId' = any(${nodeIds})`;
++    }
++    if (sourceIds.length)
++      await db`update node_sources set revoked_at=now() where id = any(${sourceIds})`;
++  } finally {
++    await db.end();
++  }
++}
++
++test('仪表盘：一次 OK 探测后显示真实延迟与速度', async ({ page }) => {
++  test.skip(!dbUrl, '需要 TEST_DATABASE_URL 才能向 probe_results 插行');
++  await login(page);
++  const suffix = Date.now();
++  const node = await importFixtureNode(page, `OK 显示 ${suffix}`);
++  try {
++    await insertProbeRow(node.nodeId, {
++      status: 'OK',
++      latencyMs: 123,
++      downloadMbps: 45.6,
++    });
++    await page.goto('/');
++    const row = page.locator('.pro-node-table tbody tr', {
++      hasText: node.name,
++    });
++    await expect(row.locator('.pro-status')).toHaveText('可用');
++    await expect(row.locator('.pro-status')).toHaveClass(/pro-status ok/);
++    await expect(row).toContainText('123 ms');
++    await expect(row).toContainText('45.6 Mbps');
++    // 上传测速尚未接入：上传列诚实显示“未探测”，不得出现数字。
++    await expect(row).toContainText('未探测');
++    await expect(page.locator('.pro-sync')).not.toContainText('尚未探测');
++  } finally {
++    await cleanup([node.sourceId], [node.nodeId]);
++  }
++});
++
++test('仪表盘：四态各显示正确文案与颜色', async ({ page }) => {
++  test.skip(!dbUrl, '需要 TEST_DATABASE_URL 才能向 probe_results 插行');
++  await login(page);
++  const suffix = Date.now();
++  const specs: {
++    label: string;
++    status: 'OK' | 'TIMEOUT' | 'FAILED' | null;
++    row?: ProbeRowInput;
++    text: string;
++    cls: RegExp;
++  }[] = [
++    { label: '未探测', status: null, text: '未探测', cls: /pro-status off/ },
++    {
++      label: '可用',
++      status: 'OK',
++      row: { status: 'OK', latencyMs: 88, downloadMbps: 12.3 },
++      text: '可用',
++      cls: /pro-status ok/,
++    },
++    {
++      label: '超时',
++      status: 'TIMEOUT',
++      row: {
++        status: 'TIMEOUT',
++        errorCode: 'TIMEOUT',
++        errorMessage: '探测超时，未收到节点响应',
++      },
++      text: '超时',
++      cls: /pro-status warn/,
++    },
++    {
++      label: '失败',
++      status: 'FAILED',
++      row: {
++        status: 'FAILED',
++        errorCode: 'PROTOCOL_ERROR',
++        errorMessage: '节点连接失败',
++      },
++      text: '失败',
++      cls: /pro-status err/,
++    },
++  ];
++  const created: { sourceId: string; nodeId: string; name: string }[] = [];
++  try {
++    for (const spec of specs) {
++      const node = await importFixtureNode(page, `${spec.label} ${suffix}`);
++      created.push(node);
++      if (spec.row) await insertProbeRow(node.nodeId, spec.row);
++    }
++    await page.goto('/');
++    for (const [i, spec] of specs.entries()) {
++      const row = page.locator('.pro-node-table tbody tr', {
++        hasText: created[i].name,
++      });
++      await expect(row.locator('.pro-status')).toHaveText(spec.text);
++      await expect(row.locator('.pro-status')).toHaveClass(spec.cls);
++      // 未探测/超时/失败行都没有真实延迟，延迟列须为“未探测”而非数字。
++      if (spec.status !== 'OK') await expect(row).toContainText('未探测');
++    }
++  } finally {
++    await cleanup(
++      created.map((n) => n.sourceId),
++      created.map((n) => n.nodeId),
++    );
++  }
++});
++
++test('节点目录：未授权节点对 Member 显示未授权', async ({ page, browser }) => {
++  // 节点由管理员导入、不授权给该成员；成员在节点中心应看到“未授权”，而非探测数值。
++  // 管理员与成员用两个浏览器上下文（演示登录按会话区分，无登出切换）。
++  await login(page);
++  const suffix = Date.now();
++  const node = await importFixtureNode(page, `未授权 ${suffix}`);
++  const memberContext = await browser.newContext();
++  try {
++    const memberPage = await memberContext.newPage();
++    await login(memberPage, '成员演示');
++    await memberPage.goto('/nodes');
++    await memberPage.getByLabel('搜索开放节点').fill(node.name);
++    const card = memberPage.locator('.v3-node', { hasText: node.name });
++    await expect(card).toContainText('未授权');
++    await expect(card).toContainText('尚未授权');
++    await expect(card).toContainText('延迟 未探测');
++  } finally {
++    await memberContext.close();
++    await cleanup([node.sourceId], [node.nodeId]);
++  }
++});
++
++test('手动重测按钮可用：点一次出现已排队提示', async ({ page }) => {
++  await login(page);
++  const suffix = Date.now();
++  const node = await importFixtureNode(page, `手动重测 ${suffix}`);
++  try {
++    await page.goto('/');
++    await page.getByRole('button', { name: `${node.name}的操作` }).click();
++    await page.getByRole('button', { name: '手动重测' }).click();
++    await expect(
++      page.getByRole('status').filter({ hasText: `已排队重测：${node.name}` }),
++    ).toBeVisible();
++    // 不真的等探测完成：只断言已排队，真实探测由 Kong 手动验收覆盖。
++  } finally {
++    await cleanup([node.sourceId], [node.nodeId]);
++  }
++});
++
++test('测速记录标签页有真实行；节点地图仍为 disabled', async ({ page }) => {
++  test.skip(!dbUrl, '需要 TEST_DATABASE_URL 才能向 probe_results 插行');
++  await login(page);
++  const suffix = Date.now();
++  const node = await importFixtureNode(page, `测速记录 ${suffix}`);
++  try {
++    await insertProbeRow(node.nodeId, {
++      status: 'OK',
++      latencyMs: 123,
++      downloadMbps: 45.6,
++    });
++    await insertProbeRow(node.nodeId, {
++      status: 'TIMEOUT',
++      errorCode: 'TIMEOUT',
++      errorMessage: '探测超时，未收到节点响应',
++    });
++    await page.goto('/');
++    const mapTab = page.getByRole('tab', { name: '节点地图' });
++    await expect(mapTab).toBeDisabled();
++    expect(await mapTab.getAttribute('title')).toBe('即将推出');
++    await page.getByRole('tab', { name: '节点测速记录' }).click();
++    const panel = page.getByRole('tabpanel', { name: '节点测速记录' });
++    await panel.getByLabel('按节点筛选测速记录').selectOption(node.nodeId);
++    await expect(panel).toContainText(node.name);
++    await expect(panel).toContainText('可用');
++    await expect(panel).toContainText('超时');
++    await expect(panel).toContainText('123 ms');
++    await expect(panel).toContainText('45.6 Mbps');
++    await expect(panel).toContainText('探测超时，未收到节点响应');
++    await expect(panel).toContainText('条记录');
++  } finally {
++    await cleanup([node.sourceId], [node.nodeId]);
++  }
++});
+diff --git a/tests/integration.test.ts b/tests/integration.test.ts
+index 941305c..b916909 100644
+--- a/tests/integration.test.ts
++++ b/tests/integration.test.ts
+@@ -7,6 +7,7 @@ import { sql } from '../packages/db/src';
+ import { createSession, activateGoogle } from '../packages/auth/src';
+ import { token, seal, unseal, hash } from '../packages/shared/src/crypto';
+ import { runAiTask, runSubscriptionJob, tick } from '../apps/worker/src/jobs';
++import { readProbeSettings } from '../apps/api/src/probe';
+ vi.mock('../packages/subscription/src/network', async (importOriginal) => {
+   const actual = await importOriginal<any>();
+   return {
+@@ -1430,3 +1431,409 @@ describe('真实数据库 API 闭环', () => {
+     }
+   });
+ });
++
++// 阶段 3（节点探测）集成测试：隔离测试库，跑迁移 001–012。
++// 复用本文件顶层的 buildApp/send/sql/sessions（Owner=0，Member=1/2，Viewer=3）。
++// 每个用例自建 fixture 节点（POST /api/node-import 的 ss 假数据），用完删源；
++// probe_results 行直接插库（无写 API）；describe 开始前清空探测相关表与设置。
++// 注意：本文件默认环境 PLATFORM_AI_ENABLED 未设置、DEMO_MODE=true；
++// 本 describe 不依赖这两个变量，不做额外 stub。
++describe('节点探测 API', () => {
++  const ssLink = (name: string) =>
++    'ss://' +
++    Buffer.from('aes-256-gcm:fictional-fixture-password').toString(
++      'base64url',
++    ) +
++    '@node.example.com:8388#' +
++    encodeURIComponent(name);
++  const setProbeSetting = async (key: string, value: unknown) =>
++    sql`insert into settings(key,value) values(${key},${sql.json(value)}) on conflict(key) do update set value=excluded.value,updated_at=now()`;
++  const clearProbeState = async () => {
++    await sql`delete from probe_results`;
++    await sql`delete from background_jobs where data->>'type' in ('PROBE_LATENCY','PROBE_SPEED')`;
++    await sql`delete from settings where key like 'probe_%'`;
++  };
++  async function importFixtureNode(name: string) {
++    const imported = await send(0, '/api/node-import', 'POST', {
++      name: '探测 fixture ' + name,
++      group: '',
++      kind: 'THIRD_PARTY_NODE',
++      content: ssLink(name),
++      authorized: true,
++      redistributionAuthorized: true,
++      authorizationReference: '虚构提供商授权 fixture',
++    });
++    expect(imported.statusCode, imported.body).toBe(200);
++    const sourceId = imported.json().sourceId as string;
++    const node = (await send(0, '/api/nodes'))
++      .json()
++      .find((n: any) => n.sourceId === sourceId);
++    expect(node?.id).toBeTruthy();
++    return { sourceId, nodeId: node.id as string };
++  }
++  const deleteSource = async (sourceId: string) => {
++    await send(0, '/api/node_sources/' + sourceId, 'DELETE');
++  };
++  async function insertProbeRow(
++    nodeId: string,
++    row: {
++      status: 'OK' | 'TIMEOUT' | 'FAILED';
++      latencyMs?: number | null;
++      downloadMbps?: number | null;
++      errorCode?: string | null;
++      errorMessage?: string | null;
++    },
++  ) {
++    const now = new Date().toISOString();
++    const [inserted] =
++      await sql`insert into probe_results(node_id,probe_point,target,started_at,finished_at,status,latency_ms,download_mbps,upload_mbps,error_code,error_message) values(${nodeId},${'kong-us-east-2'},${'https://www.gstatic.com/generate_204'},${now},${now},${row.status},${row.latencyMs ?? null},${row.downloadMbps ?? null},${null},${row.errorCode ?? null},${row.errorMessage ?? null}) returning id`;
++    return inserted.id as string;
++  }
++
++  beforeAll(clearProbeState);
++
++  it('readProbeSettings：越界设置被 clamp 到允许范围', async () => {
++    try {
++      await setProbeSetting('probe_latency_interval_seconds', 5);
++      await setProbeSetting('probe_speed_interval_seconds', 1);
++      await setProbeSetting('probe_daily_budget_mb', -5);
++      await setProbeSetting('probe_concurrency', 0);
++      await setProbeSetting('probe_timeout_seconds', 1);
++      await setProbeSetting('probe_speed_bytes', 100);
++      await setProbeSetting('probe_retention_days', 0);
++      const low = await readProbeSettings();
++      expect(low.latencyIntervalSeconds).toBe(60);
++      expect(low.speedIntervalSeconds).toBe(300);
++      expect(low.dailyBudgetMb).toBe(0);
++      expect(low.concurrency).toBe(1);
++      expect(low.timeoutSeconds).toBe(5);
++      expect(low.speedBytes).toBe(1048576);
++      expect(low.retentionDays).toBe(1);
++      await setProbeSetting('probe_latency_interval_seconds', 9999);
++      await setProbeSetting('probe_speed_interval_seconds', 999999);
++      await setProbeSetting('probe_concurrency', 99);
++      await setProbeSetting('probe_timeout_seconds', 999);
++      await setProbeSetting('probe_speed_bytes', 99999999);
++      await setProbeSetting('probe_retention_days', 999);
++      const high = await readProbeSettings();
++      expect(high.latencyIntervalSeconds).toBe(120);
++      expect(high.speedIntervalSeconds).toBe(86400);
++      expect(high.concurrency).toBe(10);
++      expect(high.timeoutSeconds).toBe(60);
++      expect(high.speedBytes).toBe(10485760);
++      expect(high.retentionDays).toBe(365);
++    } finally {
++      await sql`delete from settings where key like 'probe_%'`;
++    }
++  });
++
++  it('readProbeSettings：测点与当日用量（非今天归零）', async () => {
++    try {
++      const defaults = await readProbeSettings();
++      expect(defaults.probePoint).toBe('kong-us-east-2');
++      expect(defaults.dailyBudgetMb).toBe(10240);
++      expect(defaults.dailyUsageMb).toBe(0);
++      await setProbeSetting('probe_point', 'staging-test-point');
++      const today = new Date().toISOString().slice(0, 10);
++      const yesterday = new Date(Date.now() - 86400000)
++        .toISOString()
++        .slice(0, 10);
++      await setProbeSetting('probe_daily_usage', { date: today, mb: 12.5 });
++      expect((await readProbeSettings()).probePoint).toBe('staging-test-point');
++      expect((await readProbeSettings()).dailyUsageMb).toBe(12.5);
++      await setProbeSetting('probe_daily_usage', {
++        date: yesterday,
++        mb: 12.5,
++      });
++      expect((await readProbeSettings()).dailyUsageMb).toBe(0);
++    } finally {
++      await sql`delete from settings where key like 'probe_%'`;
++    }
++  });
++
++  it('不可见节点与他人节点重测返回 404', async () => {
++    const { sourceId, nodeId } = await importFixtureNode('404 fixture');
++    try {
++      expect(
++        (await send(0, '/api/nodes/' + randomUUID() + '/probe', 'POST'))
++          .statusCode,
++      ).toBe(404);
++      expect(
++        (await send(1, '/api/nodes/' + nodeId + '/probe', 'POST')).statusCode,
++      ).toBe(404);
++      expect(
++        (await send(1, '/api/nodes/' + nodeId + '/probe-history')).statusCode,
++      ).toBe(404);
++    } finally {
++      await deleteSource(sourceId);
++    }
++  });
++
++  it('探测总览返回测点与预算字段（尚无探测行）', async () => {
++    const status = await send(0, '/api/probe/status');
++    expect(status.statusCode).toBe(200);
++    expect(status.json()).toMatchObject({
++      probePoint: 'kong-us-east-2',
++      lastFinishedAt: null,
++      queued: 0,
++      running: 0,
++      budgetLimitMb: 10240,
++      budgetRemainingMb: 10240,
++      recentFailures: 0,
++      lastRunOk: null,
++    });
++  });
++
++  it('Member 调全量重测 403；Owner 返回 queuedNodes', async () => {
++    const { sourceId } = await importFixtureNode('run-all fixture');
++    try {
++      const forbidden = await send(1, '/api/probe/run-all', 'POST');
++      expect(forbidden.statusCode).toBe(403);
++      expect(forbidden.json().code).toBe('FORBIDDEN');
++      const run = await send(0, '/api/probe/run-all', 'POST');
++      expect(run.statusCode, run.body).toBe(200);
++      expect(typeof run.json().jobId).toBe('string');
++      expect(run.json().queuedNodes).toBeGreaterThanOrEqual(1);
++    } finally {
++      await deleteSource(sourceId);
++    }
++  });
++
++  it('手动重测：首次排队、1 分钟内重复重测 429', async () => {
++    const { sourceId, nodeId } = await importFixtureNode('重测限流 fixture');
++    try {
++      const first = await send(0, '/api/nodes/' + nodeId + '/probe', 'POST');
++      expect(first.statusCode, first.body).toBe(200);
++      expect(first.json()).toMatchObject({ nodeId, queued: true });
++      expect(typeof first.json().jobId).toBe('string');
++      const second = await send(0, '/api/nodes/' + nodeId + '/probe', 'POST');
++      expect(second.statusCode).toBe(429);
++      expect(second.json().code).toBe('PROBE_RATE_LIMIT');
++    } finally {
++      await deleteSource(sourceId);
++    }
++  });
++
++  it('停用节点与过期来源重测返回 409 NODE_NOT_PROBEABLE', async () => {
++    const { sourceId, nodeId } = await importFixtureNode('409 fixture');
++    try {
++      expect(
++        (
++          await send(0, '/api/nodes/' + nodeId, 'PATCH', {
++            enabled: false,
++          })
++        ).statusCode,
++      ).toBe(200);
++      const disabled = await send(0, '/api/nodes/' + nodeId + '/probe', 'POST');
++      expect(disabled.statusCode).toBe(409);
++      expect(disabled.json().code).toBe('NODE_NOT_PROBEABLE');
++      expect(
++        (
++          await send(0, '/api/nodes/' + nodeId, 'PATCH', {
++            enabled: true,
++          })
++        ).statusCode,
++      ).toBe(200);
++      await sql`update node_sources set data=data || ${sql.json({ expiresAt: '2000-01-01T00:00:00.000Z' })} where id=${sourceId}`;
++      const expired = await send(0, '/api/nodes/' + nodeId + '/probe', 'POST');
++      expect(expired.statusCode).toBe(409);
++      expect(expired.json().code).toBe('NODE_NOT_PROBEABLE');
++      await sql`update node_sources set data=data - 'expiresAt' where id=${sourceId}`;
++    } finally {
++      await deleteSource(sourceId);
++    }
++  });
++
++  it('预算耗尽时手动重测与全量重测返回 409', async () => {
++    const { sourceId, nodeId } = await importFixtureNode('预算 fixture');
++    try {
++      await setProbeSetting('probe_daily_budget_mb', 0);
++      const manual = await send(0, '/api/nodes/' + nodeId + '/probe', 'POST');
++      expect(manual.statusCode).toBe(409);
++      expect(manual.json().code).toBe('PROBE_BUDGET_EXCEEDED');
++      const all = await send(0, '/api/probe/run-all', 'POST');
++      expect(all.statusCode).toBe(409);
++      expect(all.json().code).toBe('PROBE_BUDGET_EXCEEDED');
++    } finally {
++      await sql`delete from settings where key='probe_daily_budget_mb'`;
++      await deleteSource(sourceId);
++    }
++  });
++
++  it('探测历史：写入行后可查，含延迟与速度数值', async () => {
++    const { sourceId, nodeId } = await importFixtureNode('历史 fixture');
++    try {
++      await insertProbeRow(nodeId, {
++        status: 'OK',
++        latencyMs: 123,
++        downloadMbps: 45.6,
++      });
++      await insertProbeRow(nodeId, {
++        status: 'TIMEOUT',
++        errorCode: 'TIMEOUT',
++        errorMessage: '探测超时，未收到节点响应',
++      });
++      const history = await send(0, '/api/nodes/' + nodeId + '/probe-history');
++      expect(history.statusCode).toBe(200);
++      expect(history.json()).toHaveLength(2);
++      const ok = history.json().find((r: any) => r.status === 'OK');
++      expect(ok).toMatchObject({
++        nodeId,
++        latencyMs: 123,
++        downloadMbps: 45.6,
++        uploadMbps: null,
++        probePoint: 'kong-us-east-2',
++      });
++      const timeout = history.json().find((r: any) => r.status === 'TIMEOUT');
++      expect(timeout).toMatchObject({
++        nodeId,
++        latencyMs: null,
++        errorCode: 'TIMEOUT',
++      });
++      expect(
++        (
++          await send(0, '/api/nodes/' + nodeId + '/probe-history?limit=1')
++        ).json(),
++      ).toHaveLength(1);
++    } finally {
++      await deleteSource(sourceId);
++    }
++  });
++
++  it('测速记录：分页、状态筛选；Member 只能看到自己可见节点', async () => {
++    const a = await importFixtureNode('测速记录 A');
++    const b = await importFixtureNode('测速记录 B');
++    try {
++      await insertProbeRow(a.nodeId, {
++        status: 'OK',
++        latencyMs: 100,
++        downloadMbps: 10.5,
++      });
++      await insertProbeRow(a.nodeId, {
++        status: 'TIMEOUT',
++        errorCode: 'TIMEOUT',
++        errorMessage: '探测超时，未收到节点响应',
++      });
++      await insertProbeRow(b.nodeId, {
++        status: 'OK',
++        latencyMs: 200,
++        downloadMbps: 20,
++      });
++      const page1 = await send(0, '/api/probe/runs?limit=1&offset=0');
++      expect(page1.statusCode).toBe(200);
++      expect(page1.json().items).toHaveLength(1);
++      expect(page1.json().total).toBeGreaterThanOrEqual(3);
++      const page2 = await send(0, '/api/probe/runs?limit=1&offset=1');
++      expect(page2.json().items[0].id).not.toBe(page1.json().items[0].id);
++      const [okCount] =
++        await sql`select count(*)::int as total from probe_results where status='OK'`;
++      const okOnly = await send(0, '/api/probe/runs?status=OK&limit=200');
++      expect(okOnly.json().total).toBe(okCount.total);
++      expect(okOnly.json().items.every((r: any) => r.status === 'OK')).toBe(
++        true,
++      );
++      const memberNodes = (await send(1, '/api/nodes'))
++        .json()
++        .map((n: any) => n.id);
++      const memberRuns = await send(1, '/api/probe/runs?limit=200');
++      expect(memberRuns.statusCode).toBe(200);
++      expect(
++        memberRuns
++          .json()
++          .items.every((r: any) => memberNodes.includes(r.nodeId)),
++      ).toBe(true);
++      expect(
++        (await send(1, '/api/probe/runs?nodeId=' + a.nodeId)).statusCode,
++      ).toBe(404);
++      const nodeFilter = await send(
++        0,
++        '/api/probe/runs?nodeId=' + a.nodeId + '&limit=200',
++      );
++      expect(
++        nodeFilter.json().items.every((r: any) => r.nodeId === a.nodeId),
++      ).toBe(true);
++      expect(nodeFilter.json().total).toBe(2);
++    } finally {
++      await deleteSource(a.sourceId);
++      await deleteSource(b.sourceId);
++    }
++  });
++
++  it('summary：无探测行时 UNPROBED；OK 行使 onlineNodes +1，超时行不增加', async () => {
++    const c = await importFixtureNode('summary C');
++    const d = await importFixtureNode('summary D');
++    try {
++      const row = (await send(0, '/api/nodes'))
++        .json()
++        .find((n: any) => n.id === c.nodeId);
++      expect(row).toMatchObject({
++        probeStatus: 'UNPROBED',
++        latencyMs: null,
++        downloadMbps: null,
++        lastProbeAt: null,
++      });
++      const before = (await send(0, '/api/summary')).json().onlineNodes;
++      await insertProbeRow(c.nodeId, {
++        status: 'OK',
++        latencyMs: 88,
++        downloadMbps: 12.3,
++      });
++      const afterOk = (await send(0, '/api/summary')).json().onlineNodes;
++      expect(afterOk).toBe(before + 1);
++      await insertProbeRow(d.nodeId, {
++        status: 'TIMEOUT',
++        errorCode: 'TIMEOUT',
++        errorMessage: '探测超时，未收到节点响应',
++      });
++      const afterTimeout = (await send(0, '/api/summary')).json().onlineNodes;
++      expect(afterTimeout).toBe(afterOk);
++    } finally {
++      await deleteSource(c.sourceId);
++      await deleteSource(d.sourceId);
++    }
++  });
++
++  it('catalog：未授权节点 UNAUTHORIZED；授权后无行 UNPROBED、有 OK 行显示真实延迟', async () => {
++    const { sourceId, nodeId } = await importFixtureNode('catalog fixture');
++    try {
++      // 默认服务策略（无 service_policy_v3 行）下服务对 Member 开放，授权后即可见真实探测态。
++      await sql`delete from settings where key='service_policy_v3'`;
++      const catalog = async (i: number) =>
++        (await send(i, '/api/catalog/nodes'))
++          .json()
++          .nodes.find((n: any) => n.id === nodeId);
++      const before = await catalog(1);
++      expect(before).toMatchObject({
++        probeStatus: 'UNAUTHORIZED',
++        latencyMs: null,
++        authorized: false,
++      });
++      const grant = await send(0, '/api/admin/grants', 'POST', {
++        kind: 'source',
++        resourceId: sourceId,
++        userId: ids[1],
++      });
++      expect(grant.statusCode, grant.body).toBe(200);
++      const granted = await catalog(1);
++      expect(granted).toMatchObject({
++        probeStatus: 'UNPROBED',
++        authorized: true,
++      });
++      const retest = await send(1, '/api/nodes/' + nodeId + '/probe', 'POST');
++      expect(retest.statusCode, retest.body).toBe(200);
++      await insertProbeRow(nodeId, {
++        status: 'OK',
++        latencyMs: 88,
++        downloadMbps: 12.3,
++      });
++      const probed = await catalog(1);
++      expect(probed).toMatchObject({
++        probeStatus: 'OK',
++        latencyMs: 88,
++        downloadMbps: 12.3,
++      });
++    } finally {
++      await deleteSource(sourceId);
++    }
++  });
++});
+diff --git a/tests/probe.test.ts b/tests/probe.test.ts
+new file mode 100644
+index 0000000..067978d
+--- /dev/null
++++ b/tests/probe.test.ts
+@@ -0,0 +1,367 @@
++import { describe, expect, it } from 'vitest';
++import { parse as parseYaml } from 'yaml';
++import {
++  buildMihomoConfig,
++  classifyProbeError,
++  isProbeEligible,
++  median,
++} from '../apps/probe/src/probe';
++import { probeIneligibilityReason, probeRowJson } from '../apps/api/src/probe';
++
++// 阶段 3（节点探测）单元测试：只测纯函数与可脱离 DB 的逻辑，不连数据库。
++// 需要 DB 的逻辑（readProbeSettings 的 clamp、summary() 的 UNPROBED 口径、
++// 限流/预算/权限）由 tests/integration.test.ts 的「节点探测 API」覆盖。
++// 凭据一律用明显假值（sk-test-fixture-not-real 等），不得放真实节点密码/UUID。
++
++const FIXTURE_UUID = '11111111-2222-4333-8444-555555555555';
++const FIXTURE_CREDENTIAL = 'sk-test-fixture-not-real';
++
++describe('classifyProbeError：超时与失败区分', () => {
++  it('超时错误 → TIMEOUT', () => {
++    expect(
++      classifyProbeError(new Error('Connection timed out after 30000ms')),
++    ).toEqual({
++      status: 'TIMEOUT',
++      errorCode: 'TIMEOUT',
++      errorMessage: '探测超时，未收到节点响应',
++    });
++    expect(
++      classifyProbeError(new Error('connect ETIMEDOUT 1.2.3.4:443')).status,
++    ).toBe('TIMEOUT');
++  });
++
++  it('VMess 时间偏差 → FAILED / CLOCK_SKEW，并含时间同步提示', () => {
++    const out = classifyProbeError(
++      new Error('server clock skew: VMess time difference too large'),
++    );
++    expect(out.status).toBe('FAILED');
++    expect(out.errorCode).toBe('CLOCK_SKEW');
++    expect(out.errorMessage).toContain('时间同步');
++    expect(out.errorMessage).toContain('120 秒');
++  });
++
++  it('DNS 解析失败 → FAILED / DNS_ERROR', () => {
++    const out = classifyProbeError(
++      new Error('getaddrinfo ENOTFOUND node.example.com'),
++    );
++    expect(out).toEqual({
++      status: 'FAILED',
++      errorCode: 'DNS_ERROR',
++      errorMessage: '域名解析失败',
++    });
++  });
++
++  it('认证失败 → FAILED / AUTH_FAILED', () => {
++    const out = classifyProbeError(new Error('password incorrect'));
++    expect(out.status).toBe('FAILED');
++    expect(out.errorCode).toBe('AUTH_FAILED');
++    expect(out.errorMessage).toContain('认证失败');
++  });
++
++  it('TLS 握手失败 → FAILED / PROTOCOL_ERROR', () => {
++    const out = classifyProbeError(
++      new Error('TLS handshake failure: certificate verify failed'),
++    );
++    expect(out.status).toBe('FAILED');
++    expect(out.errorCode).toBe('PROTOCOL_ERROR');
++  });
++
++  it('连接被拒 → FAILED / PROTOCOL_ERROR，且失败不标在线', () => {
++    const out = classifyProbeError(
++      new Error('connect ECONNREFUSED 1.2.3.4:443'),
++    );
++    expect(out.status).toBe('FAILED');
++    expect(out.status).not.toBe('OK');
++  });
++
++  it('未知错误 → FAILED / PROTOCOL_ERROR（默认分支）', () => {
++    expect(classifyProbeError(new Error('something weird'))).toEqual({
++      status: 'FAILED',
++      errorCode: 'PROTOCOL_ERROR',
++      errorMessage: '节点连接失败',
++    });
++    expect(classifyProbeError('plain string failure').status).toBe('FAILED');
++  });
++
++  it('分类结果不含凭据：错误原文里的假 Token/UUID/密码不得出现在返回文案里', () => {
++    const leaked = [
++      'request timeout after 5000ms; token sk-test-fixture-not-real',
++      `auth failed for uuid ${FIXTURE_UUID}`,
++      'login failed: password=fixture-password-not-real',
++    ];
++    for (const message of leaked) {
++      const out = classifyProbeError(new Error(message));
++      expect(JSON.stringify(out)).not.toContain('sk-test-fixture-not-real');
++      expect(JSON.stringify(out)).not.toContain(FIXTURE_UUID);
++      expect(JSON.stringify(out)).not.toContain('fixture-password-not-real');
++    }
++  });
++});
++
++describe('median：多轮延迟取中位数', () => {
++  it('奇数个取中间值', () => {
++    expect(median([408, 869, 512])).toBe(512);
++  });
++
++  it('偶数个取两中值平均（四舍五入）', () => {
++    expect(median([100, 200, 300, 400])).toBe(250);
++    expect(median([1, 2, 3, 4])).toBe(3);
++  });
++
++  it('空数组返回 null；单个值返回自身；不改动原数组', () => {
++    expect(median([])).toBe(null);
++    expect(median([42])).toBe(42);
++    const input = [300, 100, 200];
++    expect(median(input)).toBe(200);
++    expect(input).toEqual([300, 100, 200]);
++  });
++});
++
++describe('isProbeEligible：探测资格（与 SQL 口径一致）', () => {
++  const owned = { data: { kind: 'OWNED_NODE', enabled: true } };
++  const authorizedThirdParty = {
++    data: {
++      kind: 'THIRD_PARTY_NODE',
++      enabled: true,
++      authorized: true,
++      redistributionAuthorized: true,
++      authorizationReference: '虚构提供商授权 fixture',
++    },
++  };
++
++  it('节点停用 → false', () => {
++    expect(isProbeEligible({ data: { enabled: false } }, owned)).toBe(false);
++  });
++
++  it('来源停用 → false', () => {
++    expect(
++      isProbeEligible(owned, { data: { kind: 'OWNED_NODE', enabled: false } }),
++    ).toBe(false);
++  });
++
++  it('来源过期 → false；未来过期 → true', () => {
++    expect(
++      isProbeEligible(owned, {
++        data: { kind: 'OWNED_NODE', expiresAt: '2000-01-01T00:00:00.000Z' },
++      }),
++    ).toBe(false);
++    expect(
++      isProbeEligible(owned, {
++        data: { kind: 'OWNED_NODE', expiresAt: '2999-01-01T00:00:00.000Z' },
++      }),
++    ).toBe(true);
++  });
++
++  it('未授权第三方源 → false（三种缺失情形）', () => {
++    const base = { kind: 'THIRD_PARTY_NODE', enabled: true };
++    expect(
++      isProbeEligible({ data: {} }, { data: { ...base, authorized: false } }),
++    ).toBe(false);
++    expect(
++      isProbeEligible(
++        { data: {} },
++        {
++          data: {
++            ...base,
++            authorized: true,
++            redistributionAuthorized: false,
++            authorizationReference: '虚构提供商授权 fixture',
++          },
++        },
++      ),
++    ).toBe(false);
++    expect(
++      isProbeEligible(
++        { data: {} },
++        {
++          data: {
++            ...base,
++            authorized: true,
++            redistributionAuthorized: true,
++            authorizationReference: '   ',
++          },
++        },
++      ),
++    ).toBe(false);
++  });
++
++  it('自有节点启用 → true；授权完整第三方源 → true', () => {
++    expect(isProbeEligible({ data: {} }, owned)).toBe(true);
++    expect(isProbeEligible({ data: {} }, authorizedThirdParty)).toBe(true);
++  });
++});
++
++describe('buildMihomoConfig：配置组装不泄露节点身份', () => {
++  const nodes = [
++    {
++      id: FIXTURE_UUID,
++      name: '香港节点',
++      node: {
++        protocol: 'vmess',
++        host: 'vmess.example.com',
++        port: 443,
++        credential: FIXTURE_CREDENTIAL,
++        cipher: 'auto',
++        security: 'auto',
++        alterId: 0,
++        tls: true,
++        sni: 'vmess.example.com',
++        transport: 'ws',
++        path: '/ws',
++        wsHost: 'vmess.example.com',
++      },
++    },
++    {
++      id: '22222222-3333-4444-8555-666666666666',
++      name: '香港节点',
++      node: {
++        protocol: 'ss',
++        host: 'ss.example.com',
++        port: 8388,
++        credential: 'fixture-password-not-real',
++        cipher: 'aes-256-gcm',
++        tls: false,
++        transport: 'tcp',
++      },
++    },
++  ];
++  const config = buildMihomoConfig(nodes, {
++    controllerSecret: 'fixture-controller-secret-not-real',
++  });
++  const parsed = parseYaml(config) as any;
++
++  it('同名节点代理名唯一（下标后缀），proxy-groups 引用全部代理名', () => {
++    expect(parsed.proxies.map((p: any) => p.name)).toEqual([
++      '香港节点__0',
++      '香港节点__1',
++    ]);
++    expect(new Set(parsed.proxies.map((p: any) => p.name)).size).toBe(2);
++    const group = parsed['proxy-groups'].find(
++      (g: any) => g.name === 'FAFA ONE',
++    );
++    expect(group.proxies).toEqual(['香港节点__0', '香港节点__1']);
++  });
++
++  it('配置里不含节点 UUID；代理名不含凭据与节点 id', () => {
++    expect(config).not.toContain(FIXTURE_UUID);
++    expect(config).not.toContain('22222222-3333-4444-8555-666666666666');
++    for (const proxy of parsed.proxies) {
++      expect(proxy.name).not.toContain(FIXTURE_CREDENTIAL);
++      expect(proxy.name).not.toContain('fixture-password-not-real');
++    }
++  });
++
++  it('凭据只出现在 proxies 数组的对应字段（vmess→uuid，ss→password），各出现一次', () => {
++    const count = (haystack: string, needle: string) =>
++      haystack.split(needle).length - 1;
++    expect(count(config, FIXTURE_CREDENTIAL)).toBe(1);
++    expect(count(config, 'fixture-password-not-real')).toBe(1);
++    expect(parsed.proxies[0].uuid).toBe(FIXTURE_CREDENTIAL);
++    expect(parsed.proxies[1].password).toBe('fixture-password-not-real');
++    expect(parsed.proxies[0].password).toBeUndefined();
++    expect(parsed.proxies[1].uuid).toBeUndefined();
++  });
++
++  it('proxies 条目没有名为 id 的明文字段；控制器与模式字段正确', () => {
++    for (const proxy of parsed.proxies) {
++      expect(proxy).not.toHaveProperty('id');
++      expect(proxy).not.toHaveProperty('nodeId');
++    }
++    expect(parsed['external-controller']).toBe('127.0.0.1:9090');
++    expect(parsed.mode).toBe('rule');
++  });
++});
++
++describe('probeRowJson：行转 API 字段', () => {
++  it('numeric 字符串转 Number、null 保持 null、字段名映射', () => {
++    const out = probeRowJson({
++      id: '33333333-4444-4555-8666-777777777777',
++      node_id: FIXTURE_UUID,
++      probe_point: 'kong-us-east-2',
++      target: 'https://www.gstatic.com/generate_204',
++      started_at: '2026-11-10T00:00:00.000Z',
++      finished_at: '2026-11-10T00:00:01.000Z',
++      status: 'OK',
++      latency_ms: 123,
++      download_mbps: '45.6',
++      upload_mbps: null,
++      error_code: null,
++      error_message: null,
++      created_at: '2026-11-10T00:00:01.000Z',
++    });
++    expect(out.nodeId).toBe(FIXTURE_UUID);
++    expect(out.status).toBe('OK');
++    expect(out.latencyMs).toBe(123);
++    expect(out.downloadMbps).toBe(45.6);
++    expect(typeof out.downloadMbps).toBe('number');
++    expect(out.uploadMbps).toBe(null);
++    expect(out.errorCode).toBe(null);
++    expect(out.probePoint).toBe('kong-us-east-2');
++  });
++
++  it('0 值不被当成 null', () => {
++    const out = probeRowJson({
++      id: 'x',
++      node_id: FIXTURE_UUID,
++      status: 'OK',
++      latency_ms: 0,
++      download_mbps: '0',
++      upload_mbps: '12.3',
++    });
++    expect(out.downloadMbps).toBe(0);
++    expect(out.uploadMbps).toBe(12.3);
++    expect(out.latencyMs).toBe(0);
++  });
++});
++
++describe('probeIneligibilityReason：手动重测的逐项原因', () => {
++  it('停用/过期/未授权返回原因文案；可探测返回 null', () => {
++    expect(
++      probeIneligibilityReason(
++        { data: { enabled: false } },
++        { data: { kind: 'OWNED_NODE' } },
++      ),
++    ).toContain('停用');
++    expect(
++      probeIneligibilityReason(
++        { data: {} },
++        { data: { kind: 'OWNED_NODE', enabled: false } },
++      ),
++    ).toContain('停用');
++    expect(
++      probeIneligibilityReason(
++        { data: {} },
++        { data: { kind: 'OWNED_NODE', expiresAt: '2000-01-01T00:00:00.000Z' } },
++      ),
++    ).toContain('过期');
++    expect(
++      probeIneligibilityReason(
++        { data: {} },
++        {
++          data: {
++            kind: 'THIRD_PARTY_NODE',
++            authorized: true,
++            redistributionAuthorized: true,
++            authorizationReference: '',
++          },
++        },
++      ),
++    ).toContain('未获授权');
++    expect(
++      probeIneligibilityReason({ data: {} }, { data: { kind: 'OWNED_NODE' } }),
++    ).toBe(null);
++    expect(
++      probeIneligibilityReason(
++        { data: {} },
++        {
++          data: {
++            kind: 'THIRD_PARTY_NODE',
++            authorized: true,
++            redistributionAuthorized: true,
++            authorizationReference: '虚构提供商授权 fixture',
++          },
++        },
++      ),
++    ).toBe(null);
++  });
++});
