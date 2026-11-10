@@ -20,12 +20,18 @@ const numeric = (
   label: string,
   value: number,
   money = true,
+  min?: number,
+  max?: number,
 ): Field => ({
   name,
   label,
   type: 'number',
   value: String(money ? value / 1_000_000 : value),
-  min: money ? 0.000001 : 1,
+  // 默认下限与后端一致（金额 ≥0.000001 USD，计数 ≥1）；调用方可按后端
+  // 上限收紧（例如 dailyTokens ≥1000、requestsPerMinute ≤60、maxOutput ≥16），
+  // 避免前端放行、后端 400 驳回的“输入内容不符合要求”。
+  min: min ?? (money ? 0.000001 : 1),
+  ...(max !== undefined ? { max } : {}),
   step: money ? '0.000001' : '1',
   required: true,
 });
@@ -34,6 +40,9 @@ const keyField: Field = {
   label: '新项目服务账户 API Key',
   type: 'password',
   required: true,
+  // 格式要求与后端 accountSchema 的 apiKey 校验一致；粘贴时首尾空白
+  // 会被自动去掉，管理员密钥（sk-admin- 开头）不可用。
+  help: '以 sk- 开头、至少 16 位字符的服务账户密钥（不是 sk-admin- 管理员密钥）。从 OpenAI 控制台粘贴时首尾空格/换行会被自动去掉。',
 };
 const attest: Field = {
   name: 'confirmServiceAccount',
@@ -73,21 +82,37 @@ function quotaFields(q: any, available: string[]) {
     },
     ...budgetFields(q.limits),
     numeric('task', '单任务预算 (USD)', q.task),
-    numeric('dailyTokens', '每日 tokens 上限', q.dailyTokens, false),
-    numeric('requestsPerMinute', '每分钟请求数', q.requestsPerMinute, false),
-    numeric('concurrency', '并发任务数', q.concurrency, false),
+    numeric('dailyTokens', '每日 tokens 上限', q.dailyTokens, false, 1000),
+    numeric(
+      'requestsPerMinute',
+      '每分钟请求数',
+      q.requestsPerMinute,
+      false,
+      1,
+      60,
+    ),
+    numeric('concurrency', '并发任务数', q.concurrency, false, 1, 20),
     ...pickModels(available, q.models),
   ];
 }
 function readQuota(d: any, available: string[]) {
+  // 与后端 userQuota 一致的提交前校验：空模型、每日预算大于每月预算
+  // 都会被后端 400 驳回，先给出明确提示。策略对话框与个人额度
+  // 对话框共用此函数，两处同时受益。
+  const limits = readBudget(d);
+  if (limits.daily > limits.monthly)
+    throw new Error('每日预算不能大于每月预算');
+  const models = chosenModels(d, available);
+  if (models.length === 0)
+    throw new Error('至少选择一个可用模型，否则无法保存');
   return {
     enabled: d.userEnabled,
-    limits: readBudget(d),
+    limits,
     task: toMoney(d.task),
     dailyTokens: d.dailyTokens,
     requestsPerMinute: d.requestsPerMinute,
     concurrency: d.concurrency,
-    models: chosenModels(d, available),
+    models,
   };
 }
 const health: Record<string, string> = {
@@ -277,11 +302,13 @@ function Accounts({
                   name: 'projectId',
                   label: 'OpenAI Project ID',
                   required: true,
+                  help: '以 proj_ 开头的项目编号（OpenAI 控制台项目设置页可见）。粘贴时首尾空格/换行会被自动去掉。',
                 },
                 {
                   name: 'serviceAccountId',
                   label: 'OpenAI Service Account ID',
                   required: true,
+                  help: '以 svc_acct_ 开头的服务账户编号（不是显示名称或邮箱）。粘贴时首尾空格/换行会被自动去掉。',
                 },
                 keyField,
                 attest,
@@ -303,29 +330,53 @@ function Accounts({
             '优先级（数值越小优先）',
             editing?.priority ?? 100,
             false,
+            1,
+            1000,
           ),
           {
             name: 'audience',
             label: '指定共享用户 UUID（逗号分隔，留空对已授权用户开放）',
             value: editing?.allowed_users?.join(', '),
+            help: '每项必须是用户 UUID，多个用逗号或空格分隔；填入非 UUID 会保存失败。',
           },
           numeric(
             'concurrency',
             '账户并发限制',
             editing?.concurrency ?? 2,
             false,
+            1,
+            20,
           ),
           ...pickModels(available, editing?.models ?? available.slice(0, 1)),
         ]}
         onSubmit={async (d) => {
+          // 凭据与标识字段先去首尾空白：从 OpenAI 控制台粘贴常带换行/空格，
+          // 后端虽已 trim，但前端先处理可让提交值与显示一致。
+          const projectId =
+            typeof d.projectId === 'string' ? d.projectId.trim() : d.projectId;
+          const serviceAccountId =
+            typeof d.serviceAccountId === 'string'
+              ? d.serviceAccountId.trim()
+              : d.serviceAccountId;
+          const apiKey =
+            typeof d.apiKey === 'string' ? d.apiKey.trim() : d.apiKey;
+          const models = chosenModels(d, available);
+          if (models.length === 0)
+            throw new Error('至少选择一个可用模型，否则无法保存');
+          const limits = readBudget(d);
+          if (limits.daily > limits.monthly)
+            throw new Error('每日预算不能大于每月预算');
           const payload = {
             ...d,
+            projectId,
+            serviceAccountId,
+            apiKey,
             note: d.note ?? '',
             priority: d.priority,
             allowedUsers: audienceIds(d.audience),
             enabled: d.enabled ?? false,
-            limits: readBudget(d),
-            models: chosenModels(d, available),
+            limits,
+            models,
           };
           const result = await request<{ enabled?: boolean }>(
             base + '/accounts' + (editing ? '/' + editing.id : ''),
@@ -352,7 +403,12 @@ function Accounts({
           await request(
             base + '/accounts/' + rotate!.id + '/credential',
             'POST',
-            { action: 'rotate', ...d },
+            {
+              action: 'rotate',
+              ...d,
+              // 与新增一致：粘贴的密钥先去首尾空白。
+              apiKey: typeof d.apiKey === 'string' ? d.apiKey.trim() : d.apiKey,
+            },
           );
           info.refresh();
         }}
@@ -419,6 +475,8 @@ function Accounts({
               '单任务输出 tokens 上限',
               policy.maxOutput,
               false,
+              16,
+              16000,
             ),
             ...quotaFields(policy.defaultUser, available),
           ]}
