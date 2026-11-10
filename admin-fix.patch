@@ -1,0 +1,1422 @@
+diff --git a/apps/admin/index.html b/apps/admin/index.html
+index dbe9c53..e5e3a29 100644
+--- a/apps/admin/index.html
++++ b/apps/admin/index.html
+@@ -6,7 +6,7 @@
+       name="viewport"
+       content="width=device-width,initial-scale=1,viewport-fit=cover"
+     />
+-    <meta name="theme-color" content="#d5dcfb" />
++    <meta name="theme-color" content="#17112b" />
+     <meta name="robots" content="noindex,nofollow" />
+     <meta name="referrer" content="no-referrer" />
+     <title>FAFA ONE · 管理控制台</title>
+diff --git a/apps/admin/src/main.tsx b/apps/admin/src/main.tsx
+index c4e3428..81011e2 100644
+--- a/apps/admin/src/main.tsx
++++ b/apps/admin/src/main.tsx
+@@ -2,9 +2,9 @@ import { PlatformAiAccounts } from './pages/PlatformAiAccounts';
+ import { AiRuntimeTasks } from './pages/AiRuntimeTasks';
+ import { AccessCenter } from './pages/AccessCenter';
+ import { MemberAccessControls } from './pages/MemberDeliveryAdmin';
+-import { useState } from 'react';
++import { Fragment, useState } from 'react';
+ import { createRoot } from 'react-dom/client';
+-import { BrowserRouter, Routes, Route } from 'react-router-dom';
++import { BrowserRouter, Link, Routes, Route } from 'react-router-dom';
+ import {
+   LayoutDashboard,
+   Users,
+@@ -100,31 +100,81 @@ function Overview() {
+   const jobs = useData<Row[]>('/api/admin/jobs');
+   const users = useData<Row[]>('/api/admin/users');
+   const audit = useData<Row[]>('/api/admin/audit');
++  const stats = [
++    {
++      icon: Users,
++      label: '注册用户',
++      value: users.data?.length ?? '—',
++      hint: '真实数据库计数',
++    },
++    {
++      icon: ShieldCheck,
++      label: '席位上限',
++      value: summary.data?.seatLimit ?? '—',
++      hint: '默认 20 人，可调整',
++    },
++    {
++      icon: ListTodo,
++      label: '失败任务',
++      value: jobs.data?.filter((j) => j.data.status === 'FAILED').length ?? '—',
++      hint: '数据库持久队列',
++    },
++    {
++      icon: Globe2,
++      label: '在线节点',
++      value: '未接入',
++      hint: '没有实时监控数据',
++    },
++    {
++      icon: Server,
++      label: '服务器',
++      value: summary.data?.servers ?? '—',
++      hint: '已授权服务器连接',
++    },
++  ];
+   return (
+     <>
+-      <PageTitle
+-        title="管理概览"
+-        description="让权限、连接与系统运行始终清晰可见。"
+-        eyebrow="FAFA ONE / ADMINISTRATION"
+-      />
+-      <div className="stats">
+-        {[
+-          ['注册用户', users.data?.length ?? '—', '真实数据库计数'],
+-          ['席位上限', summary.data?.seatLimit ?? '—', '默认 20 人，可调整'],
+-          [
+-            '失败任务',
+-            jobs.data?.filter((j) => j.data.status === 'FAILED').length ?? '—',
+-            '数据库持久队列',
+-          ],
+-          ['在线节点', '未接入', '没有实时监控数据'],
+-        ].map(([label, value, hint]) => (
+-          <div className="glass stat" key={label}>
+-            <div>
+-              <label>{label}</label>
+-              <strong>{value}</strong>
+-              <small>{hint}</small>
+-            </div>
+-          </div>
++      <section className="pro-banner" aria-label="管理概览">
++        <svg
++          className="pro-banner-art"
++          viewBox="0 0 800 220"
++          preserveAspectRatio="xMidYMax slice"
++          aria-hidden="true"
++        >
++          <circle cx="640" cy="58" r="42" fill="#f5d0fe" opacity="0.85" />
++          <circle cx="640" cy="58" r="58" fill="#f5d0fe" opacity="0.18" />
++          <path
++            d="M0 190 L140 90 L260 170 L400 70 L540 180 L660 110 L800 180 L800 220 L0 220 Z"
++            fill="#2e1065"
++            opacity="0.55"
++          />
++          <path
++            d="M0 220 L120 150 L260 205 L430 140 L600 210 L720 170 L800 210 L800 220 L0 220 Z"
++            fill="#1e0a44"
++            opacity="0.7"
++          />
++        </svg>
++        <div className="pro-banner-body">
++          <span className="pro-banner-eyebrow">FAFA ONE / ADMINISTRATION</span>
++          <h1 className="pro-banner-title">管理概览</h1>
++          <p className="pro-banner-sub">让权限、连接与系统运行始终清晰可见。</p>
++        </div>
++        <div className="pro-banner-actions">
++          <Link className="primary-action" to="/users">
++            查看用户
++          </Link>
++        </div>
++      </section>
++      <div className="pro-stats">
++        {stats.map((item) => (
++          <article key={item.label} className="pro-stat">
++            <span className="pro-stat-icon">
++              <item.icon size={20} />
++            </span>
++            <span className="pro-stat-label">{item.label}</span>
++            <span className="pro-stat-value">{item.value}</span>
++            <span className="pro-stat-hint">{item.hint}</span>
++          </article>
+         ))}
+       </div>
+       <div className="two-col">
+@@ -182,8 +232,8 @@ function UserManagement() {
+             loading={!users.data}
+             onRetry={users.refresh}
+           />
+-          <div className="table-wrap">
+-            <table>
++          <div className="table-wrap pro-table-wrap">
++            <table className="pro-table">
+               <thead>
+                 <tr>
+                   <th>用户</th>
+@@ -204,9 +254,27 @@ function UserManagement() {
+                         {u.email_verified ? '邮箱已验证' : '邮箱未验证'}
+                       </small>
+                     </td>
+-                    <td>{u.role}</td>
+                     <td>
+-                      <Badge>{u.disabled ? '已禁用' : '已激活'}</Badge>
++                      <span
++                        className={
++                          u.role === 'Owner' || u.role === 'Admin'
++                            ? 'pro-status sub'
++                            : u.role === 'Member'
++                              ? 'pro-status ok'
++                              : 'pro-status off'
++                        }
++                      >
++                        {u.role}
++                      </span>
++                    </td>
++                    <td>
++                      <span
++                        className={
++                          u.disabled ? 'pro-status off' : 'pro-status ok'
++                        }
++                      >
++                        {u.disabled ? '已禁用' : '已激活'}
++                      </span>
+                       <small>
+                         节点上限：{u.node_limit} · 订阅
+                         {u.subscription_enabled ? '启用' : '停用'}
+@@ -383,6 +451,13 @@ function ResourceAdmin({
+     jobs: '后台任务队列',
+     audit: '安全审计',
+   };
++  const KindIcon = {
++    sources: Globe2,
++    servers: Server,
++    ai: Code2,
++    jobs: ListTodo,
++    audit: ShieldCheck,
++  }[kind];
+   return (
+     <>
+       {!embedded && (
+@@ -441,40 +516,61 @@ function ResourceAdmin({
+             <article className="resource-card" key={r.id}>
+               <div className="resource-top">
+                 <h3>
++                  <span className="resource-icon">
++                    <KindIcon size={18} />
++                  </span>
+                   {r.data?.name || r.action || r.data?.type || '后台任务'}
+                 </h3>
+-                <Badge>
++                <span
++                  className={
++                    r.data?.demo
++                      ? 'pro-status off'
++                      : kind === 'sources' && r.data?.status === 'READY'
++                        ? 'pro-status ok'
++                        : 'pro-status sub'
++                  }
++                >
+                   {r.data?.demo
+                     ? '演示数据'
+                     : kind === 'sources' && r.data?.status === 'READY'
+                       ? '已解析 · 待实测'
+                       : r.data?.status || '记录'}
+-                </Badge>
++                </span>
+               </div>
+-              <div className="resource-meta">
+-                <span>记录：{r.id}</span>
+-                <span>
+-                  拥有者：
++              <dl className="resource-meta pro-kv">
++                <dt>记录</dt>
++                <dd>{r.id}</dd>
++                <dt>拥有者</dt>
++                <dd>
+                   {users.data?.find((u) => u.id === r.owner_id)?.name ||
+                     r.owner_id ||
+                     '系统'}
+-                </span>
++                </dd>
+                 {kind === 'ai' && (
+-                  <span>接入：OpenAI API · 管理员不可读取密钥</span>
++                  <>
++                    <dt>接入</dt>
++                    <dd>OpenAI API · 管理员不可读取密钥</dd>
++                  </>
+                 )}
+                 {kind === 'jobs' && (
+-                  <span>
+-                    重试次数：{r.data.attempt || 0} · {r.data.error || '无错误'}
+-                  </span>
++                  <>
++                    <dt>重试</dt>
++                    <dd>
++                      {r.data.attempt || 0} 次 · {r.data.error || '无错误'}
++                    </dd>
++                  </>
+                 )}
+                 {kind === 'audit' && (
+-                  <span>
+-                    目标：{r.target_id || '—'} · 关联 ID：
+-                    {r.correlation_id || '—'}
+-                  </span>
++                  <>
++                    <dt>目标</dt>
++                    <dd>{r.target_id || '—'}</dd>
++                    <dt>关联 ID</dt>
++                    <dd>{r.correlation_id || '—'}</dd>
++                  </>
+                 )}
+-                <span>{new Date(r.created_at).toLocaleString('zh-CN')}</span>
+-              </div>
++                <dt>时间</dt>
++                <dd>{new Date(r.created_at).toLocaleString('zh-CN')}</dd>
++              </dl>
+               {['sources', 'servers'].includes(kind) && (
+                 <>
+                   <p>
+@@ -583,30 +679,28 @@ function SystemSettings() {
+       />
+       <div className="stack">
+         <Card title="运行配置" icon={Settings}>
+-          <div className="detail-grid">
++          <dl className="pro-kv">
+             {config.data?.settings.map((s: any) => (
+-              <div key={s.key}>
+-                <small>
+-                  {s.key === 'seat_limit' ? '用户席位上限' : '维护模式'}
+-                </small>
+-                <p>{JSON.stringify(s.value)}</p>
+-              </div>
++              <Fragment key={s.key}>
++                <dt>{s.key === 'seat_limit' ? '用户席位上限' : '维护模式'}</dt>
++                <dd>{JSON.stringify(s.value)}</dd>
++              </Fragment>
+             ))}
+             {Object.entries(config.data?.capabilities || {}).map(
+               ([key, value]) => (
+-                <div key={key}>
+-                  <small>{key}</small>
+-                  <p>
++                <Fragment key={key}>
++                  <dt>{key}</dt>
++                  <dd>
+                     {typeof value === 'boolean'
+                       ? value
+                         ? '已配置 · 待实连验收'
+                         : '未配置'
+                       : String(value)}
+-                  </p>
+-                </div>
++                  </dd>
++                </Fragment>
+               ),
+             )}
+-          </div>
++          </dl>
+           <button className="section-space" onClick={() => setEdit(true)}>
+             调整席位上限
+           </button>
+diff --git a/apps/admin/src/pages/PlatformAiAccounts.tsx b/apps/admin/src/pages/PlatformAiAccounts.tsx
+index 1aa1065..1a93be7 100644
+--- a/apps/admin/src/pages/PlatformAiAccounts.tsx
++++ b/apps/admin/src/pages/PlatformAiAccounts.tsx
+@@ -156,19 +156,35 @@ function Accounts({
+         onRetry={info.refresh}
+       />
+       {policy && (
+-        <Card title="平台服务与预算">
+-          <p>
+-            {policy.enabled ? '服务已启用' : '服务已停用'} · 本月预算{' '}
+-            {usd(policy.globalMonthly)}
+-          </p>
++        <Card
++          title="平台服务与预算"
++          action={
++            <span
++              className={policy.enabled ? 'pro-status ok' : 'pro-status off'}
++            >
++              {policy.enabled ? '服务已启用' : '服务已停用'}
++            </span>
++          }
++        >
++          <div className="pro-stats">
++            {[
++              { label: '本月预算', value: usd(policy.globalMonthly) },
++              { label: '已结算', value: usd(info.data.usage.charged) },
++              {
++                label: '预留或待结算',
++                value: usd(info.data.usage.unsettled),
++              },
++            ].map((item) => (
++              <article key={item.label} className="pro-stat">
++                <span className="pro-stat-label">{item.label}</span>
++                <span className="pro-stat-value">{item.value}</span>
++              </article>
++            ))}
++          </div>
+           <p>
+             本月用量 {info.data.usage.input} 输入 tokens /{' '}
+             {info.data.usage.output} 输出 tokens
+           </p>
+-          <p>
+-            按标准费率结算 {usd(info.data.usage.charged)} · 预留或待结算{' '}
+-            {usd(info.data.usage.unsettled)}
+-          </p>
+           <div className="actions">
+             <button onClick={() => setPolicyOpen(true)}>
+               分配策略和默认额度
+@@ -219,8 +235,13 @@ function Accounts({
+           {rows.map((a) => (
+             <details key={a.id}>
+               <summary>
+-                {a.name} · {a.enabled ? '已启用' : '已停用'} ·{' '}
+-                {health[a.health]}
++                {a.name} ·{' '}
++                <span
++                  className={a.enabled ? 'pro-status ok' : 'pro-status off'}
++                >
++                  {a.enabled ? '已启用' : '已停用'}
++                </span>{' '}
++                · {health[a.health]}
+               </summary>
+               <p>
+                 {a.has_key ? '密钥 •••••••• · ' : ''}
+diff --git a/apps/admin/src/pages/member-registration.css b/apps/admin/src/pages/member-registration.css
+index 08a24a1..dff9788 100644
+--- a/apps/admin/src/pages/member-registration.css
++++ b/apps/admin/src/pages/member-registration.css
+@@ -24,14 +24,16 @@
+   display: flex;
+   align-items: center;
+   gap: 12px;
+-  padding: 15px;
++  padding: 1rem 1.05rem;
++  border-radius: 1.1rem;
+ }
+ 
+ .registration-policy .card-icon {
+   width: 44px;
+   height: 44px;
+   flex: 0 0 auto;
+-  background: color-mix(in srgb, var(--input) 78%, transparent);
++  background: linear-gradient(135deg, #7c3aed, #a855f7);
++  color: #fff;
+   box-shadow: none;
+ }
+ 
+@@ -139,6 +141,9 @@
+ .reg-section {
+   min-width: 0;
+   padding: 0 16px;
++  box-shadow:
++    0 14px 36px rgba(76, 29, 149, 0.35),
++    inset 0 1px 0 #ffffff40;
+ }
+ 
+ .reg-section h2 {
+diff --git a/apps/api/src/server.ts b/apps/api/src/server.ts
+index 41fabd2..94d8e97 100644
+--- a/apps/api/src/server.ts
++++ b/apps/api/src/server.ts
+@@ -38,6 +38,7 @@ import {
+   mockEnabled,
+   activateGoogle,
+   google,
++  reauthenticateSession,
+ } from '../../../packages/auth/src';
+ import {
+   parseSubscription,
+@@ -64,7 +65,11 @@ import {
+   ownerSetupAvailable,
+ } from '../../../packages/auth/src/owner';
+ import { publicOrigin } from '../../../packages/auth/src/urls';
+-import { completeMemberGoogleLink } from '../../../packages/auth/src/member';
++import {
++  completeMemberGoogleLink,
++  confirmMemberPassword,
++  authBudget,
++} from '../../../packages/auth/src/member';
+ import { registerMemberAuth } from './member-auth';
+ 
+ declare module 'fastify' {
+@@ -306,7 +311,7 @@ export async function buildApp() {
+         throw new AppError(403, 'REAUTH_REQUIRED', '敏感操作需要重新登录');
+       if (
+         !writable(actor.role) &&
+-        !['/api/logout', '/api/data-request'].includes(req.url)
++        !['/api/logout', '/api/data-request', '/api/reauth'].includes(req.url)
+       )
+         throw new AppError(403, 'READ_ONLY', '访客仅可查看');
+     }
+@@ -387,6 +392,7 @@ export async function buildApp() {
+     app?: 'web' | 'admin';
+     ownerCredential?: string;
+     memberLink?: string;
++    reauth?: boolean;
+   };
+   const startGoogle = async (reply: any, options: GoogleStartOptions = {}) => {
+     if (!process.env.GOOGLE_CLIENT_ID)
+@@ -405,6 +411,7 @@ export async function buildApp() {
+       ownerCredential,
+       app: options.app ?? 'web',
+       memberLink: options.memberLink,
++      ...(options.reauth ? { reauth: true } : {}),
+     };
+     reply.setCookie(
+       'fafa_oidc',
+@@ -420,6 +427,9 @@ export async function buildApp() {
+         maxAge: 600,
+       },
+     );
++    // 重新验证强制 Google 当场重新认证：generateAuthUrl 会把整个
++    // opts 对象拼进授权 URL，max_age=0 经 index signature 透传。
++    const reauthParams = options.reauth ? { max_age: 0 } : {};
+     return google().generateAuthUrl({
+       scope: ['openid', 'email', 'profile'],
+       state,
+@@ -427,13 +437,21 @@ export async function buildApp() {
+       code_challenge: Buffer.from(hash(verifier), 'hex').toString('base64url'),
+       code_challenge_method: 'S256' as any,
+       prompt: 'select_account',
++      ...reauthParams,
+     });
+   };
+   app.get('/auth/google', async (req, reply) => {
+-    const { app } = z
+-      .object({ app: z.enum(['web', 'admin']).optional() })
++    const { app, reauth } = z
++      .object({
++        app: z.enum(['web', 'admin']).optional(),
++        reauth: z.enum(['1', 'true']).optional(),
++      })
+       .parse(req.query);
+-    return reply.redirect(await startGoogle(reply, { app: app ?? 'web' }));
++    if (reauth && !(await authenticate(req.cookies.fafa_session)))
++      throw new AppError(401, 'UNAUTHENTICATED', '请先登录');
++    return reply.redirect(
++      await startGoogle(reply, { app: app ?? 'web', reauth: !!reauth }),
++    );
+   });
+   app.post(
+     '/auth/owner/start',
+@@ -500,6 +518,24 @@ export async function buildApp() {
+       p.nonce !== flow.nonce
+     )
+       throw new AppError(403, 'OIDC_NONCE', '登录验证失败');
++    if (flow.reauth) {
++      // Google 重新验证：不建新会话，只刷新当前会话的重认证时间。
++      // 关键校验：Google sub 必须属于当前会话的用户本人。
++      const identity = await authenticate(req.cookies.fafa_session);
++      if (!identity) throw new AppError(401, 'UNAUTHENTICATED', '请先登录');
++      const [binding] =
++        await sql`select user_id from google_identities where sub=${p.sub} and user_id=${identity.id}`;
++      if (!binding)
++        throw new AppError(
++          403,
++          'OIDC_NONCE',
++          'Google 身份与当前登录账户不一致',
++        );
++      await reauthenticateSession(identity.session_id, identity.id);
++      return reply.redirect(
++        (flow.app === 'admin' ? origins[1] : origins[0]) + '?reauth=ok',
++      );
++    }
+     const user = flow.memberLink
+       ? await completeMemberGoogleLink(
+           flow.memberLink,
+@@ -522,8 +558,45 @@ export async function buildApp() {
+       disabled: req.actor.disabled,
+     },
+     csrf: req.actor.csrf,
++    reauthenticatedAt: new Date(req.actor.reauthenticated_at).toISOString(),
++    reauthExpiresAt: new Date(
++      new Date(req.actor.reauthenticated_at).getTime() + 600000,
++    ).toISOString(),
+     demo: process.env.DEMO_MODE === 'true',
+   }));
++  app.post('/api/reauth', async (req) => {
++    // 密码重新验证：只刷新当前会话的 reauthenticated_at，会话本身
++    // （token_hash / csrf / expires_at）一律不动。本路由不在两处
++    // 10 分钟敏感检查的路由表内，不会自锁；onRequest 仍做会话 + CSRF 校验。
++    const { password } = z
++      .object({ password: z.string().min(1).max(512) })
++      .strict()
++      .parse(req.body);
++    await authBudget(
++      'reauth',
++      req.actor.session_id + ':' + (req.ip || ''),
++      10,
++      900,
++    );
++    try {
++      await confirmMemberPassword(req.actor.id, password);
++    } catch (e) {
++      await audit(req.actor.id, 'session.reauth_failed', req.actor.session_id);
++      throw e;
++    }
++    const reauthenticatedAt = await reauthenticateSession(
++      req.actor.session_id,
++      req.actor.id,
++    );
++    const reauthenticatedAtIso = new Date(reauthenticatedAt).toISOString();
++    return {
++      ok: true,
++      reauthenticatedAt: reauthenticatedAtIso,
++      reauthExpiresAt: new Date(
++        new Date(reauthenticatedAt).getTime() + 600000,
++      ).toISOString(),
++    };
++  });
+   app.post('/api/logout', async (req, reply) => {
+     await sql`update sessions set revoked_at=now() where id=${req.actor.session_id}`;
+     reply.clearCookie('fafa_session', { path: '/', ...sharedCookieDomain() });
+diff --git a/packages/auth/src/index.ts b/packages/auth/src/index.ts
+index 31fcbce..e81bf05 100644
+--- a/packages/auth/src/index.ts
++++ b/packages/auth/src/index.ts
+@@ -2,7 +2,7 @@ import { applyAutoGrant } from './auto-grant';
+ import { selfServiceRegistration } from './self-service';
+ import { assertPublicUrls, googleRedirectUri } from './urls';
+ import { OAuth2Client } from 'google-auth-library';
+-import { sql } from '../../db/src';
++import { sql, audit } from '../../db/src';
+ import { token, hash } from '../../shared/src/crypto';
+ import { AppError, type User } from '../../shared/src';
+ export function mockEnabled() {
+@@ -111,6 +111,17 @@ export async function createSession(user: User, expectedPasswordHash?: string) {
+   });
+   return { raw, csrf };
+ }
++export async function reauthenticateSession(
++  sessionId: string,
++  ownerId: string,
++) {
++  const [updated] =
++    await sql`update sessions set reauthenticated_at=now() where id=${sessionId} and owner_id=${ownerId} and revoked_at is null returning reauthenticated_at`;
++  if (!updated)
++    throw new AppError(401, 'LOGIN_INVALID', '会话已失效，请重新登录');
++  await audit(ownerId, 'session.reauthenticated', sessionId);
++  return updated.reauthenticated_at as Date;
++}
+ export async function authenticate(raw?: string) {
+   if (!raw) return null;
+   const [row] =
+diff --git a/packages/ui/src/core.tsx b/packages/ui/src/core.tsx
+index 1457499..88aced4 100644
+--- a/packages/ui/src/core.tsx
++++ b/packages/ui/src/core.tsx
+@@ -30,7 +30,22 @@ import type { User } from '../../shared/src';
+ import './style.css';
+ import { backendUrl, loginApp } from './endpoints';
+ export type Row = { id: string; [key: string]: any };
+-type Session = { user: User; csrf: string; demo: boolean };
++type Session = {
++  user: User;
++  csrf: string;
++  demo: boolean;
++  reauthenticatedAt?: string;
++  reauthExpiresAt?: string;
++};
++type PendingRequest = {
++  path: string;
++  method: string;
++  body?: unknown;
++  csrf: string;
++  resolve: (value: any) => void;
++  reject: (error: unknown) => void;
++};
++const REAUTH_PENDING_KEY = 'fafa_reauth_pending';
+ const Context = createContext<{
+   session: Session;
+   request: <T = any>(
+@@ -63,7 +78,11 @@ export async function api<T = any>(
+       body: body ? JSON.stringify(body) : undefined,
+     });
+     const data = await response.json();
+-    if (!response.ok) throw new Error(data.message || '请求失败，请稍后重试');
++    if (!response.ok) {
++      const error = new Error(data.message || '请求失败，请稍后重试');
++      (error as any).code = data.code;
++      throw error;
++    }
+     return data;
+   } catch (error) {
+     if (controller.signal.aborted)
+@@ -84,6 +103,8 @@ export function Provider({
+   const [error, setError] = useState('');
+   const [toast, setToast] = useState('');
+   const [version, setVersion] = useState(0);
++  const [reauth, setReauth] = useState<{ message: string } | null>(null);
++  const pendingRef = useRef<PendingRequest[]>([]);
+   useEffect(() => {
+     api<Session>('/api/me')
+       .then(setSession)
+@@ -94,6 +115,42 @@ export function Provider({
+     const id = setTimeout(() => setToast(''), 4000);
+     return () => clearTimeout(id);
+   }, [toast]);
++  useEffect(() => {
++    if (!session) return;
++    const params = new URLSearchParams(window.location.search);
++    if (params.get('reauth') !== 'ok') return;
++    params.delete('reauth');
++    const search = params.toString();
++    window.history.replaceState(
++      null,
++      '',
++      window.location.pathname +
++        (search ? '?' + search : '') +
++        window.location.hash,
++    );
++    const raw = sessionStorage.getItem(REAUTH_PENDING_KEY);
++    sessionStorage.removeItem(REAUTH_PENDING_KEY);
++    if (!raw) return;
++    let queued: { path: string; method: string; body?: unknown }[] = [];
++    try {
++      queued = JSON.parse(raw);
++    } catch {
++      return;
++    }
++    if (!Array.isArray(queued) || !queued.length) return;
++    void (async () => {
++      let failed = '';
++      for (const entry of queued) {
++        try {
++          await api(entry.path, entry.method, entry.body, session.csrf);
++        } catch (e) {
++          failed = (e as Error).message;
++        }
++      }
++      if (!failed) setToast('已验证，操作已完成');
++      else setError(failed);
++    })();
++  }, [session]);
+   if (session === undefined)
+     return (
+       <div className="loading" aria-label="正在加载">
+@@ -114,11 +171,68 @@ export function Provider({
+     try {
+       return await api<T>(path, method, body, session.csrf);
+     } catch (e) {
++      if ((e as any)?.code === 'REAUTH_REQUIRED') {
++        const message = (e as Error).message;
++        return new Promise<T>((resolve, reject) => {
++          pendingRef.current.push({
++            path,
++            method,
++            body,
++            csrf: session.csrf,
++            resolve,
++            reject,
++          });
++          setReauth({ message });
++        });
++      }
+       const message = (e as Error).message;
+       setError(message);
+       throw e;
+     }
+   };
++  const finishReauth = async (ok: boolean) => {
++    const queued = pendingRef.current;
++    pendingRef.current = [];
++    setReauth(null);
++    if (!ok) {
++      queued.forEach((entry) =>
++        entry.reject(new Error('已取消重新验证，操作未执行')),
++      );
++      return;
++    }
++    let failed = '';
++    for (const entry of queued) {
++      try {
++        entry.resolve(
++          await api(entry.path, entry.method, entry.body, entry.csrf),
++        );
++      } catch (e) {
++        failed = (e as Error).message;
++        entry.reject(e);
++      }
++    }
++    if (queued.length && !failed) setToast('已验证，操作已完成');
++    if (failed) setError(failed);
++  };
++  const startGoogleReauth = () => {
++    sessionStorage.setItem(
++      REAUTH_PENDING_KEY,
++      JSON.stringify(
++        pendingRef.current.map((entry) => ({
++          path: entry.path,
++          method: entry.method,
++          body: entry.body,
++        })),
++      ),
++    );
++    window.location.assign(
++      backendUrl(
++        '/auth/google?app=' +
++          loginApp(window.location.hostname, window.location.port) +
++          '&reauth=1',
++      ),
++    );
++  };
+   return (
+     <Context.Provider
+       value={{
+@@ -143,9 +257,137 @@ export function Provider({
+           </button>
+         </div>
+       )}
++      <ReauthDialog
++        open={!!reauth}
++        message={reauth?.message || '敏感操作需要重新登录'}
++        onVerified={() => void finishReauth(true)}
++        onCancel={() => void finishReauth(false)}
++        onGoogleStart={startGoogleReauth}
++      />
+     </Context.Provider>
+   );
+ }
++function ReauthDialog({
++  open,
++  message,
++  onVerified,
++  onCancel,
++  onGoogleStart,
++}: {
++  open: boolean;
++  message: string;
++  onVerified: () => void;
++  onCancel: () => void;
++  onGoogleStart: () => void;
++}) {
++  const { session, request, reload } = useApp();
++  const [password, setPassword] = useState('');
++  const [error, setError] = useState('');
++  const [busy, setBusy] = useState(false);
++  const [passwordConfigured, setPasswordConfigured] = useState<boolean>();
++  useEffect(() => {
++    if (!open) return;
++    setError('');
++    setPassword('');
++    setPasswordConfigured(undefined);
++    let active = true;
++    api<{ passwordConfigured?: boolean }>('/api/member/profile')
++      .then((d) => {
++        if (active) setPasswordConfigured(d.passwordConfigured === true);
++      })
++      .catch(() => {
++        if (active) setPasswordConfigured(false);
++      });
++    return () => {
++      active = false;
++    };
++  }, [open]);
++  if (!open) return null;
++  const submitPassword = async (e: FormEvent<HTMLFormElement>) => {
++    e.preventDefault();
++    const value = password;
++    setPassword('');
++    if (!value || busy) return;
++    setBusy(true);
++    setError('');
++    try {
++      await api('/api/reauth', 'POST', { password: value }, session.csrf);
++      onVerified();
++    } catch (err) {
++      setError((err as Error).message);
++    } finally {
++      setBusy(false);
++    }
++  };
++  return (
++    <Dialog open={open} onClose={onCancel} title="请重新验证身份以继续">
++      <p>{message}</p>
++      {passwordConfigured === undefined && (
++        <p className="muted">正在确认验证方式…</p>
++      )}
++      {passwordConfigured === true && (
++        <form onSubmit={submitPassword}>
++          <div className="fields">
++            <label>
++              <span>当前密码</span>
++              <input
++                type="password"
++                value={password}
++                onChange={(event) => setPassword(event.target.value)}
++                autoComplete="current-password"
++                required
++                maxLength={512}
++              />
++            </label>
++          </div>
++          {error && (
++            <p role="alert" className="form-error">
++              {error}
++            </p>
++          )}
++          <div className="dialog-footer">
++            <button type="button" onClick={onCancel}>
++              取消
++            </button>
++            <button className="primary" disabled={busy}>
++              {busy ? <LoaderCircle className="spin" size={16} /> : null}
++              验证并继续
++            </button>
++          </div>
++        </form>
++      )}
++      {passwordConfigured === false && (
++        <>
++          {error && (
++            <p role="alert" className="form-error">
++              {error}
++            </p>
++          )}
++          <div className="dialog-footer">
++            <button type="button" onClick={onCancel}>
++              取消
++            </button>
++            <button className="primary" onClick={onGoogleStart}>
++              使用 Google 重新验证
++            </button>
++          </div>
++        </>
++      )}
++      <p className="muted">
++        <button
++          type="button"
++          onClick={() =>
++            request('/api/logout', 'POST')
++              .then(reload)
++              .catch(() => {})
++          }
++        >
++          退出并重新登录
++        </button>
++      </p>
++    </Dialog>
++  );
++}
+ function Login({
+   onLogin,
+   publicPage,
+@@ -316,7 +558,9 @@ export function Shell({
+     return () => window.removeEventListener('keydown', listener);
+   }, []);
+   return (
+-    <div className={`app-shell ${collapsed ? 'collapsed' : ''}`}>
++    <div
++      className={`app-shell ${collapsed ? 'collapsed' : ''} ${admin ? 'admin-shell' : ''}`}
++    >
+       <aside className="sidebar">
+         <Brand />
+         <span className="nav-caption">
+@@ -423,6 +667,11 @@ export function Shell({
+               {session.user.name.slice(0, 1)}
+             </Link>
+             <span className="profile-name">{session.user.name}</span>
++            {admin && (
++              <span className="profile-role">
++                {session.user.role === 'Owner' ? 'Owner' : 'Admin'}
++              </span>
++            )}
+             <button
+               className="icon-button desktop"
+               aria-label="退出登录"
+diff --git a/packages/ui/src/style.css b/packages/ui/src/style.css
+index ca7c2b0..851e082 100644
+--- a/packages/ui/src/style.css
++++ b/packages/ui/src/style.css
+@@ -94,6 +94,23 @@ button.primary,
+   color: white;
+   border-color: #b4aaff;
+ }
++.primary-action {
++  display: inline-flex;
++  align-items: center;
++  justify-content: center;
++  gap: 8px;
++  min-height: 44px;
++  padding: 10px 16px;
++  border: 1px solid #b4aaff;
++  border-radius: 11px;
++  background: linear-gradient(120deg, #7779ff, #635bff 60%, #9457fb);
++  box-shadow: 0 4px 12px #635bff30;
++  color: white;
++  font-size: 13px;
++  font-weight: 600;
++  text-decoration: none;
++  cursor: pointer;
++}
+ button.danger {
+   color: var(--danger);
+ }
+@@ -114,7 +131,7 @@ select,
+ textarea {
+   width: 100%;
+   min-width: 0;
+-  border: 1px solid #a2aed34d;
++  border: 1px solid rgba(139, 92, 246, 0.45);
+   border-radius: 10px;
+   min-height: 43px;
+   background: var(--input);
+@@ -1137,6 +1154,10 @@ dialog[open] {
+ }
+ .form-error {
+   color: var(--danger);
++  background: color-mix(in srgb, var(--danger) 10%, transparent);
++  border: 1px solid color-mix(in srgb, var(--danger) 35%, transparent);
++  border-radius: 10px;
++  padding: 10px 12px;
+ }
+ .command-list {
+   height: min(360px, 45dvh);
+@@ -2469,3 +2490,72 @@ td .actions {
+     grid-template-columns: minmax(0, 1fr);
+   }
+ }
++
++/* 管理端作用域：深紫主题。只挂在 .admin-shell 之下，绝不动全局 dark token，
++   用户端不受影响；主题切换（fafa_theme）仍由 Shell 正常控制。 */
++.profile-role {
++  display: inline-flex;
++  align-items: center;
++  padding: 2px 8px;
++  border-radius: 999px;
++  background: linear-gradient(135deg, #7c3aed, #a855f7);
++  color: #fff;
++  font-size: 10px;
++  font-weight: 700;
++  letter-spacing: 0.04em;
++  white-space: nowrap;
++}
++.admin-shell .page-title h1 {
++  font-size: 30px;
++}
++.admin-shell .resource-icon {
++  display: inline-flex;
++  align-items: center;
++  justify-content: center;
++  width: 2.25rem;
++  height: 2.25rem;
++  flex: 0 0 auto;
++  border-radius: 0.75rem;
++  background: linear-gradient(135deg, #7c3aed, #a855f7);
++  color: #fff;
++}
++[data-theme='dark'] .admin-shell {
++  --shadow: 0 14px 36px rgba(76, 29, 149, 0.35);
++}
++[data-theme='dark'] body:has(.admin-shell) {
++  background:
++    radial-gradient(at 70% 0%, #3b2a6b 0, transparent 55%),
++    radial-gradient(at 0% 60%, #2a1b52, transparent 50%), #17112b;
++}
++[data-theme='dark'] .admin-shell .sidebar {
++  background: linear-gradient(
++    160deg,
++    rgba(36, 21, 71, 0.85),
++    rgba(23, 17, 43, 0.6)
++  );
++  border-color: rgba(136, 148, 202, 0.3);
++}
++[data-theme='dark'] .admin-shell .search {
++  background: rgba(24, 32, 56, 0.85);
++  border-color: var(--line);
++}
++[data-theme='dark'] .admin-shell .avatar {
++  background: linear-gradient(135deg, #7c3aed, #a855f7);
++  border-color: #c4b5fd;
++}
++[data-theme='dark'] .admin-shell .toast {
++  box-shadow: 0 8px 32px rgba(76, 29, 149, 0.5);
++}
++[data-theme='dark'] .admin-shell .empty-icon {
++  background: rgba(124, 58, 237, 0.16);
++  border-color: rgba(139, 92, 246, 0.4);
++}
++[data-theme='dark'] .admin-shell .resource-card {
++  box-shadow: 0 14px 36px rgba(76, 29, 149, 0.35);
++}
++.admin-shell .resource-card h3 {
++  display: flex;
++  align-items: center;
++  gap: 8px;
++  min-width: 0;
++}
+diff --git a/tests/integration.test.ts b/tests/integration.test.ts
+index 941305c..d0ccf58 100644
+--- a/tests/integration.test.ts
++++ b/tests/integration.test.ts
+@@ -5,6 +5,7 @@ import { OAuth2Client } from 'google-auth-library';
+ import { buildApp } from '../apps/api/src/server';
+ import { sql } from '../packages/db/src';
+ import { createSession, activateGoogle } from '../packages/auth/src';
++import { hashPassword } from '../packages/auth/src/password';
+ import { token, seal, unseal, hash } from '../packages/shared/src/crypto';
+ import { runAiTask, runSubscriptionJob, tick } from '../apps/worker/src/jobs';
+ vi.mock('../packages/subscription/src/network', async (importOriginal) => {
+@@ -1383,6 +1384,370 @@ describe('真实数据库 API 闭环', () => {
+       /fixture-pass|sk-test-fixture|trojan:\/\//,
+     );
+   });
++  describe('重新验证：密码与 Google 双路径', () => {
++    const password = 'fixture-reauth-password';
++    const adminId = randomUUID();
++    const googleId = randomUUID();
++    const googleSub = token();
++    let adminSession: Awaited<ReturnType<typeof createSession>>;
++    let googleSession: Awaited<ReturnType<typeof createSession>>;
++    let adminSource = '';
++    let googleSource = '';
++    let serverId = '';
++    const sendAs = (
++      s: { raw: string; csrf: string },
++      url: string,
++      method: any = 'GET',
++      body?: any,
++      headers: any = {},
++    ) =>
++      app.inject({
++        method,
++        url,
++        headers: {
++          origin,
++          cookie: `fafa_session=${s.raw}`,
++          'x-csrf-token': s.csrf,
++          ...headers,
++        },
++        ...(body ? { payload: body } : {}),
++      });
++    const ageSession = (id: string) =>
++      sql`update sessions set reauthenticated_at=now()-interval '11 minutes' where owner_id=${id}`;
++    const reauthenticatedAt = async (id: string) => {
++      const [row] =
++        await sql`select reauthenticated_at from sessions where owner_id=${id} and revoked_at is null order by created_at desc limit 1`;
++      return new Date(row.reauthenticated_at).getTime();
++    };
++    beforeAll(async () => {
++      const passwordHash = await hashPassword(password);
++      for (const [id, role] of [
++        [adminId, 'Admin'],
++        [googleId, 'Admin'],
++      ] as const) {
++        await sql`insert into users(id,email,name,role,node_access_enabled,server_connect_enabled,codex_tasks_enabled) values(${id},${token() + '@example.invalid'},${'重认证' + id.slice(0, 4)},${role},true,true,true)`;
++      }
++      await sql`insert into member_credentials(user_id,username,email_key,password_hash,email_verified_at) values(${adminId},${'reauth' + adminId.slice(0, 8)},${token() + '@example.invalid'},${passwordHash},now())`;
++      await sql`insert into google_identities(user_id,sub) values(${googleId},${googleSub})`;
++      const [adminUser] = await sql`select * from users where id=${adminId}`;
++      const [googleUser] = await sql`select * from users where id=${googleId}`;
++      adminSession = await createSession(adminUser as any);
++      googleSession = await createSession(googleUser as any);
++      const owned = {
++        name: '重认证测试源',
++        kind: 'OWNED_NODE',
++        content:
++          'trojan://one@node.example.com:443#A\ntrojan://two@node.example.com:443#B',
++        country: '日本',
++        authorized: true,
++      };
++      const adminCreated = await sendAs(
++        adminSession,
++        '/api/node_sources',
++        'POST',
++        owned,
++      );
++      expect(adminCreated.statusCode, adminCreated.body).toBe(200);
++      adminSource = adminCreated.json().id;
++      const googleCreated = await sendAs(
++        googleSession,
++        '/api/node_sources',
++        'POST',
++        owned,
++      );
++      expect(googleCreated.statusCode, googleCreated.body).toBe(200);
++      googleSource = googleCreated.json().id;
++      const serverCreated = await sendAs(
++        adminSession,
++        '/api/server_connections',
++        'POST',
++        {
++          name: '重认证测试服务器',
++          host: 'ssh-fixture.example',
++          port: 22,
++          username: 'deploy',
++          authType: 'password',
++          credential: 'fixture-password',
++          authorized: true,
++        },
++      );
++      expect(serverCreated.statusCode, serverCreated.body).toBe(200);
++      serverId = serverCreated.json().id;
++      await sql`update server_connections set data=data || '{"fingerprint":"SHA256:fixture-pinned"}'::jsonb where id=${serverId}`;
++    });
++    afterAll(async () => {
++      await sql`update sessions set revoked_at=now() where owner_id in ${sql([adminId, googleId])}`;
++      await sql`update users set deleted_at=now() where id in ${sql([adminId, googleId])}`;
++    });
++    it('正确密码重认证后原敏感操作通过', async () => {
++      await ageSession(adminId);
++      const denied = await sendAs(
++        adminSession,
++        '/api/node_sources/' + adminSource,
++        'PATCH',
++        { name: '过期会话拒绝' },
++      );
++      expect(denied.statusCode).toBe(403);
++      expect(denied.json().code).toBe('REAUTH_REQUIRED');
++      const reauth = await sendAs(adminSession, '/api/reauth', 'POST', {
++        password,
++      });
++      expect(reauth.statusCode, reauth.body).toBe(200);
++      expect(reauth.json().ok).toBe(true);
++      expect(
++        new Date(reauth.json().reauthExpiresAt).getTime() -
++          new Date(reauth.json().reauthenticatedAt).getTime(),
++      ).toBe(600000);
++      const retried = await sendAs(
++        adminSession,
++        '/api/node_sources/' + adminSource,
++        'PATCH',
++        { name: '重认证后通过' },
++      );
++      expect(retried.statusCode, retried.body).toBe(200);
++    });
++    it('错密码 401 且重认证时间不变', async () => {
++      const before = await reauthenticatedAt(adminId);
++      const wrong = await sendAs(adminSession, '/api/reauth', 'POST', {
++        password: 'fixture-wrong-password',
++      });
++      expect(wrong.statusCode).toBe(401);
++      expect(wrong.json().code).toBe('LOGIN_INVALID');
++      expect(await reauthenticatedAt(adminId)).toBe(before);
++      const failures =
++        await sql`select id from audit_events where owner_id=${adminId} and action='session.reauth_failed'`;
++      expect(failures.length).toBeGreaterThan(0);
++    });
++    it('Google-only 账户密码路径失败', async () => {
++      const before = await reauthenticatedAt(googleId);
++      const failed = await sendAs(googleSession, '/api/reauth', 'POST', {
++        password,
++      });
++      expect(failed.statusCode).toBe(401);
++      expect(failed.json().code).toBe('LOGIN_INVALID');
++      expect(await reauthenticatedAt(googleId)).toBe(before);
++    });
++    it('重认证不产生新会话行', async () => {
++      const before =
++        await sql`select id,token_hash,csrf from sessions where owner_id=${adminId} and revoked_at is null`;
++      const reauth = await sendAs(adminSession, '/api/reauth', 'POST', {
++        password,
++      });
++      expect(reauth.statusCode).toBe(200);
++      const after =
++        await sql`select id,token_hash,csrf from sessions where owner_id=${adminId} and revoked_at is null`;
++      expect(after.length).toBe(before.length);
++      expect(after.map((r) => r.id).sort()).toEqual(
++        before.map((r) => r.id).sort(),
++      );
++      for (const row of after) {
++        const original = before.find((b) => b.id === row.id)!;
++        expect(row.token_hash).toBe(original.token_hash);
++        expect(row.csrf).toBe(original.csrf);
++      }
++    });
++    it('审计出现 session.reauthenticated', async () => {
++      await sendAs(adminSession, '/api/reauth', 'POST', { password });
++      const events =
++        await sql`select target_id from audit_events where owner_id=${adminId} and action='session.reauthenticated'`;
++      expect(events.length).toBeGreaterThan(0);
++      const [sessionRow] =
++        await sql`select id from sessions where owner_id=${adminId} and revoked_at is null order by created_at desc limit 1`;
++      expect(events.map((e) => e.target_id)).toContain(sessionRow.id);
++    });
++    it('限流触发', async () => {
++      const [user] = await sql`select * from users where id=${adminId}`;
++      const extra = await createSession(user as any);
++      const attempts = [];
++      for (let i = 0; i < 11; i++)
++        attempts.push(
++          (
++            await sendAs(extra, '/api/reauth', 'POST', {
++              password: 'fixture-wrong-password',
++            })
++          ).statusCode,
++        );
++      expect(attempts.slice(0, 10)).toEqual(Array(10).fill(401));
++      expect(attempts[10]).toBe(429);
++    });
++    it('终端票据路径同样可恢复', async () => {
++      vi.stubEnv('DEMO_MODE', 'false');
++      vi.stubEnv('SSH_ALLOWED_TARGETS', 'ssh-fixture.example:22');
++      try {
++        await ageSession(adminId);
++        const denied = await sendAs(
++          adminSession,
++          `/api/servers/${serverId}/terminal-ticket`,
++          'POST',
++          { confirmed: true },
++        );
++        expect(denied.statusCode).toBe(403);
++        expect(denied.json().code).toBe('REAUTH_REQUIRED');
++        const reauth = await sendAs(adminSession, '/api/reauth', 'POST', {
++          password,
++        });
++        expect(reauth.statusCode).toBe(200);
++        const ticket = await sendAs(
++          adminSession,
++          `/api/servers/${serverId}/terminal-ticket`,
++          'POST',
++          { confirmed: true },
++        );
++        expect(ticket.statusCode, ticket.body).toBe(200);
++        expect(typeof ticket.json().ticket).toBe('string');
++      } finally {
++        vi.unstubAllEnvs();
++      }
++    });
++    it('Google 重新验证恢复敏感操作', async () => {
++      vi.stubEnv('NODE_ENV', 'production');
++      vi.stubEnv('COOKIE_DOMAIN', '');
++      vi.stubEnv('WEB_ORIGIN', 'https://fafa888.uk');
++      vi.stubEnv('ADMIN_ORIGIN', 'https://a.fafa888.uk');
++      vi.stubEnv('API_PUBLIC_URL', 'https://fafa888.uk');
++      vi.stubEnv(
++        'GOOGLE_REDIRECT_URI',
++        'https://fafa888.uk/auth/google/callback',
++      );
++      vi.stubEnv('GOOGLE_CLIENT_ID', 'fixture.apps.googleusercontent.com');
++      vi.stubEnv('GOOGLE_CLIENT_SECRET', 'fixture-not-a-real-secret');
++      const production = await buildApp();
++      try {
++        await ageSession(googleId);
++        const denied = await production.inject({
++          method: 'PATCH',
++          url: '/api/node_sources/' + googleSource,
++          headers: {
++            origin: 'https://a.fafa888.uk',
++            cookie: `fafa_session=${googleSession.raw}`,
++            'x-csrf-token': googleSession.csrf,
++          },
++          payload: { name: '过期会话拒绝' },
++        });
++        expect(denied.statusCode).toBe(403);
++        expect(denied.json().code).toBe('REAUTH_REQUIRED');
++        const sessionsBefore =
++          await sql`select id,token_hash,csrf from sessions where owner_id=${googleId} and revoked_at is null`;
++        const begin = await production.inject({
++          url: '/auth/google?app=admin&reauth=1',
++          headers: { cookie: `fafa_session=${googleSession.raw}` },
++        });
++        expect(begin.statusCode).toBe(302);
++        const cookie = begin.cookies.find((c) => c.name === 'fafa_oidc')!;
++        const flow = JSON.parse(
++          unseal(JSON.parse(Buffer.from(cookie.value, 'base64url').toString())),
++        );
++        expect(flow.reauth).toBe(true);
++        expect(
++          new URL(String(begin.headers.location)).searchParams.get('max_age'),
++        ).toBe('0');
++        vi.spyOn(OAuth2Client.prototype, 'getToken').mockResolvedValue({
++          tokens: { id_token: 'fixture' },
++        } as any);
++        vi.spyOn(OAuth2Client.prototype, 'verifyIdToken').mockResolvedValue({
++          getPayload: () => ({
++            sub: googleSub,
++            email: 'fixture@example.invalid',
++            email_verified: true,
++            nonce: flow.nonce,
++            iss: 'https://accounts.google.com',
++            aud: 'fixture.apps.googleusercontent.com',
++            exp: Math.floor(Date.now() / 1000) + 300,
++          }),
++        } as any);
++        const callback = await production.inject({
++          url: '/auth/google/callback?state=' + flow.state + '&code=fixture',
++          headers: {
++            cookie: `fafa_oidc=${cookie.value}; fafa_session=${googleSession.raw}`,
++          },
++        });
++        expect(callback.statusCode).toBe(302);
++        expect(callback.headers.location).toBe(
++          'https://a.fafa888.uk?reauth=ok',
++        );
++        expect(
++          callback.cookies.find((c) => c.name === 'fafa_session'),
++        ).toBeUndefined();
++        const sessionsAfter =
++          await sql`select id,token_hash,csrf from sessions where owner_id=${googleId} and revoked_at is null`;
++        expect(sessionsAfter.length).toBe(sessionsBefore.length);
++        for (const row of sessionsAfter) {
++          const original = sessionsBefore.find((b) => b.id === row.id)!;
++          expect(row.token_hash).toBe(original.token_hash);
++          expect(row.csrf).toBe(original.csrf);
++        }
++        const retried = await production.inject({
++          method: 'PATCH',
++          url: '/api/node_sources/' + googleSource,
++          headers: {
++            origin: 'https://a.fafa888.uk',
++            cookie: `fafa_session=${googleSession.raw}`,
++            'x-csrf-token': googleSession.csrf,
++          },
++          payload: { name: 'Google 重认证后通过' },
++        });
++        expect(retried.statusCode, retried.body).toBe(200);
++      } finally {
++        await production.close();
++        vi.restoreAllMocks();
++        vi.unstubAllEnvs();
++      }
++    });
++    it('Google 身份不匹配拒绝重认证', async () => {
++      vi.stubEnv('NODE_ENV', 'production');
++      vi.stubEnv('COOKIE_DOMAIN', '');
++      vi.stubEnv('WEB_ORIGIN', 'https://fafa888.uk');
++      vi.stubEnv('ADMIN_ORIGIN', 'https://a.fafa888.uk');
++      vi.stubEnv('API_PUBLIC_URL', 'https://fafa888.uk');
++      vi.stubEnv(
++        'GOOGLE_REDIRECT_URI',
++        'https://fafa888.uk/auth/google/callback',
++      );
++      vi.stubEnv('GOOGLE_CLIENT_ID', 'fixture.apps.googleusercontent.com');
++      vi.stubEnv('GOOGLE_CLIENT_SECRET', 'fixture-not-a-real-secret');
++      const production = await buildApp();
++      try {
++        await ageSession(googleId);
++        const before = await reauthenticatedAt(googleId);
++        const begin = await production.inject({
++          url: '/auth/google?app=admin&reauth=1',
++          headers: { cookie: `fafa_session=${googleSession.raw}` },
++        });
++        expect(begin.statusCode).toBe(302);
++        const cookie = begin.cookies.find((c) => c.name === 'fafa_oidc')!;
++        const flow = JSON.parse(
++          unseal(JSON.parse(Buffer.from(cookie.value, 'base64url').toString())),
++        );
++        vi.spyOn(OAuth2Client.prototype, 'getToken').mockResolvedValue({
++          tokens: { id_token: 'fixture' },
++        } as any);
++        vi.spyOn(OAuth2Client.prototype, 'verifyIdToken').mockResolvedValue({
++          getPayload: () => ({
++            sub: token(),
++            email: 'other@example.invalid',
++            email_verified: true,
++            nonce: flow.nonce,
++            iss: 'https://accounts.google.com',
++            aud: 'fixture.apps.googleusercontent.com',
++            exp: Math.floor(Date.now() / 1000) + 300,
++          }),
++        } as any);
++        const callback = await production.inject({
++          url: '/auth/google/callback?state=' + flow.state + '&code=fixture',
++          headers: {
++            cookie: `fafa_oidc=${cookie.value}; fafa_session=${googleSession.raw}`,
++          },
++        });
++        expect(callback.statusCode).toBe(403);
++        expect(callback.json().code).toBe('OIDC_NONCE');
++        expect(await reauthenticatedAt(googleId)).toBe(before);
++      } finally {
++        await production.close();
++        vi.restoreAllMocks();
++        vi.unstubAllEnvs();
++      }
++    });
++  });
+   it('跨 panel/admin 的 OIDC Cookie 范围、PKCE 与退出清理', async () => {
+     vi.stubEnv('COOKIE_DOMAIN', '.fafa.test');
+     vi.stubEnv('GOOGLE_CLIENT_ID', 'fixture.apps.googleusercontent.com');
