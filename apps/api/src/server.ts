@@ -232,6 +232,18 @@ export async function buildApp() {
             : status === 429
               ? '请求过于频繁，请稍后重试'
               : '请求未能完成，请检查配置后重试',
+      // Zod 校验失败时附上字段级明细（字段路径 + 原因），前端可逐条展示，
+      // 避免用户只看到一句笼统的“输入内容不符合要求”却不知道改哪里。
+      // 顶层 message 保持不变，不影响已有客户端。
+      ...(err instanceof z.ZodError
+        ? {
+            issues: err.issues.map((issue) => ({
+              path: issue.path.join('.'),
+              code: issue.code,
+              message: issue.message,
+            })),
+          }
+        : {}),
       correlationId: _req.id,
     });
   });
