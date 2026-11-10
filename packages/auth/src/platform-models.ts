@@ -17,28 +17,17 @@ export const platformModelConfig = z
     displayName: z.string().trim().min(1).max(100),
     enabled: z.boolean(),
     supportsChat: z.boolean(),
-    supportsCodex: z.boolean(),
     defaultChat: z.boolean(),
-    defaultCodex: z.boolean(),
     allowedUsers: audience,
     pricing,
     taskMicros: money,
   })
-  .refine(
-    (v) =>
-      (!v.defaultChat || (v.supportsChat && v.enabled)) &&
-      (!v.defaultCodex || (v.supportsCodex && v.enabled)),
-  );
+  .refine((v) => !v.defaultChat || (v.supportsChat && v.enabled));
 
-export async function modelForUser(
-  db: any,
-  id: string,
-  userId: string,
-  kind: 'GPT' | 'CODEX' = 'GPT',
-) {
+export async function modelForUser(db: any, id: string, userId: string) {
   const [row] =
     await db`select * from ai_platform_models where model_id=${id} and enabled
-    and (case when ${kind}='CODEX' then supports_codex else supports_chat end)
+    and supports_chat
     and (allowed_users is null or ${userId}::uuid=any(allowed_users))`;
   return row;
 }

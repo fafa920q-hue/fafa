@@ -1,5 +1,4 @@
-import { registerCodexExecution } from './codex-execution';
-import { platformAccountsEnabled } from '../../../packages/auth/src/codex-execution';
+import { platformAccountsEnabled } from '../../../packages/auth/src/platform-gpt';
 import type { ISql } from 'postgres';
 import { capabilityAllowed } from '../../../packages/auth/src/auto-grant';
 import {
@@ -963,7 +962,6 @@ export async function buildApp() {
   await registerAccessCenter(app);
   await registerAi(app, origins);
   await registerPlatformAi(app);
-  await registerCodexExecution(app);
   await registerPlatformChat(app);
   await registerSsh(app, origins);
   return app;

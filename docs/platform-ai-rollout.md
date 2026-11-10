@@ -6,7 +6,7 @@
 
 1. 使用空的本地测试 PostgreSQL 数据库，设置独立的 `DATABASE_URL`、`TEST_DATABASE_URL` 和 `ENCRYPTION_KEY`。连接使用 `127.0.0.1`，专项集成测试使用名为 `fafa_platform_<hex>_test` 的数据库。
 2. 安装锁定依赖并运行 `pnpm exec tsx packages/db/src/migrate.ts`。候选使用 `009_platform_ai.sql` 和 `010_platform_chat.sql`。
-3. 为隔离 API 与 Worker 设置 `PLATFORM_CODEX_ENABLED=true`。该名称沿用平台入口开关，默认关闭。启用后仍须由 Owner 打开平台策略。
+3. 为 API 与 Worker 设置 `PLATFORM_AI_ENABLED=true`。该名称是 GPT 平台入口开关，默认关闭。启用后仍须由 Owner 打开平台策略。
    预览前端可在构建时设置 `VITE_ADMIN_ORIGIN` 为同一环境的后台地址。
 4. 从后台「AI 服务管理」录入 OpenAI 项目 Service Account 签发的测试凭据。在 OpenAI 项目控制台核对密钥归属。应用连接检查只验证上游模型访问和 Responses 输入计数接口权限。
 5. 配置模型完整 ID、短上下文标准费率、缓存读写费率、单任务上限和用户范围。编辑服务账户的允许模型，执行连接检查，然后启用账户。将模型加入平台默认额度或指定用户的额度策略。
@@ -24,4 +24,4 @@
 3. 先在功能开关关闭时验证候选 API、Worker、前台、后台和原有业务，再按隔离验收配置方式逐步开放。
 4. 回滚前停止接收平台任务，核对排队与运行状态并完成收尾。切回上一个 Release 时保留迁移新增的账户、对话和用量记录。
 
-当前 GPT 对话通过 OpenAI Responses API 处理文本。管理员可另行开放不超过 8 KB 的文本附件。Codex 原生代码执行、仓库和 SSH 任务提交需要独立执行服务、批准流程、网络策略及资源隔离验收，当前入口保持关闭。
+当前 GPT 对话通过 OpenAI Responses API 处理文本。管理员可另行开放不超过 8 KB 的文本附件。v3 平台仅提供 GPT 对话，不提供代码执行与服务器连接。

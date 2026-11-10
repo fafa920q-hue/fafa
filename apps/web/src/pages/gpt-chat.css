@@ -63,3 +63,105 @@
     max-height: 28vh;
   }
 }
+
+/* 顶部模型选择栏：对话页主选择器，粘贴在消息区顶部 */
+.gpt-model-bar {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  padding: 0.65rem 0.8rem;
+  margin-block-end: 0.75rem;
+  border: 1px solid rgba(148, 132, 213, 0.35);
+  border-radius: 0.9rem;
+  background: linear-gradient(
+    135deg,
+    rgba(112, 84, 233, 0.16),
+    rgba(112, 84, 233, 0.05)
+  );
+}
+.gpt-model-picker {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 600;
+  color: #ece9ff;
+}
+.gpt-model-picker select {
+  min-height: 44px;
+  max-width: min(62vw, 22rem);
+  padding: 0.4rem 0.6rem;
+  font-size: 1rem;
+  color: #ece9ff;
+  background: #1b1936;
+  border: 1px solid rgba(148, 132, 213, 0.55);
+  border-radius: 0.65rem;
+}
+.gpt-model-picker select:focus-visible {
+  outline: 2px solid #a78bfa;
+  outline-offset: 2px;
+}
+.gpt-model-meta {
+  color: #b9b3d9;
+  font-size: 0.85rem;
+}
+.gpt-model-quota {
+  margin-inline-start: auto;
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0.35rem 0.75rem;
+  border: 1px solid rgba(148, 132, 213, 0.5);
+  border-radius: 999px;
+  color: #d9d2ff;
+  text-decoration: none;
+}
+.gpt-model-quota:hover,
+.gpt-model-quota:focus-visible {
+  border-color: #a78bfa;
+  background: rgba(112, 84, 233, 0.2);
+}
+/* 撰写区输入字号不小于 16px，避免 iOS 聚焦时自动放大页面 */
+.gpt-layout textarea {
+  font-size: 1rem;
+}
+.gpt-layout form button[type='submit'] {
+  min-height: 44px;
+}
+.gpt-messages {
+  max-height: 55vh;
+  max-height: 55dvh;
+  scrollbar-width: thin;
+  overscroll-behavior: contain;
+}
+
+@media (max-width: 840px) {
+  .gpt-model-bar {
+    gap: 0.5rem;
+    position: static;
+  }
+  .gpt-model-picker {
+    flex: 1 1 100%;
+  }
+  .gpt-model-picker select {
+    flex: 1 1 auto;
+    max-width: 100%;
+  }
+  .gpt-model-quota {
+    margin-inline-start: 0;
+  }
+  .gpt-question {
+    margin-inline-start: 0;
+  }
+  .gpt-history-item > button {
+    min-height: 44px;
+    padding: 0.55rem 0.65rem;
+  }
+  .gpt-messages {
+    max-height: 52vh;
+    max-height: 52dvh;
+  }
+}

@@ -46,7 +46,7 @@ beforeAll(async () => {
     !url.pathname.endsWith('_test')
   )
     throw Error('Dedicated platform test database required');
-  vi.stubEnv('PLATFORM_CODEX_ENABLED', 'true');
+  vi.stubEnv('PLATFORM_AI_ENABLED', 'true');
   vi.stubEnv('DEMO_MODE', 'false');
   vi.stubGlobal('fetch', noNetwork());
   app = await buildApp();

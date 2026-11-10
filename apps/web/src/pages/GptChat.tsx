@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import Markdown from 'react-markdown';
 import highlight from 'rehype-highlight';
 import { backendUrl } from '../../../../packages/ui/src/endpoints';
@@ -12,7 +13,7 @@ import {
   useApp,
   useData,
 } from '../../../../packages/ui/src/core';
-import type { PlatformService } from './PlatformCodex';
+import type { PlatformService } from './PlatformGpt';
 import './gpt-chat.css';
 
 type Conversation = { id: string; title: string };
@@ -306,6 +307,32 @@ function ChatThread({
           今日剩余 USD {(service.data.quota.daily / 1_000_000).toFixed(6)}
         </p>
       )}
+      <div className="gpt-model-bar" role="group" aria-label="选择对话模型">
+        <label className="gpt-model-picker">
+          <span>模型</span>
+          <select
+            value={selected}
+            onChange={(e) => setModel(e.target.value)}
+            disabled={!!streaming || !choices.length}
+            aria-label="选择对话模型"
+          >
+            {!choices.length && <option value="">暂无已授权模型</option>}
+            {choices.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <span className="gpt-model-meta">
+          {choices.length
+            ? `${choices.length} 个可用模型 · 切换后用于后续对话`
+            : '暂无已授权模型，请联系管理员'}
+        </span>
+        <Link className="gpt-model-quota" to="/ai/quota">
+          我的额度
+        </Link>
+      </div>
       <div className="gpt-messages" aria-label="对话消息">
         {messages.map((message) => {
           const current =
@@ -373,21 +400,6 @@ function ChatThread({
             void send();
           }}
         >
-          <label>
-            模型
-            <select
-              value={selected}
-              onChange={(e) => setModel(e.target.value)}
-              disabled={!!streaming || !choices.length}
-            >
-              {!choices.length && <option value="">暂无已授权模型</option>}
-              {choices.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.label}
-                </option>
-              ))}
-            </select>
-          </label>
           <label>
             消息
             <textarea

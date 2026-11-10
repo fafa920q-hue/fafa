@@ -1,4 +1,3 @@
-import { CodexRepositories } from './CodexRepositories';
 import { PlatformAiModels, audienceIds } from './PlatformAiModels';
 import { useEffect, useState } from 'react';
 import {
@@ -264,7 +263,6 @@ function Accounts({
           ))}
         </Card>
       )}
-      {info.data?.codexExecution && <CodexRepositories />}
       {policy && <PlatformAiModels accounts={rows} onSaved={info.refresh} />}
       <FormDialog
         open={!!account}

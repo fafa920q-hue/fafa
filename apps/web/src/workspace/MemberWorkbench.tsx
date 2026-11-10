@@ -7,6 +7,7 @@ import {
   ShieldCheck,
   ArrowUpRight,
   Clock3,
+  MessageSquare,
 } from 'lucide-react';
 import {
   Card,
@@ -140,19 +141,19 @@ export function MemberWorkbench() {
               </Link>
             </Card>
             <Card
-              title="AI 账户"
-              description="个人账户与平台服务分开管理。"
-              icon={Code2}
+              title="GPT 对话"
+              description="使用平台 GPT 模型进行对话。"
+              icon={MessageSquare}
             >
-              <p className="v3-feature-copy">
-                {w.capabilities.codex
-                  ? 'AI 使用权限已开放，连接状态以实际授权结果为准。'
-                  : '个人账户连接与平台 AI 服务的使用范围由实际配置和授权决定。'}
+              <p className="text-muted">
+                GPT 对话已开放，模型在对话页顶部选择，按用量计费。
               </p>
-              <Link className="button" to="/codex">
-                管理 AI 账户
-                <ArrowUpRight size={15} />
-              </Link>
+              <div className="workspace-actions">
+                <Link className="primary-action" to="/ai/chat">
+                  开始对话
+                </Link>
+                <Link to="/ai/quota">我的额度</Link>
+              </div>
             </Card>
             <Card
               title="账户与安全"

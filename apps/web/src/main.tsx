@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { MyAiTasks, MyAiQuota } from './pages/PlatformCodex';
+import { MyAiQuota } from './pages/PlatformGpt';
 import { MySubscriptions } from './workspace/MySubscriptions';
 import { lazy, Suspense } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -13,12 +13,9 @@ import {
 import {
   LayoutDashboard,
   Globe2,
-  Code2,
-  Server,
   MapPin,
   UserRound,
   MessageSquare,
-  ListTodo,
   Gauge,
   Settings,
 } from 'lucide-react';
@@ -37,9 +34,6 @@ const GptChat = lazy(() =>
 const Subscriptions = lazy(() =>
   import('./pages/Subscriptions').then((m) => ({ default: m.Subscriptions })),
 );
-const Codex = lazy(() =>
-  import('./pages/Codex').then((m) => ({ default: m.Codex })),
-);
 const Servers = lazy(() =>
   import('./pages/Servers').then((m) => ({ default: m.Servers })),
 );
@@ -54,10 +48,7 @@ const nav = [
   { to: '/subscriptions', label: '节点订阅', icon: Globe2 },
   { to: '/my-subscriptions', label: '我的订阅', icon: Globe2 },
   { to: '/ai/chat', label: 'GPT 对话', icon: MessageSquare },
-  { to: '/codex', label: 'Codex 工作台', icon: Code2 },
-  { to: '/ai/tasks', label: '我的任务', icon: ListTodo },
   { to: '/ai/quota', label: '我的额度', icon: Gauge },
-  { to: '/servers', label: '服务器', icon: Server },
   { to: '/locations', label: '位置中心', icon: MapPin },
   { to: '/account', label: '我的账户', icon: UserRound },
 ];
@@ -109,9 +100,7 @@ function WebApplication() {
             <Route path="/" element={<Dashboard />} />
             <Route path="/subscriptions" element={<Subscriptions />} />
             <Route path="/my-subscriptions" element={<MySubscriptions />} />
-            <Route path="/codex" element={<Codex />} />
             <Route path="/ai/chat" element={<GptChat />} />
-            <Route path="/ai/tasks" element={<MyAiTasks />} />
             <Route path="/ai/quota" element={<MyAiQuota />} />
             <Route path="/ai/settings" element={<AdminAiSettings />} />
             <Route path="/servers" element={<Servers />} />

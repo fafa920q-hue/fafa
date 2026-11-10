@@ -1,4 +1,4 @@
-import { platformAccountsEnabled } from '../../../packages/auth/src/codex-execution';
+import { platformAccountsEnabled } from '../../../packages/auth/src/platform-gpt';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { sql, own, audit } from '../../../packages/db/src';
@@ -58,12 +58,10 @@ export async function registerAi(app: FastifyInstance, origins: string[]) {
   });
   app.get('/api/ai/tasks', async (req) =>
     (
-      await sql`select id,account_id,kind,requested_action,data,created_at from ai_tasks where owner_id=${req.actor.id} and revoked_at is null and chat_id is null order by created_at desc limit 50`
+      await sql`select id,account_id,data,created_at from ai_tasks where owner_id=${req.actor.id} and revoked_at is null and chat_id is null order by created_at desc limit 50`
     ).map((r) => ({
       id: r.id,
       accountId: r.account_id,
-      kind: r.kind,
-      requestedAction: r.requested_action,
       ...r.data,
       provider: r.data.provider ?? 'OPENAI_API',
       createdAt: r.created_at,
@@ -156,7 +154,7 @@ export async function registerAi(app: FastifyInstance, origins: string[]) {
   app.post('/api/ai/tasks/:id/cancel', async (req) => {
     const { id } = z.object({ id: z.uuid() }).parse(req.params);
     const rows =
-      await sql`update ai_tasks set data=data || '{"status":"CANCELLED"}'::jsonb where id=${id} and owner_id=${req.actor.id} and kind='GPT' and data->>'status' in ('QUEUED','RUNNING') returning id`;
+      await sql`update ai_tasks set data=data || '{"status":"CANCELLED"}'::jsonb where id=${id} and owner_id=${req.actor.id} and data->>'status' in ('QUEUED','RUNNING') returning id`;
     if (!rows.length) throw notFound();
     await audit(req.actor.id, 'ai.task_cancelled', id);
     return { ok: true };

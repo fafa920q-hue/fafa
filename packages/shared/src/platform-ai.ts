@@ -24,7 +24,7 @@ export const platformModels = {
 export type PlatformModel = keyof typeof platformModels;
 
 export function platformAiEnabled() {
-  return process.env.PLATFORM_CODEX_ENABLED === 'true';
+  return process.env.PLATFORM_AI_ENABLED === 'true';
 }
 
 export function platformReserve(

@@ -3,15 +3,12 @@ CREATE TABLE ai_platform_models (
  display_name text NOT NULL,
  enabled boolean NOT NULL DEFAULT false,
  supports_chat boolean NOT NULL DEFAULT true,
- supports_codex boolean NOT NULL DEFAULT false,
  default_chat boolean NOT NULL DEFAULT false,
- default_codex boolean NOT NULL DEFAULT false,
  allowed_users uuid[],
  pricing jsonb NOT NULL,
  task_micros bigint NOT NULL CHECK (task_micros > 0)
 );
 CREATE UNIQUE INDEX ai_platform_models_one_chat_default ON ai_platform_models(default_chat) WHERE default_chat;
-CREATE UNIQUE INDEX ai_platform_models_one_codex_default ON ai_platform_models(default_codex) WHERE default_codex;
 INSERT INTO ai_platform_models (model_id,display_name,enabled,pricing,task_micros) VALUES
  ('gpt-4.1-mini','GPT-4.1 mini',true,'{"context":262144,"input":400000,"cached":100000,"output":1600000}',1000000),
  ('gpt-5.4-mini-2026-03-17','GPT-5.4 mini',true,'{"context":262144,"input":750000,"cached":75000,"output":4500000}',1000000);

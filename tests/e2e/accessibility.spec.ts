@@ -20,7 +20,7 @@ test('核心页面浅深色 WCAG A/AA 自动检查', async ({ page }, info) => {
       for (const route of [
         '/',
         '/subscriptions',
-        '/codex',
+        '/ai/chat',
         '/servers',
         '/locations',
         '/account',

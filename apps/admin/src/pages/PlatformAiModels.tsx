@@ -49,8 +49,8 @@ export function PlatformAiModels({
       action={<button onClick={() => setDraft('new')}>添加模型</button>}
     >
       <p>
-        供应商 OpenAI。给模型分配服务账户后，在对应账户运行连接检查。Codex
-        能力配置会在隔离执行服务验收后生效。
+        供应商
+        OpenAI。给模型分配服务账户后，在对应账户运行连接检查。只有已验证并启用的账户才会参与自动选择与故障转移。
       </p>
       <DataState
         error={data.error}
@@ -69,9 +69,8 @@ export function PlatformAiModels({
           </p>
           <p>
             {row.supports_chat ? 'GPT 对话' : ''}
-            {row.supports_codex ? ' · Codex 能力待验收' : ''}
+
             {row.default_chat ? ' · GPT 默认' : ''}
-            {row.default_codex ? ' · Codex 默认配置' : ''}
           </p>
           <p>
             关联服务账户{' '}
@@ -107,19 +106,9 @@ export function PlatformAiModels({
           toggle('enabled', '启用模型', model?.enabled ?? false),
           toggle('supportsChat', '允许 GPT 对话', model?.supports_chat ?? true),
           toggle(
-            'supportsCodex',
-            '登记 Codex 能力',
-            model?.supports_codex ?? false,
-          ),
-          toggle(
             'defaultChat',
             '设为 GPT 默认模型',
             model?.default_chat ?? false,
-          ),
-          toggle(
-            'defaultCodex',
-            '设为 Codex 默认模型',
-            model?.default_codex ?? false,
           ),
           {
             name: 'audience',
@@ -165,9 +154,7 @@ export function PlatformAiModels({
               displayName: d.displayName,
               enabled: d.enabled,
               supportsChat: d.supportsChat,
-              supportsCodex: d.supportsCodex,
               defaultChat: d.defaultChat,
-              defaultCodex: d.defaultCodex,
               allowedUsers: audienceIds(d.audience),
               pricing: {
                 context: d.context,

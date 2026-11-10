@@ -13,9 +13,7 @@ const definition = {
   displayName: 'Fixture dynamic model',
   enabled: true,
   supportsChat: true,
-  supportsCodex: false,
   defaultChat: true,
-  defaultCodex: false,
   allowedUsers: [ids[1]],
   pricing: {
     context: 32768,
@@ -59,7 +57,7 @@ beforeAll(async () => {
     !/^\/fafa_platform_[a-f0-9]+_test$/.test(u.pathname)
   )
     throw Error('Dedicated platform test DB required');
-  vi.stubEnv('PLATFORM_CODEX_ENABLED', 'true');
+  vi.stubEnv('PLATFORM_AI_ENABLED', 'true');
   vi.stubEnv('DEMO_MODE', 'false');
   denyNetwork();
   app = await buildApp();
@@ -138,7 +136,6 @@ it('verifies dynamic model IDs through the account Worker and enforces the user 
   expect((await send(1, '/api/ai/platform')).json()).toMatchObject({
     models: [model],
     catalog: [{ id: model, label: definition.displayName, default: true }],
-    codexRuntime: false,
   });
   expect((await send(2, '/api/ai/platform')).json()).toMatchObject({
     models: [],
@@ -242,7 +239,7 @@ it('persists user-scoped chat turns, deduplicates submissions, and supplies mult
   expect((await send(2, '/api/ai/platform/usage')).json()).toEqual([]);
   denyNetwork();
 });
-it('disables the model immediately, protects attachments, and refuses native tasks without a runtime', async () => {
+it('disables the model immediately, protects attachments, and refuses native (Codex) tasks', async () => {
   const chat = '/api/ai/chats/' + chatId;
   expect(
     (
@@ -256,7 +253,7 @@ it('disables the model immediately, protects attachments, and refuses native tas
   ).toBe(403);
   expect(
     (await send(1, '/api/ai/codex/tasks', 'POST', { model })).statusCode,
-  ).toBe(503);
+  ).toBe(404);
   expect(
     (
       await send(0, base + '/models/' + model, 'PUT', {

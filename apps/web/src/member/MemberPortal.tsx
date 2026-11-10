@@ -392,9 +392,9 @@ function AccountSecurity() {
           )}
 
           <h2>功能授权</h2>
-          {(['node', 'server', 'codex'] as const).map((kind, index) => (
+          {(['node'] as const).map((kind, index) => (
             <p key={kind}>
-              {['节点订阅', '自有服务器连接', 'Codex任务'][index]}：
+              {['节点订阅'][index]}：
               {profile?.capabilities?.[kind] ? '已开放' : '未授权或已到期'}
               {profile?.capabilityExpiry?.[kind]
                 ? ' · 到期 ' +

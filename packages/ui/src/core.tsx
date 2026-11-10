@@ -12,11 +12,13 @@ import { NavLink, Link, useNavigate } from 'react-router-dom';
 import {
   Search,
   Bell,
+  Check,
   Sun,
   Moon,
   Menu,
   LogOut,
   ChevronRight,
+  Globe,
   ShieldCheck,
   X,
   Plus,
@@ -173,7 +175,7 @@ function Login({
           从容掌控。
         </h1>
         <p>
-          节点订阅、Codex 工作台与服务器，
+          节点订阅、GPT 对话与我的额度，
           <br />
           在你的安全空间内井然有序。
         </p>
@@ -268,8 +270,11 @@ export function Brand() {
   return (
     <Link className="brand" to="/">
       <span className="brand-icon">F</span>
-      <span>
-        <strong>FAFA ONE</strong>
+      <span className="brand-text">
+        <span className="brand-name">
+          <strong>FAFA ONE</strong>
+          <span className="brand-pro">2.0 Pro</span>
+        </span>
         <small>统一控制面板</small>
       </span>
     </Link>
@@ -289,8 +294,9 @@ export function Shell({
 }) {
   const { session, request, toast, reload } = useApp();
   const [collapsed, setCollapsed] = useState(false);
+  const [langOpen, setLangOpen] = useState(false);
   const [dark, setDark] = useState(
-    () => localStorage.getItem('fafa_theme') === 'dark',
+    () => localStorage.getItem('fafa_theme') !== 'light',
   );
   const [command, setCommand] = useState(false);
   const [notice, setNotice] = useState(false);
@@ -374,6 +380,41 @@ export function Shell({
             >
               {dark ? <Sun size={21} /> : <Moon size={21} />}
             </button>
+            <div className="lang-wrap">
+              <button
+                className="icon-button lang-button"
+                aria-label="切换语言"
+                aria-expanded={langOpen}
+                onClick={() => setLangOpen((v) => !v)}
+              >
+                <Globe size={20} />
+                <span className="lang-current">中文</span>
+              </button>
+              {langOpen && (
+                <>
+                  <button
+                    className="lang-backdrop"
+                    aria-label="关闭语言菜单"
+                    onClick={() => setLangOpen(false)}
+                  />
+                  <div className="lang-pop" role="menu">
+                    <button
+                      className="lang-item"
+                      role="menuitem"
+                      onClick={() => setLangOpen(false)}
+                    >
+                      <Check size={16} />
+                      <span>中文</span>
+                      <small>当前语言</small>
+                    </button>
+                    <button className="lang-item" role="menuitem" disabled>
+                      <span className="lang-indent">English</span>
+                      <small>即将推出</small>
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
             <Link
               className="avatar"
               to={admin ? '/' : '/account'}

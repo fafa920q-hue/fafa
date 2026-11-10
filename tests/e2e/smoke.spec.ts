@@ -11,7 +11,7 @@ test('所有用户页面、真实位置写入与未配置能力说明', async ({
   await login(page);
   for (const [path, title] of [
     ['/subscriptions', '节点订阅'],
-    ['/codex', 'Codex 工作台'],
+    ['/ai/chat', 'GPT 对话'],
     ['/servers', '我的服务器'],
     ['/locations', '位置中心'],
     ['/account', '我的账户'],
@@ -49,7 +49,7 @@ test('手机与桌面各宽度无横向溢出、暗色及键盘导航', async ({
     for (const route of [
       '/',
       '/subscriptions',
-      '/codex',
+      '/ai/chat',
       '/servers',
       '/locations',
       '/account',

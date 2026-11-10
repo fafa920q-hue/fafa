@@ -12,7 +12,6 @@ for (const name of [
   '008_anthropic_credentials.sql',
   '009_platform_ai.sql',
   '010_platform_chat.sql',
-  '011_codex_execution.sql',
 ]) {
   await sql.begin(async (tx) => {
     await tx`select pg_advisory_xact_lock(77701)`;

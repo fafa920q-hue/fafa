@@ -1,4 +1,4 @@
-import { platformAccountsEnabled } from '../../../packages/auth/src/codex-execution';
+import { platformAccountsEnabled } from '../../../packages/auth/src/platform-gpt';
 import { platformAiEnabled } from '../../../packages/shared/src/platform-ai';
 import {
   checkPlatformAccount,
@@ -153,7 +153,7 @@ export async function tick() {
   }
   const task = await sql.begin(async (tx) => {
     const [r] =
-      await tx`select t.* from ai_tasks t join users u on u.id=t.owner_id where t.kind='GPT' and t.data->>'status'='QUEUED' and (t.platform_account_id is null or ${platformAiEnabled()}) and not u.disabled order by t.created_at for update of t skip locked limit 1`;
+      await tx`select t.* from ai_tasks t join users u on u.id=t.owner_id where t.data->>'status'='QUEUED' and (t.platform_account_id is null or ${platformAiEnabled()}) and not u.disabled order by t.created_at for update of t skip locked limit 1`;
     if (r)
       await tx`update ai_tasks set data=data || '{"status":"RUNNING"}',updated_at=now() where id=${r.id}`;
     return r;

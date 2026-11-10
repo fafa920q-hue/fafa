@@ -20,7 +20,7 @@ process.on('SIGINT', () => (running = false));
 while (running) {
   try {
     await sql`update background_jobs set data=data || '{"status":"QUEUED"}',updated_at=now() where data->>'status'='RUNNING' and updated_at<now()-interval '5 minutes'`;
-    await sql`update ai_tasks set data=data || '{"status":"TIMEOUT"}',updated_at=now() where kind='GPT' and data->>'status'='RUNNING' and updated_at<now()-interval '5 minutes'`;
+    await sql`update ai_tasks set data=data || '{"status":"TIMEOUT"}',updated_at=now() where data->>'status'='RUNNING' and updated_at<now()-interval '5 minutes'`;
     await tick();
   } catch {
     console.error('后台任务暂时失败，将重试（未记录凭据或上游响应）');
