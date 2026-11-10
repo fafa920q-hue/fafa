@@ -34,17 +34,22 @@ import {
   readAiQuota,
 } from '../../../packages/auth/src/service-policy';
 
-const accountSchema = z.object({
+// 凭据与标识字段先去首尾空白再做格式校验：从 OpenAI 控制台粘贴时常带
+// 换行/空格，未 trim 会直接报 400“输入内容不符合要求”。trim 后仍拒绝
+// sk-admin-、过短、错误前缀等非法格式。导出以便单元测试直接引用。
+export const accountSchema = z.object({
   priority: z.number().int().min(1).max(1000).default(100),
   allowedUsers: audience.default(null),
   name: z.string().trim().min(1).max(100),
   note: z.string().max(500),
   projectId: z
     .string()
+    .trim()
     .regex(/^proj_[a-zA-Z0-9_-]+$/)
     .max(100),
   serviceAccountId: z
     .string()
+    .trim()
     .regex(/^svc_acct_[a-zA-Z0-9_-]+$/)
     .max(100),
   limits,
@@ -52,8 +57,9 @@ const accountSchema = z.object({
   enabled: z.boolean(),
   concurrency: z.number().int().min(1).max(20),
 });
-const apiKey = z
+export const apiKey = z
   .string()
+  .trim()
   .regex(/^sk-(?!admin-)[A-Za-z0-9_-]{16,}$/)
   .max(512);
 function owner(actor: any) {
