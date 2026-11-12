@@ -35,6 +35,10 @@ import { token, hash, seal, unseal } from '../../../packages/shared/src/crypto';
 import { toNotification } from "../../../packages/shared/src/notifications";
 import { nodeInSubscriptionContent, nodeStateFlagsOf } from "../../../packages/shared/src/admin-nodes";
 import {
+  SUBSCRIPTION_DOWNLOAD_FORMATS,
+  normalizeSubscriptionFormat,
+} from "../../../packages/shared/src/subscription-format";
+import {
   authenticate,
   createSession,
   mockEnabled,
@@ -907,20 +911,15 @@ app.post('/api/logout', async (req, reply) => {
             '订阅授权已撤销或到期',
           );
         await assertServiceOpen(user);
-        const { format } = z
+        const { format: rawFormat } = z
           .object({
-            format: z
-              .enum([
-                'mihomo',
-                'sing-box',
-                'uri',
-                'base64',
-                'shadowrocket',
-                'v2rayn',
-              ])
-              .default('mihomo'),
+            format: z.enum(SUBSCRIPTION_DOWNLOAD_FORMATS).default('mihomo'),
           })
           .parse(req.query);
+        // `clash` 是 `mihomo`（Mihomo/Clash YAML）的別名；`shadowrocket` 與
+        // `v2rayn` 對映到既有的 `uri` 與 `base64` 匯出格式（見
+        // packages/shared/src/subscription-format.ts）。
+        const format = normalizeSubscriptionFormat(rawFormat);
         const nodes = await visibleNodes(t.owner_id);
         reply.type(
           format === 'sing-box'
@@ -929,14 +928,7 @@ app.post('/api/logout', async (req, reply) => {
               ? 'text/yaml'
               : 'text/plain',
         );
-        return exportSubscription(
-          nodes,
-          format === 'shadowrocket'
-            ? 'uri'
-            : format === 'v2rayn'
-              ? 'base64'
-              : format,
-        );
+        return exportSubscription(nodes, format);
       },
     );
   app.get('/api/data-export', async (req) => {
