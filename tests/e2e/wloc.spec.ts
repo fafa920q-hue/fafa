@@ -10,7 +10,7 @@ async function login(page: Page, name = '成员演示') {
   await tiles(page);
   await page.goto('/');
   await page.getByRole('button', { name, exact: true }).click();
-    const heading = name === '成员演示' ? '我的工作台' : '欢迎回来';
+const heading = name === '成员演示' ? '我的工作台' : '欢迎回来';
   await expect(page.getByRole('heading', { name: heading })).toBeVisible();
   await page.goto('/locations');
   await expect(
