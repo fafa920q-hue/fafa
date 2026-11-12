@@ -16,10 +16,7 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import {
   LayoutDashboard,
   Users,
-  Globe2,
-  Server,
   Code2,
-  ListTodo,
   ShieldCheck,
   Settings,
   RefreshCw,
