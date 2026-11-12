@@ -4,7 +4,7 @@ async function login(page: any, profile = '管理员演示') {
   await page.goto('/');
   await page.getByRole('button', { name: profile, exact: true }).click();
   await expect(
-    page.getByRole('heading', { name: '欢迎使用 FAFA ONE 控制面板 👋' }),
+        page.getByRole('heading', { name: '欢迎回来' }),
   ).toBeVisible();
 }
 test('所有用户页面、真实位置写入与未配置能力说明', async ({ page }) => {
