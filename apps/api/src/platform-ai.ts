@@ -295,7 +295,7 @@ export async function registerPlatformAi(app: FastifyInstance) {
     };
   });
   app.get('/api/ai/platform/usage', async (req, reply) => {
-    if (!platformAccountsEnabled()) throw notFound();
+  if (!platformAccountsEnabled()) return [];
     reply.header('Cache-Control', 'no-store');
     return sql`select l.task_id as id,l.model,l.input_tokens,l.cached_tokens,l.cache_write_tokens,
       l.output_tokens,l.charged_micros,l.reserved_micros,l.created_at,t.data->>'status' as status
