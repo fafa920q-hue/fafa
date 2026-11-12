@@ -17,6 +17,7 @@ import {
   UserRound,
   MessageSquare,
   Gauge,
+  Bell,
   Settings,
 } from 'lucide-react';
 import {
@@ -43,6 +44,12 @@ const Locations = lazy(() =>
 const Account = lazy(() =>
   import('./pages/Account').then((m) => ({ default: m.Account })),
 );
+const Notifications = lazy(() =>
+  import('./pages/Notifications').then((m) => ({ default: m.Notifications })),
+);
+const SettingsPage = lazy(() =>
+  import('./pages/Settings').then((m) => ({ default: m.Settings })),
+);
 const nav = [
   { to: '/', label: '仪表盘', icon: LayoutDashboard },
   { to: '/subscriptions', label: '节点订阅', icon: Globe2 },
@@ -51,6 +58,8 @@ const nav = [
   { to: '/ai/quota', label: '我的额度', icon: Gauge },
   { to: '/locations', label: '位置中心', icon: MapPin },
   { to: '/account', label: '我的账户', icon: UserRound },
+  { to: '/notifications', label: '通知', icon: Bell },
+  { to: '/settings', label: '设置', icon: Settings },
 ];
 function AdminAiSettings() {
   const { session } = useApp();
@@ -106,6 +115,8 @@ function WebApplication() {
             <Route path="/servers" element={<Servers />} />
             <Route path="/locations" element={<Locations />} />
             <Route path="/account" element={<Account />} />
+          <Route path="/notifications" element={<Notifications />} />
+          <Route path="/settings" element={<SettingsPage />} />
             <Route
               path="*"
               element={

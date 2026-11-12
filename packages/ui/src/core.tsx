@@ -296,7 +296,7 @@ export function Shell({
   const [collapsed, setCollapsed] = useState(false);
   const [langOpen, setLangOpen] = useState(false);
   const [dark, setDark] = useState(
-    () => localStorage.getItem('fafa_theme') !== 'light',
+    () => localStorage.getItem('fafa_theme') === 'dark',
   );
   const [command, setCommand] = useState(false);
   const [notice, setNotice] = useState(false);

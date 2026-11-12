@@ -32,6 +32,7 @@ import {
   type User,
 } from '../../../packages/shared/src';
 import { token, hash, seal, unseal } from '../../../packages/shared/src/crypto';
+import { toNotification } from "../../../packages/shared/src/notifications";
 import {
   authenticate,
   createSession,
@@ -524,7 +525,12 @@ export async function buildApp() {
     csrf: req.actor.csrf,
     demo: process.env.DEMO_MODE === 'true',
   }));
-  app.post('/api/logout', async (req, reply) => {
+  // Stage D: user notifications = owner-scoped audit trail, no demo data.
+app.get("/api/notifications", async (req) => {
+  const rows = await sql<{ id: string; action: string; target_id: string | null; correlation_id: string | null; created_at: string }[]>`select id, action, target_id, correlation_id, created_at from audit_events where owner_id = ${req.actor.id} order by created_at desc limit 50`;
+  return rows.map((row) => toNotification(row));
+});
+app.post('/api/logout', async (req, reply) => {
     await sql`update sessions set revoked_at=now() where id=${req.actor.session_id}`;
     reply.clearCookie('fafa_session', { path: '/', ...sharedCookieDomain() });
     return { ok: true };
