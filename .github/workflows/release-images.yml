@@ -1,0 +1,162 @@
+# FAFA ONE 3.0 Pro - release candidate image build (GitHub Actions + GHCR).
+#
+# Manual trigger only (workflow_dispatch). The user dispatches it from the
+# GitHub UI after the release candidate branch is pushed. It never runs on
+# push, never deploys anything, and never touches production: it only
+# builds the candidate images and publishes them to GHCR (private).
+#
+# Security and provenance:
+# - Every third-party action is pinned to a commit SHA verified against
+#   the action's own repository on 2026-11-13 (see the per-use comments).
+# - Least-privilege permissions: contents: read, packages: write
+#   (push to GHCR only), id-token: write + attestations: write (build
+#   provenance attestation only).
+# - The build uses only the repository tree at the candidate commit. The
+#   checkout ref is the exact candidate SHA, so the built tree is the same
+#   tree the deploy script builds from with `git archive <sha>`.
+# - No production .env, secret, database or user data is used or uploaded.
+# - Images are tagged with the full commit SHA (immutable) plus the short
+#   SHA. No 'latest' or floating tag is created, so a deploy can never
+#   silently pick up a different image, and a stale inspect or an expired
+#   tag cannot cause a version downgrade: the deploy script consumes the
+#   recorded digest, never a floating tag.
+# - GHCR packages inherit the repository's private visibility.
+# - The Worker runs from the same runtime image as the API (different
+#   command), so only the runtime image needs rebuilding for API+Worker.
+name: Build release candidate images (GHCR)
+
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_sha:
+        description: 'Candidate commit SHA to build (full 40-hex SHA; must be on stage-g-20261112)'
+        required: true
+        type: string
+      run_tests:
+        description: 'Run unit tests before building'
+        required: false
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+  attestations: write
+
+concurrency:
+  group: release-images
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_OWNER: fafa920q-hue
+
+jobs:
+  test:
+    name: Unit tests (candidate)
+    if: ${{ inputs.run_tests }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out candidate commit
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.candidate_sha }}
+          persist-credentials: false
+      - name: Set up Node.js 24
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+      - name: Set up pnpm 11.25.0
+        uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+        with:
+          version: 11.25.0
+          run_install: false
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Initialise local env (CI parity)
+        run: pnpm exec tsx infra/scripts/init-env.ts
+      - name: Run root unit tests
+        run: pnpm test
+      - name: Run stage D/E/G/H unit tests
+        run: |
+          pnpm exec vitest run tests/stage-d-notifications.unit.test.ts tests/stage-e-admin-nodes.unit.test.ts tests/stage-g-subscription-format.unit.test.ts tests/stage-h-platform-billing.unit.test.ts
+
+  build:
+    name: Build and publish ${{ matrix.target }}
+    needs: test
+    if: ${{ always() && (needs.test.result == 'success' || needs.test.result == 'skipped') }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: true
+      matrix:
+        target: [runtime, web, admin]
+    steps:
+      - name: Check out candidate commit
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.candidate_sha }}
+          persist-credentials: false
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - name: Log in to GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Compute image tags
+        id: tags
+        run: |
+          SHORT_SHA="$(printf '%s' '${{ inputs.candidate_sha }}' | cut -c1-12)"
+          echo "short_sha=${SHORT_SHA}" >> "${GITHUB_OUTPUT}"
+          echo "image=ghcr.io/${{ env.IMAGE_OWNER }}/fafa-${{ matrix.target }}" >> "${GITHUB_OUTPUT}"
+      - name: Build and push ${{ matrix.target }}
+        id: build
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: infra/docker/Dockerfile
+          target: ${{ matrix.target }}
+          platforms: linux/amd64
+          push: true
+          load: true
+          provenance: false
+          sbom: false
+          tags: |
+            ${{ steps.tags.outputs.image }}:${{ inputs.candidate_sha }}
+            ${{ steps.tags.outputs.image }}:${{ steps.tags.outputs.short_sha }}
+          labels: |
+            org.opencontainers.image.revision=${{ inputs.candidate_sha }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@96b4a1ef7235a096b17240c259729fdd70c83d45 # v2
+        with:
+          subject-name: ${{ steps.tags.outputs.image }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+      - name: Record image digest
+        run: |
+          cat > "image-digest-${{ matrix.target }}.json" <<JSON
+          {
+            "image": "${{ steps.tags.outputs.image }}",
+            "target": "${{ matrix.target }}",
+            "tag": "${{ inputs.candidate_sha }}",
+            "short_tag": "${{ steps.tags.outputs.short_sha }}",
+            "digest": "${{ steps.build.outputs.digest }}",
+            "candidate_sha": "${{ inputs.candidate_sha }}",
+            "repository": "${{ github.repository }}",
+            "run_url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          }
+          JSON
+          cat "image-digest-${{ matrix.target }}.json"
+      - name: Verify clash alias in the built runtime image
+        if: matrix.target == 'runtime'
+        run: |
+          docker run --rm "${{ steps.tags.outputs.image }}:${{ inputs.candidate_sha }}" node --import tsx -e "import { normalizeSubscriptionFormat } from './packages/shared/src/subscription-format.ts'; const got = normalizeSubscriptionFormat('clash'); if (got !== 'mihomo') { console.error('clash alias missing in built image: ' + got); process.exit(1); } console.log('clash alias OK in built image: clash -> ' + got);"
+      - name: Upload digest record
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-image-digest-${{ matrix.target }}
+          path: image-digest-${{ matrix.target }}.json
+          retention-days: 90
