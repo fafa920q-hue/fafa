@@ -115,8 +115,8 @@ function WebApplication() {
             <Route path="/servers" element={<Servers />} />
             <Route path="/locations" element={<Locations />} />
             <Route path="/account" element={<Account />} />
-          <Route path="/notifications" element={<Notifications />} />
-          <Route path="/settings" element={<SettingsPage />} />
+            <Route path="/notifications" element={<Notifications />} />
+            <Route path="/settings" element={<SettingsPage />} />
             <Route
               path="*"
               element={

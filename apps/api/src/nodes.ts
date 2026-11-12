@@ -8,7 +8,10 @@ import {
 import { sql, audit, own } from '../../../packages/db/src';
 import { AppError, notFound, isAdmin } from '../../../packages/shared/src';
 import { seal } from '../../../packages/shared/src/crypto';
-import { nodeStateFlagsOf, nodeVisibleToUsers } from '../../../packages/shared/src/admin-nodes';
+import {
+  nodeStateFlagsOf,
+  nodeVisibleToUsers,
+} from '../../../packages/shared/src/admin-nodes';
 import {
   parseBatch,
   nodeMetadata,
@@ -137,14 +140,13 @@ export async function registerNodes(app: FastifyInstance) {
     return rows
       .filter((row) => {
         const group = row.data.group || row.source_data.group || '';
-      const allowed = (
+        const allowed =
           row.owner_id === req.actor.id ||
           (row.grant_data &&
             activeGrant(row.grant_data) &&
             sourceAllowed(req.actor, row.source_id, group) &&
-            withinNodeGrantScope(row.grant_data, row.id, group))
-        );
-      return allowed && nodeVisibleToUsers(nodeStateFlagsOf(row.source_data));
+            withinNodeGrantScope(row.grant_data, row.id, group));
+        return allowed && nodeVisibleToUsers(nodeStateFlagsOf(row.source_data));
       })
       .map((row) => summary(row, req.actor.id));
   });

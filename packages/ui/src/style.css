@@ -9,15 +9,18 @@
     'Microsoft YaHei',
     sans-serif;
   color: #172033;
-  background: #F6F7FB;
+  background: #f6f7fb;
   font-synthesis: none;
-  --primary: #6D5EF9; --brand: #6D5EF9; --bg: #F6F7FB; --card: #ffffff;
+  --primary: #6d5ef9;
+  --brand: #6d5ef9;
+  --bg: #f6f7fb;
+  --card: #ffffff;
   --secondary: #4d91ff;
   --text: #172033;
-  --muted: #5A6478;
+  --muted: #5a6478;
   --surface: #ffffff;
-  --solid: #F6F7FB;
-  --line: #DDE4EF;
+  --solid: #f6f7fb;
+  --line: #dde4ef;
   --input: #ffffff;
   --shadow: 0 10px 28px #586ac510;
   --danger: #b92e4c;
@@ -2471,10 +2474,60 @@ td .actions {
 }
 
 /* FAFA ONE 3.0 design system - Stage D */
-:root,[data-theme=light]{--bg:#F6F7FB;--card:#ffffff;--text:#172033;--muted:#5A6478;--line:#DDE4EF;--brand:#6D5EF9;--primary:#6D5EF9}
-[data-theme=dark]{--bg:#12141F;--card:#1B1E2E;--text:#E8EAF2;--muted:#9AA3B8;--line:#2E3348;--surface:#1B1E2E;--solid:#232736;--input:#232736;--brand:#8B7FFA;--primary:#8B7FFA}
-body{background:var(--bg);color:var(--text)}
-.app-shell{background:var(--bg)}
-.card{background:var(--card);border:1px solid var(--line)}
-@media (max-width:768px){.topbar-inner,.app-shell{padding-left:12px;padding-right:12px}.page-grid{grid-template-columns:1fr}.cluster{flex-wrap:wrap}.topbar nav{overflow-x:auto}}
-@media (max-width:390px){.shell-grid{gap:10px}.brand span{font-size:15px}}
+:root,
+[data-theme='light'] {
+  --bg: #f6f7fb;
+  --card: #ffffff;
+  --text: #172033;
+  --muted: #5a6478;
+  --line: #dde4ef;
+  --brand: #6d5ef9;
+  --primary: #6d5ef9;
+}
+[data-theme='dark'] {
+  --bg: #12141f;
+  --card: #1b1e2e;
+  --text: #e8eaf2;
+  --muted: #9aa3b8;
+  --line: #2e3348;
+  --surface: #1b1e2e;
+  --solid: #232736;
+  --input: #232736;
+  --brand: #8b7ffa;
+  --primary: #8b7ffa;
+}
+body {
+  background: var(--bg);
+  color: var(--text);
+}
+.app-shell {
+  background: var(--bg);
+}
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+}
+@media (max-width: 768px) {
+  .topbar-inner,
+  .app-shell {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+  .page-grid {
+    grid-template-columns: 1fr;
+  }
+  .cluster {
+    flex-wrap: wrap;
+  }
+  .topbar nav {
+    overflow-x: auto;
+  }
+}
+@media (max-width: 390px) {
+  .shell-grid {
+    gap: 10px;
+  }
+  .brand span {
+    font-size: 15px;
+  }
+}

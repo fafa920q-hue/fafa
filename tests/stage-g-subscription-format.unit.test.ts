@@ -3,7 +3,10 @@ import {
   SUBSCRIPTION_DOWNLOAD_FORMATS,
   normalizeSubscriptionFormat,
 } from '../packages/shared/src/subscription-format';
-import { exportSubscription, type Node } from '../packages/subscription/src/index';
+import {
+  exportSubscription,
+  type Node,
+} from '../packages/subscription/src/index';
 
 // 與隔離種子節點 t1 相同的最小 vless 節點。
 const sampleNode = {

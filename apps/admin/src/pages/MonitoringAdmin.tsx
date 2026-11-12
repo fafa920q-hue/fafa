@@ -1,5 +1,13 @@
 import { useState } from 'react';
-import { Badge, Card, DataState, Empty, PageTitle, useApp, useData } from '../../../../packages/ui/src/core';
+import {
+  Badge,
+  Card,
+  DataState,
+  Empty,
+  PageTitle,
+  useApp,
+  useData,
+} from '../../../../packages/ui/src/core';
 
 interface Monitoring {
   api: { ok: boolean };
@@ -49,51 +57,128 @@ export function MonitoringAdmin() {
 
   return (
     <div>
-      <PageTitle title="系統監控" description="即時查看 API、資料庫、任務佇列與節點健康狀態。失敗任務可手動重試；所有操作皆寫入操作審計。" />
-      {error !== '' ? <div className="alert error" style={{ marginTop: 12 }}>{error}</div> : null}
-      {notice !== '' ? <div className="alert success" style={{ marginTop: 12 }}>{notice}</div> : null}
-      <DataState error={monitoring.error || ''} loading={!monitoring.data} onRetry={monitoring.refresh} />
+      <PageTitle
+        title="系統監控"
+        description="即時查看 API、資料庫、任務佇列與節點健康狀態。失敗任務可手動重試；所有操作皆寫入操作審計。"
+      />
+      {error !== '' ? (
+        <div className="alert error" style={{ marginTop: 12 }}>
+          {error}
+        </div>
+      ) : null}
+      {notice !== '' ? (
+        <div className="alert success" style={{ marginTop: 12 }}>
+          {notice}
+        </div>
+      ) : null}
+      <DataState
+        error={monitoring.error || ''}
+        loading={!monitoring.data}
+        onRetry={monitoring.refresh}
+      />
       {data !== undefined && data !== null ? (
         <div>
-          <div className="grid" style={{ gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 16 }}>
+          <div
+            className="grid"
+            style={{
+              gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
+              gap: 16,
+            }}
+          >
             <Card title="API 服務">
-              <div style={{ marginTop: 8 }}>{data.api.ok ? <Badge tone="success">正常</Badge> : <Badge tone="danger">異常</Badge>}</div>
+              <div style={{ marginTop: 8 }}>
+                {data.api.ok ? (
+                  <Badge tone="success">正常</Badge>
+                ) : (
+                  <Badge tone="danger">異常</Badge>
+                )}
+              </div>
             </Card>
             <Card title="資料庫">
-              <div style={{ marginTop: 8 }}>{data.database.ok ? <Badge tone="success">連線正常</Badge> : <Badge tone="danger">連線異常</Badge>}</div>
-              <div className="muted" style={{ marginTop: 8 }}>{bytesLabel(data.database.bytes)}</div>
+              <div style={{ marginTop: 8 }}>
+                {data.database.ok ? (
+                  <Badge tone="success">連線正常</Badge>
+                ) : (
+                  <Badge tone="danger">連線異常</Badge>
+                )}
+              </div>
+              <div className="muted" style={{ marginTop: 8 }}>
+                {bytesLabel(data.database.bytes)}
+              </div>
             </Card>
             {data.counts.map((count) => (
               <Card key={count.name} title={count.name}>
-                <div style={{ fontSize: 24, fontWeight: 700, marginTop: 8 }}>{count.total}</div>
+                <div style={{ fontSize: 24, fontWeight: 700, marginTop: 8 }}>
+                  {count.total}
+                </div>
               </Card>
             ))}
           </div>
           <Card title="任務狀態統計">
             <div className="row" style={{ gap: 16, flexWrap: 'wrap' }}>
-              {data.jobsByStatus.length === 0 ? <span className="muted">尚無背景任務記錄</span> : null}
+              {data.jobsByStatus.length === 0 ? (
+                <span className="muted">尚無背景任務記錄</span>
+              ) : null}
               {data.jobsByStatus.map((row) => (
-                <span key={row.status}><Badge tone={row.status === 'FAILED' ? 'danger' : row.status === 'QUEUED' ? 'warning' : 'success'}>{row.status}</Badge> {row.total}</span>
+                <span key={row.status}>
+                  <Badge
+                    tone={
+                      row.status === 'FAILED'
+                        ? 'danger'
+                        : row.status === 'QUEUED'
+                          ? 'warning'
+                          : 'success'
+                    }
+                  >
+                    {row.status}
+                  </Badge>{' '}
+                  {row.total}
+                </span>
               ))}
             </div>
             <h3 style={{ marginTop: 16 }}>AI 任務狀態統計</h3>
             <div className="row" style={{ gap: 16, flexWrap: 'wrap' }}>
-              {data.tasksByStatus.length === 0 ? <span className="muted">尚無 AI 任務記錄</span> : null}
+              {data.tasksByStatus.length === 0 ? (
+                <span className="muted">尚無 AI 任務記錄</span>
+              ) : null}
               {data.tasksByStatus.map((row) => (
-                <span key={row.status}><Badge tone={row.status === 'ERROR' ? 'danger' : 'success'}>{row.status}</Badge> {row.total}</span>
+                <span key={row.status}>
+                  <Badge tone={row.status === 'ERROR' ? 'danger' : 'success'}>
+                    {row.status}
+                  </Badge>{' '}
+                  {row.total}
+                </span>
               ))}
             </div>
           </Card>
           <Card title="最近節點健康檢查">
-            {data.latestHealth.length === 0 ? <p className="muted">尚無健康檢查記錄。</p> : (
+            {data.latestHealth.length === 0 ? (
+              <p className="muted">尚無健康檢查記錄。</p>
+            ) : (
               <table className="table">
-                <thead><tr><th>檢查編號</th><th>結果</th><th>時間</th></tr></thead>
+                <thead>
+                  <tr>
+                    <th>檢查編號</th>
+                    <th>結果</th>
+                    <th>時間</th>
+                  </tr>
+                </thead>
                 <tbody>
                   {data.latestHealth.map((row) => (
                     <tr key={row.id}>
                       <td>{row.id.slice(0, 8)}</td>
-                      <td>{row.data?.ok === false ? <Badge tone="danger">異常</Badge> : <Badge tone="success">正常</Badge>}</td>
-                      <td>{row.createdAt ? row.createdAt.slice(0, 19).replace('T', ' ') : '-'}</td>
+                      <td>
+                        {row.data?.ok === false ? (
+                          <Badge tone="danger">異常</Badge>
+                        ) : (
+                          <Badge tone="success">正常</Badge>
+                        )}
+                      </td>
+                      <td>
+                        {row.createdAt
+                          ? row.createdAt.slice(0, 19).replace('T', ' ')
+                          : '-'}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -102,18 +187,49 @@ export function MonitoringAdmin() {
           </Card>
         </div>
       ) : null}
-      <DataState error={jobs.error || ''} loading={!jobs.data} onRetry={jobs.refresh} />
+      <DataState
+        error={jobs.error || ''}
+        loading={!jobs.data}
+        onRetry={jobs.refresh}
+      />
       {jobList.length > 0 ? (
         <Card title="背景任務佇列">
           <table className="table">
-            <thead><tr><th>任務</th><th>狀態</th><th>建立時間</th><th>操作</th></tr></thead>
+            <thead>
+              <tr>
+                <th>任務</th>
+                <th>狀態</th>
+                <th>建立時間</th>
+                <th>操作</th>
+              </tr>
+            </thead>
             <tbody>
               {jobList.map((job) => (
                 <tr key={job.id}>
-                  <td>{job.data?.kind || job.data?.type || job.id.slice(0, 8)}</td>
-                  <td>{job.data?.status === 'FAILED' ? <Badge tone="danger">失敗</Badge> : <Badge>{job.data?.status || '未知'}</Badge>}</td>
-                  <td>{job.created_at ? job.created_at.slice(0, 19).replace('T', ' ') : '-'}</td>
-                  <td>{job.data?.status === 'FAILED' ? <button onClick={() => retryJob(job.id)} disabled={busy}>重試</button> : '-'}</td>
+                  <td>
+                    {job.data?.kind || job.data?.type || job.id.slice(0, 8)}
+                  </td>
+                  <td>
+                    {job.data?.status === 'FAILED' ? (
+                      <Badge tone="danger">失敗</Badge>
+                    ) : (
+                      <Badge>{job.data?.status || '未知'}</Badge>
+                    )}
+                  </td>
+                  <td>
+                    {job.created_at
+                      ? job.created_at.slice(0, 19).replace('T', ' ')
+                      : '-'}
+                  </td>
+                  <td>
+                    {job.data?.status === 'FAILED' ? (
+                      <button onClick={() => retryJob(job.id)} disabled={busy}>
+                        重試
+                      </button>
+                    ) : (
+                      '-'
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>

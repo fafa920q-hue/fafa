@@ -109,7 +109,10 @@ function Admin() {
           }
         />
         <Route path="/audit" element={<AuditAdmin />} />
-        <Route path="/audit/resources" element={<ResourceAdmin kind="audit" />} />
+        <Route
+          path="/audit/resources"
+          element={<ResourceAdmin kind="audit" />}
+        />
         <Route path="/settings" element={<SystemSettings />} />
         <Route
           path="/member-registration"

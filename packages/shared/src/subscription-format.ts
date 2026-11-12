@@ -14,11 +14,7 @@ export const SUBSCRIPTION_DOWNLOAD_FORMATS = [
 export type SubscriptionDownloadFormat =
   (typeof SUBSCRIPTION_DOWNLOAD_FORMATS)[number];
 
-export type SubscriptionExportFormat =
-  | 'mihomo'
-  | 'sing-box'
-  | 'uri'
-  | 'base64';
+export type SubscriptionExportFormat = 'mihomo' | 'sing-box' | 'uri' | 'base64';
 
 export function normalizeSubscriptionFormat(
   format: SubscriptionDownloadFormat,

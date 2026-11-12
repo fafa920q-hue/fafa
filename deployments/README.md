@@ -20,9 +20,18 @@ Format:
   "image_tag_sha": "baf523c10aa448cc0bddbce1f37948350f94af59",
   "registry": "ghcr.io",
   "images": {
-    "runtime": {"image": "ghcr.io/fafa920q-hue/fafa-runtime", "digest": "sha256:<64 hex>"},
-    "web":     {"image": "ghcr.io/fafa920q-hue/fafa-web",     "digest": "sha256:<64 hex>"},
-    "admin":   {"image": "ghcr.io/fafa920q-hue/fafa-admin",   "digest": "sha256:<64 hex>"}
+    "runtime": {
+      "image": "ghcr.io/fafa920q-hue/fafa-runtime",
+      "digest": "sha256:<64 hex>"
+    },
+    "web": {
+      "image": "ghcr.io/fafa920q-hue/fafa-web",
+      "digest": "sha256:<64 hex>"
+    },
+    "admin": {
+      "image": "ghcr.io/fafa920q-hue/fafa-admin",
+      "digest": "sha256:<64 hex>"
+    }
   }
 }
 ```
@@ -33,7 +42,7 @@ Format:
 - `digest`: the registry MANIFEST digest reported by
   `docker/build-push-action` (`image-digest-<target>.json`) and recorded in
   the workflow artifacts. It is the identity used for the pull.
-- The image CONFIG digest (`docker image Id`) is a *different* hash for the
+- The image CONFIG digest (`docker image Id`) is a _different_ hash for the
   same image. `deploy-production.sh` records it in
   `deployments/<deployment_sha>-images.json` and verifies the running
   containers against it. Do not confuse the two.
@@ -50,8 +59,8 @@ harness may set `DEPLOY_IMAGE_REGISTRIES` to a local registry), image names
 2. When it completes, download the `release-image-digest-<target>` artifacts
    and read each image's manifest digest.
 3. Write `deployments/ghcr-images.json` in the release commit, with
-`image_tag_sha` = the release commit and `digest` = the digest from
-each artifact. Commit the file and only then deploy that commit.
+   `image_tag_sha` = the release commit and `digest` = the digest from
+   each artifact. Commit the file and only then deploy that commit.
 
 A missing or invalid manifest fails the deploy with `PRE_DEPLOY_FAIL`
 before any service is stopped.

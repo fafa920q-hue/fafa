@@ -13,7 +13,11 @@ export const NODE_STATE_FIELDS: readonly NodeAdminFlag[] = [
 ];
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && Array.isArray(value) === false;
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    Array.isArray(value) === false
+  );
 }
 
 export function nodeStateFlagsOf(data: unknown): NodeStateFlags {
@@ -53,7 +57,8 @@ export function nodeStateAction(flag: NodeAdminFlag, value: boolean): string {
 }
 
 export function nodeAuditAction(flag: NodeAdminFlag, value: boolean): string {
-  if (flag === 'distributionStopped') return value ? 'node.distribution.stopped' : 'node.distribution.resumed';
+  if (flag === 'distributionStopped')
+    return value ? 'node.distribution.stopped' : 'node.distribution.resumed';
   if (flag === 'hidden') return value ? 'node.hidden' : 'node.shown';
   return value ? 'node.service.stopped' : 'node.service.resumed';
 }
@@ -63,10 +68,18 @@ export function nodeVisibleToUsers(flags: NodeStateFlags): boolean {
 }
 
 export function nodeInSubscriptionContent(flags: NodeStateFlags): boolean {
-  return flags.distributionStopped === false && flags.hidden === false && flags.serviceStopped === false;
+  return (
+    flags.distributionStopped === false &&
+    flags.hidden === false &&
+    flags.serviceStopped === false
+  );
 }
 
-export function applyNodeFlag(current: NodeStateFlags, flag: NodeAdminFlag, value: boolean): NodeStateFlags {
+export function applyNodeFlag(
+  current: NodeStateFlags,
+  flag: NodeAdminFlag,
+  value: boolean,
+): NodeStateFlags {
   return { ...current, [flag]: value };
 }
 

@@ -52,7 +52,10 @@ export function GptChat() {
       ) : (
         service.data && (
           <Card title="平台 GPT 服务">
-            <Empty title="上游模型尚未配置" description="管理员尚未配置可用的上游 AI 模型，因此 GPT 对话暂不可用。请联系管理员配置模型后重试。" />
+            <Empty
+              title="上游模型尚未配置"
+              description="管理员尚未配置可用的上游 AI 模型，因此 GPT 对话暂不可用。请联系管理员配置模型后重试。"
+            />
           </Card>
         )
       )}

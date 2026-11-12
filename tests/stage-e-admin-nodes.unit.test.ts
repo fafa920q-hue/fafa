@@ -13,17 +13,27 @@ import {
 
 describe('nodeStateFlagsOf', () => {
   it('預設三個旗標皆為 false', () => {
-    expect(nodeStateFlagsOf({})).toEqual({ distributionStopped: false, hidden: false, serviceStopped: false });
+    expect(nodeStateFlagsOf({})).toEqual({
+      distributionStopped: false,
+      hidden: false,
+      serviceStopped: false,
+    });
   });
   it('讀取已設定的旗標', () => {
-    expect(nodeStateFlagsOf({ distributionStopped: true, hidden: true })).toEqual({
+    expect(
+      nodeStateFlagsOf({ distributionStopped: true, hidden: true }),
+    ).toEqual({
       distributionStopped: true,
       hidden: true,
       serviceStopped: false,
     });
   });
   it('非物件資料時回傳預設值', () => {
-    expect(nodeStateFlagsOf(null)).toEqual({ distributionStopped: false, hidden: false, serviceStopped: false });
+    expect(nodeStateFlagsOf(null)).toEqual({
+      distributionStopped: false,
+      hidden: false,
+      serviceStopped: false,
+    });
   });
 });
 
@@ -60,40 +70,98 @@ describe('nodeStateAction', () => {
 
 describe('nodeAuditAction', () => {
   it('停止與恢復各有專屬審計動作', () => {
-    expect(nodeAuditAction('distributionStopped', true)).toBe('node.distribution.stopped');
-    expect(nodeAuditAction('distributionStopped', false)).toBe('node.distribution.resumed');
+    expect(nodeAuditAction('distributionStopped', true)).toBe(
+      'node.distribution.stopped',
+    );
+    expect(nodeAuditAction('distributionStopped', false)).toBe(
+      'node.distribution.resumed',
+    );
     expect(nodeAuditAction('hidden', true)).toBe('node.hidden');
     expect(nodeAuditAction('hidden', false)).toBe('node.shown');
-    expect(nodeAuditAction('serviceStopped', true)).toBe('node.service.stopped');
-    expect(nodeAuditAction('serviceStopped', false)).toBe('node.service.resumed');
+    expect(nodeAuditAction('serviceStopped', true)).toBe(
+      'node.service.stopped',
+    );
+    expect(nodeAuditAction('serviceStopped', false)).toBe(
+      'node.service.resumed',
+    );
   });
 });
 
 describe('nodeVisibleToUsers', () => {
   it('停止分發的節點仍在使用者節點列表顯示', () => {
-    expect(nodeVisibleToUsers({ distributionStopped: true, hidden: false, serviceStopped: false })).toBe(true);
+    expect(
+      nodeVisibleToUsers({
+        distributionStopped: true,
+        hidden: false,
+        serviceStopped: false,
+      }),
+    ).toBe(true);
   });
   it('隱藏或停止服務的節點不在使用者節點列表顯示', () => {
-    expect(nodeVisibleToUsers({ distributionStopped: false, hidden: true, serviceStopped: false })).toBe(false);
-    expect(nodeVisibleToUsers({ distributionStopped: false, hidden: false, serviceStopped: true })).toBe(false);
+    expect(
+      nodeVisibleToUsers({
+        distributionStopped: false,
+        hidden: true,
+        serviceStopped: false,
+      }),
+    ).toBe(false);
+    expect(
+      nodeVisibleToUsers({
+        distributionStopped: false,
+        hidden: false,
+        serviceStopped: true,
+      }),
+    ).toBe(false);
   });
 });
 
 describe('nodeInSubscriptionContent', () => {
   it('三種狀態皆排除於訂閱內容之外', () => {
-    expect(nodeInSubscriptionContent({ distributionStopped: true, hidden: false, serviceStopped: false })).toBe(false);
-    expect(nodeInSubscriptionContent({ distributionStopped: false, hidden: true, serviceStopped: false })).toBe(false);
-    expect(nodeInSubscriptionContent({ distributionStopped: false, hidden: false, serviceStopped: true })).toBe(false);
+    expect(
+      nodeInSubscriptionContent({
+        distributionStopped: true,
+        hidden: false,
+        serviceStopped: false,
+      }),
+    ).toBe(false);
+    expect(
+      nodeInSubscriptionContent({
+        distributionStopped: false,
+        hidden: true,
+        serviceStopped: false,
+      }),
+    ).toBe(false);
+    expect(
+      nodeInSubscriptionContent({
+        distributionStopped: false,
+        hidden: false,
+        serviceStopped: true,
+      }),
+    ).toBe(false);
   });
   it('無任何旗標時保留於訂閱內容', () => {
-    expect(nodeInSubscriptionContent({ distributionStopped: false, hidden: false, serviceStopped: false })).toBe(true);
+    expect(
+      nodeInSubscriptionContent({
+        distributionStopped: false,
+        hidden: false,
+        serviceStopped: false,
+      }),
+    ).toBe(true);
   });
 });
 
 describe('applyNodeFlag', () => {
   it('只變更指定旗標，其餘旗標不變', () => {
-    const next = applyNodeFlag({ distributionStopped: true, hidden: false, serviceStopped: false }, 'hidden', true);
-    expect(next).toEqual({ distributionStopped: true, hidden: true, serviceStopped: false });
+    const next = applyNodeFlag(
+      { distributionStopped: true, hidden: false, serviceStopped: false },
+      'hidden',
+      true,
+    );
+    expect(next).toEqual({
+      distributionStopped: true,
+      hidden: true,
+      serviceStopped: false,
+    });
   });
 });
 

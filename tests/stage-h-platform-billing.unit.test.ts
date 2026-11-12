@@ -34,8 +34,7 @@ describe('platform billing arithmetic (stage H)', () => {
   it('reserve always covers a full-context call with the maximum output', () => {
     const reserve = platformReserve('gpt-4.1-mini', 4096);
     // context 262144 * 400000 (input rate) + 4096 * 1600000 (output rate), / 1e6.
-    const expected =
-      Math.ceil((262144 * 400000 + 4096 * 1600000) / 1000000);
+    const expected = Math.ceil((262144 * 400000 + 4096 * 1600000) / 1000000);
     expect(reserve).toBe(expected);
     // The reserve equals the worst-case charge exactly (it is the maximum
     // possible cost of a full-context call with the maximum output), and it
