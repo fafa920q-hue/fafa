@@ -33,6 +33,7 @@ import {
 } from '../../../packages/shared/src';
 import { token, hash, seal, unseal } from '../../../packages/shared/src/crypto';
 import { toNotification } from "../../../packages/shared/src/notifications";
+import { nodeInSubscriptionContent, nodeStateFlagsOf } from "../../../packages/shared/src/admin-nodes";
 import {
   authenticate,
   createSession,
@@ -138,6 +139,7 @@ export async function visibleNodes(owner: string) {
   const nodes = (await authorizedNodeRows(user, sql))
     .filter(
       (row) =>
+        nodeInSubscriptionContent(nodeStateFlagsOf(row.source_data)) &&
         (!filter.country ||
           (row.data.country || row.source_data.country) === filter.country) &&
         (!filter.protocol || row.data.protocol === filter.protocol) &&
@@ -856,7 +858,7 @@ app.post('/api/logout', async (req, reply) => {
       await assertServiceOpen(user, tx);
       if (
         Number(user.node_limit) < 1 ||
-        !(await authorizedNodeRows(user, tx)).length
+        !(await authorizedNodeRows(user, tx)).filter((row) => nodeInSubscriptionContent(nodeStateFlagsOf(row.source_data))).length
       )
         throw new AppError(
           403,

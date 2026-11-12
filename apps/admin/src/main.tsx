@@ -2,6 +2,14 @@ import { PlatformAiAccounts } from './pages/PlatformAiAccounts';
 import { AiRuntimeTasks } from './pages/AiRuntimeTasks';
 import { AccessCenter } from './pages/AccessCenter';
 import { MemberAccessControls } from './pages/MemberDeliveryAdmin';
+import { NodesAdmin } from './pages/NodesAdmin';
+import { GrantsAdmin } from './pages/GrantsAdmin';
+import { AiModelsAdmin } from './pages/AiModelsAdmin';
+import { ApiKeysAdmin } from './pages/ApiKeysAdmin';
+import { QuotaAdmin } from './pages/QuotaAdmin';
+import { MonitoringAdmin } from './pages/MonitoringAdmin';
+import { AuditAdmin } from './pages/AuditAdmin';
+import { BackupAdmin } from './pages/BackupAdmin';
 import { useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
@@ -15,6 +23,13 @@ import {
   ShieldCheck,
   Settings,
   RefreshCw,
+  Network,
+  KeyRound,
+  Cpu,
+  Gauge,
+  Activity,
+  ScrollText,
+  DatabaseBackup,
 } from 'lucide-react';
 import {
   Provider,
@@ -34,15 +49,17 @@ import { isAdmin } from '../../../packages/shared/src';
 import { SubscriptionWorkspace } from '../../../packages/ui/src/subscriptions';
 import { MemberRegistrationPolicy } from './pages/MemberRegistrationPolicy';
 const nav = [
-  { to: '/', label: '概览', icon: LayoutDashboard },
-  { to: '/users', label: '用户管理', icon: Users },
-  { to: '/sources', label: '节点源 / 分配', icon: Globe2 },
-  { to: '/servers', label: '服务器授权', icon: Server },
-  { to: '/ai', label: 'AI 连接状态', icon: Code2 },
-  { to: '/jobs', label: '任务队列', icon: ListTodo },
-  { to: '/audit', label: '安全审计', icon: ShieldCheck },
-  { to: '/settings', label: '系统设置 / 备份', icon: Settings },
-  { to: '/member-registration', label: '普通账户注册', icon: Users },
+  { to: '/', label: '儀表板', icon: LayoutDashboard },
+  { to: '/nodes', label: '節點管理', icon: Network },
+  { to: '/users', label: '使用者管理', icon: Users },
+  { to: '/grants', label: '訂閱授權', icon: ShieldCheck },
+  { to: '/ai/models', label: 'AI 模型管理', icon: Cpu },
+  { to: '/ai/keys', label: 'API Key 管理', icon: KeyRound },
+  { to: '/ai/quota', label: '額度與計費管理', icon: Gauge },
+  { to: '/monitoring', label: '系統監控', icon: Activity },
+  { to: '/audit', label: '操作審計', icon: ScrollText },
+  { to: '/settings', label: '系統設定', icon: Settings },
+  { to: '/backup', label: '備份和版本管理', icon: DatabaseBackup },
 ];
 function Admin() {
   const { session } = useApp();
@@ -65,12 +82,19 @@ function Admin() {
             ]
           : nav
       }
-      bottom={[nav[0], nav[1], nav[3], nav[6], nav[7]]}
+      bottom={[nav[0], nav[1], nav[2], nav[8], nav[9]]}
       admin
     >
       <Routes>
         <Route path="/" element={<Overview />} />
         <Route path="/users" element={<UserManagement />} />
+        <Route path="/nodes" element={<NodesAdmin />} />
+        <Route path="/grants" element={<GrantsAdmin />} />
+        <Route path="/ai/models" element={<AiModelsAdmin />} />
+        <Route path="/ai/keys" element={<ApiKeysAdmin />} />
+        <Route path="/ai/quota" element={<QuotaAdmin />} />
+        <Route path="/monitoring" element={<MonitoringAdmin />} />
+        <Route path="/backup" element={<BackupAdmin />} />
         <Route path="/sources" element={<SourcesAdmin />} />
         <Route path="/servers" element={<ResourceAdmin kind="servers" />} />
         <Route path="/ai" element={<ResourceAdmin kind="ai" />} />
@@ -84,7 +108,8 @@ function Admin() {
             </>
           }
         />
-        <Route path="/audit" element={<ResourceAdmin kind="audit" />} />
+        <Route path="/audit" element={<AuditAdmin />} />
+        <Route path="/audit/resources" element={<ResourceAdmin kind="audit" />} />
         <Route path="/settings" element={<SystemSettings />} />
         <Route
           path="/member-registration"

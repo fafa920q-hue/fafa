@@ -8,7 +8,8 @@ import {
   servicePolicySchema,
   readAiQuota,
 } from '../../../packages/auth/src/service-policy';
-import { AppError, notFound } from '../../../packages/shared/src';
+import { AppError, isAdmin, notFound } from '../../../packages/shared/src';
+import { nodeAuditAction, nodeStateFlagsOf } from '../../../packages/shared/src/admin-nodes';
 import {
   memberPolicySchema,
   readSetting,
@@ -388,4 +389,91 @@ export async function registerAdmin(app: FastifyInstance) {
     await audit(req.actor.id, 'job.retried', id);
     return { ok: true };
   });
+  app.get('/api/admin/nodes', async (req) => {
+    if (isAdmin(req.actor.role) === false) throw new AppError(403, 'FORBIDDEN', '需要管理员权限');
+    const sources = await sql`select id, owner_id, data, revoked_at, created_at, updated_at from node_sources order by created_at desc`;
+    const nodes = await sql`select id, source_id from nodes`;
+    const checks = await sql`select data, created_at from node_health_checks order by created_at desc limit 200`;
+    return sources.map((source: any) => {
+      const flags = nodeStateFlagsOf(source.data);
+      const check = checks.find((item: any) => item.data !== null && typeof item.data === 'object' && (item.data.sourceId === source.id || item.data.nodeId === source.id || item.data.source_id === source.id || item.data.node_id === source.id));
+      return {
+        id: source.id,
+        name: source.data?.name || source.id,
+        group: source.data?.group || '',
+        kind: source.data?.kind || '',
+        enabled: source.data?.enabled !== false,
+        distributionStopped: flags.distributionStopped,
+        hidden: flags.hidden,
+        serviceStopped: flags.serviceStopped,
+        nodeCount: nodes.filter((node: any) => node.source_id === source.id).length,
+        lastCheckAt: check ? check.created_at : null,
+        lastCheckOk: check ? check.data?.ok !== false : null,
+        updatedAt: source.updated_at,
+      };
+    });
+  });
+
+  app.patch('/api/admin/nodes/:id/state', async (req) => {
+    if (isAdmin(req.actor.role) === false) throw new AppError(403, 'FORBIDDEN', '需要管理员权限');
+    const { id } = z.object({ id: z.string().min(1) }).parse(req.params);
+    const { field, value } = z.object({ field: z.enum(['distribution', 'visibility', 'service']), value: z.boolean() }).parse(req.body);
+    const flag = field === 'distribution' ? 'distributionStopped' : field === 'visibility' ? 'hidden' : 'serviceStopped';
+    const found = await sql`select id, data from node_sources where id = ${id}`;
+    const source = found[0] as any;
+    if (source === undefined) throw notFound();
+    const updated = await sql`update node_sources set data = data || ${sql.json({ [flag]: value })} where id = ${source.id} returning id, data, updated_at`;
+    const next = updated[0] as any;
+    await audit(req.actor.id, nodeAuditAction(flag, value), source.id, req.id);
+    return { id: next.id, flags: nodeStateFlagsOf(next.data), updatedAt: next.updated_at };
+  });
+
+  app.get('/api/admin/backup', async (req) => {
+    if (isAdmin(req.actor.role) === false) throw new AppError(403, 'FORBIDDEN', '需要管理员权限');
+    const size = await sql`select pg_database_size(current_database()) as bytes`;
+    const counts = await sql`select 'users' as name, count(*)::int as total from users union all select 'node_sources', count(*)::int from node_sources union all select 'nodes', count(*)::int from nodes union all select 'subscription_tokens', count(*)::int from subscription_tokens union all select 'audit_events', count(*)::int from audit_events`;
+    const last = await sql`select created_at, target_id from audit_events where action = 'backup.recorded' order by created_at desc limit 1`;
+    let lastBackup = null;
+    if (last.length > 0) {
+      try {
+        lastBackup = { ...JSON.parse(last[0].target_id), at: last[0].created_at };
+      } catch {
+        lastBackup = { at: last[0].created_at };
+      }
+    }
+    return {
+      version: process.env.APP_VERSION || '0.1.0',
+      release: process.env.RELEASE || process.env.RELEASE_ID || null,
+      databaseBytes: Number(size[0]?.bytes || 0),
+      counts: counts.map((row: any) => ({ name: row.name, total: row.total })),
+      lastBackup,
+      guidance: '請使用離線加密備份腳本',
+    };
+  });
+
+  app.post('/api/admin/backup/register', async (req) => {
+    if (isAdmin(req.actor.role) === false) throw new AppError(403, 'FORBIDDEN', '需要管理员权限');
+    const body = z.object({ kind: z.enum(['full', 'incremental']), location: z.string().min(1).max(200), note: z.string().max(200).optional() }).parse(req.body);
+    await audit(req.actor.id, 'backup.recorded', JSON.stringify({ kind: body.kind, location: body.location, note: body.note || '', by: req.actor.id }), req.id);
+    return { ok: true };
+  });
+
+  app.get('/api/admin/monitoring', async (req) => {
+    if (isAdmin(req.actor.role) === false) throw new AppError(403, 'FORBIDDEN', '需要管理员权限');
+    const dbOk = await sql`select 1 as ok`.then(() => true).catch(() => false);
+    const dbSize = await sql`select pg_database_size(current_database()) as bytes`.catch(() => []);
+    const counts = await sql`select 'users' as name, count(*)::int as total from users union all select 'nodes', count(*)::int from nodes union all select 'sessions', count(*)::int from sessions`.catch(() => []);
+    const jobs = await sql`select coalesce(data->>'status', 'unknown') as status, count(*)::int as total from background_jobs group by 1 order by 1`.catch(() => []);
+    const tasks = await sql`select coalesce(data->>'status', 'unknown') as status, count(*)::int as total from ai_tasks group by 1 order by 1`.catch(() => []);
+    const health = await sql`select id, data, created_at from node_health_checks order by created_at desc limit 20`.catch(() => []);
+    return {
+      api: { ok: true },
+      database: { ok: dbOk, bytes: Number(dbSize[0]?.bytes || 0) },
+      counts: counts.map((row: any) => ({ name: row.name, total: row.total })),
+      jobsByStatus: jobs.map((row: any) => ({ status: row.status, total: row.total })),
+      tasksByStatus: tasks.map((row: any) => ({ status: row.status, total: row.total })),
+      latestHealth: health.map((row: any) => ({ id: row.id, data: row.data, createdAt: row.created_at })),
+    };
+  });
+
 }

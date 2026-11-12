@@ -8,6 +8,7 @@ import {
 import { sql, audit, own } from '../../../packages/db/src';
 import { AppError, notFound, isAdmin } from '../../../packages/shared/src';
 import { seal } from '../../../packages/shared/src/crypto';
+import { nodeStateFlagsOf, nodeVisibleToUsers } from '../../../packages/shared/src/admin-nodes';
 import {
   parseBatch,
   nodeMetadata,
@@ -39,6 +40,7 @@ function summary(row: any, actorId: string) {
     catalogVisible: row.data.catalogVisible !== false,
     shared: row.owner_id !== actorId,
     enabled: row.data.enabled !== false && row.source_data?.enabled !== false,
+    distributionStopped: nodeStateFlagsOf(row.source_data).distributionStopped,
     status:
       row.data.enabled === false || row.source_data?.enabled === false
         ? 'DISABLED'
@@ -135,13 +137,14 @@ export async function registerNodes(app: FastifyInstance) {
     return rows
       .filter((row) => {
         const group = row.data.group || row.source_data.group || '';
-        return (
+      const allowed = (
           row.owner_id === req.actor.id ||
           (row.grant_data &&
             activeGrant(row.grant_data) &&
             sourceAllowed(req.actor, row.source_id, group) &&
             withinNodeGrantScope(row.grant_data, row.id, group))
         );
+      return allowed && nodeVisibleToUsers(nodeStateFlagsOf(row.source_data));
       })
       .map((row) => summary(row, req.actor.id));
   });
