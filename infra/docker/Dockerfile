@@ -1,6 +1,11 @@
 # syntax=docker/dockerfile:1
 FROM node:24-alpine AS build
 WORKDIR /app
+# Optional build-time switch: ADMIN_API_SAME_ORIGIN=1 builds the admin UI
+# against its own origin (Caddy proxy) instead of the production API
+# origin. Only for isolated builds; unset by default, so production
+# builds are unchanged.
+ARG ADMIN_API_SAME_ORIGIN
 # One source layer and one install/build layer also work with VFS in small cloud workspaces.
 COPY . .
 RUN --mount=type=secret,id=proxy_ca --mount=type=cache,id=fafa-pnpm,target=/root/.local/share/pnpm/store \
