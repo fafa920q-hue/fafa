@@ -3,9 +3,7 @@ test('节点批量预览、加密导入、标签编辑及启停删除', async ({
   const batch = '浏览器导入fixture-' + Date.now();
   await page.goto('/');
   await page.getByRole('button', { name: '管理员演示', exact: true }).click();
-  await expect(
-        page.getByRole('heading', { name: '欢迎回来' }),
-  ).toBeVisible();
+  await expect(page.getByRole('heading', { name: '欢迎回来' })).toBeVisible();
   await page.goto('/subscriptions');
   await page.getByRole('button', { name: '批量导入', exact: true }).click();
   await page.getByLabel('节点批次名称').fill(batch);
