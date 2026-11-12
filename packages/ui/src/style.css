@@ -2530,4 +2530,9 @@ body {
   .brand span {
     font-size: 15px;
   }
+  /* 頂部導覽列在 390px 寬時仍寬出約 15px：沿用 350px 以下隱藏 avatar 的做法， */
+  /* 在 390px 以下同樣隱藏 avatar，使導覽列收斂進視口寬度。 */
+  .top-actions .avatar {
+    display: none;
+  }
 }
