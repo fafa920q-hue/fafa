@@ -57,8 +57,7 @@ if (paths.includes('tests/e2e/admin-nodes.spec.ts')) {
     deleteCall < 0 ||
     adminNodeLines[patchAssert]?.trim() !== ').toBe(404);' ||
     adminNodeLines[deleteAssert]?.trim() !== ').toBe(404);';
-  if (baselineChanged)
-    throw Error('节点证据基线发生变化，需重新审核');
+  if (baselineChanged) throw Error('节点证据基线发生变化，需重新审核');
   const patchLine = adminNodeLines[patchAssert];
   adminNodeLines[patchAssert] = patchLine.replace('404', '403');
   const deleteLine = adminNodeLines[deleteAssert];
