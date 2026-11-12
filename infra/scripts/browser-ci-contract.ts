@@ -100,7 +100,7 @@ export function boundNodeManagementEvidence(baseline: string) {
   //原函数只接受 fullPage: true 的基线，在该基线下必然抛错；基线已是
   //转换后组态时直接返回原文。政策不变：仅允许截图配置的变化。
   const transformed =
-"      fullPage: false,\n      scale: 'css',\n      animations: 'disabled',\n      timeout: 5000,\n";
+    "      fullPage: false,\n      scale: 'css',\n      animations: 'disabled',\n      timeout: 5000,\n";
   if (baseline.includes(transformed)) return baseline;
   const capture = '      fullPage: true,\n';
   if (baseline.split(capture).length !== 2)
