@@ -258,10 +258,10 @@ test('Owner 节点管理与权限隔离', async ({ page, browser }, testInfo) =>
           enabled: false,
         })
       ).status,
-    ).toBe(404);
+    ).toBe(403);
     expect(
       (await api(member, '/api/node_sources/' + sourceId, 'DELETE')).status,
-    ).toBe(404);
+    ).toBe(403);
     await setGrant('revoke');
     const revokedGrants = await api(page, '/api/admin/grants');
     expect(revokedGrants.data).not.toEqual(
