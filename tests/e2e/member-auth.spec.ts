@@ -45,10 +45,10 @@ test('普通账户实际密码登录、会话查看、退出及管理员隔离',
   await page
     .getByLabel('密码', { exact: true })
     .fill('incorrect fictional password');
-  await page.getByRole('button', { name: '确认', exact: true }).click();
+    await page.getByRole('button', { name: '登录', exact: true }).click();
   await expect(page.getByRole('alert')).toContainText('不正确');
   await page.getByLabel('密码', { exact: true }).fill(password);
-  await page.getByRole('button', { name: '确认', exact: true }).click();
+    await page.getByRole('button', { name: '登录', exact: true }).click();
   await expect(
     page.getByRole('heading', { name: '账户安全', exact: true }),
   ).toBeVisible();
@@ -81,14 +81,14 @@ test('邮箱服务缺失时不声称发送成功，激活链接不保留在地�
     page.getByRole('status').filter({ hasText: '邮件服务尚未配置' }),
   ).toBeVisible();
   await expect(
-    page.getByRole('button', { name: '确认', exact: true }),
+          page.getByRole('button', { name: '验证邮箱并创建账户', exact: true }),
   ).toBeDisabled();
   await page.getByRole('link', { name: '忘记密码', exact: true }).click();
   await expect(
     page.getByRole('heading', { name: '忘记密码', exact: true }),
   ).toBeVisible();
   await expect(
-    page.getByRole('button', { name: '确认', exact: true }),
+          page.getByRole('button', { name: '发送重置邮件', exact: true }),
   ).toBeDisabled();
   await page.goto('/member/verify#token=synthetic-not-a-real-action');
   await expect(page.getByLabel('注册时设置的密码')).toBeVisible();
