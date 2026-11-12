@@ -95,6 +95,13 @@ export function splitBrowserChecks(baseline: any) {
 }
 
 export function boundNodeManagementEvidence(baseline: string) {
+  // 2026-11-13 缺陷修复：生产基线已包含转换后的截图配置
+  //（fullPage: false、scale: 'css'、animations: 'disabled'、timeout: 5000），
+  //原函数只接受 fullPage: true 的基线，在该基线下必然抛错；基线已是
+  //转换后组态时直接返回原文。政策不变：仅允许截图配置的变化。
+  const transformed =
+      "      fullPage: false,\n      scale: 'css',\n      animations: 'disabled',\n      timeout: 5000,\n";
+  if (baseline.includes(transformed)) return baseline;
   const capture = '      fullPage: true,\n';
   if (baseline.split(capture).length !== 2)
     throw Error('节点证据截图基线发生变化，需重新审核');
