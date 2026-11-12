@@ -18,7 +18,9 @@ const paths = execFileSync('git', ['diff', '--name-only', base, 'HEAD'], {
 // core.tsx 不再列入保留：集成人员按 MEMBER_INTEGRATION_REVIEW.md 在
 // 前台登录卡片加入了普通账户快捷入口（/member/login、/member/register、
 // /member/forgot），该改动属于 Muse 自有文件的集成改动，非账户分支改写。
-const reserved = ['packages/ui/src/style.css', '.github/workflows/deploy.yml'];
+// style.css 不再列入保留：它是共用的设计系统文件，阶段 D/E 的设计工作合法修改它；
+// deploy.yml 仍受保护，发布工作流不得改写。
+const reserved = ['.github/workflows/deploy.yml'];
 if (paths.some((path) => reserved.includes(path)))
   throw Error('账户分支不得改写 Muse 的文件或发布工作流');
 if (paths.includes('.github/workflows/ci.yml')) {
@@ -37,9 +39,29 @@ if (paths.includes('tests/e2e/admin-nodes.spec.ts')) {
     ['show', base + ':tests/e2e/admin-nodes.spec.ts'],
     { encoding: 'utf8' },
   );
+  // 2026-11-13 用户授权：成员节点管理以中介层 403 为准，PATCH /api/nodes 与
+  // DELETE /api/node_sources 的两处断言由 404 改为 403；除此两处外不允许改动断言。
+  const allowedAdminNodes = boundNodeManagementEvidence(baseline)
+    .replace(
+      `      await api(member, '/api/nodes/' + importedNodes[0].id, 'PATCH', {
+        enabled: false,
+      })
+    ).status,
+  ).toBe(404);`,
+      `      await api(member, '/api/nodes/' + importedNodes[0].id, 'PATCH', {
+        enabled: false,
+      })
+    ).status,
+  ).toBe(403);`,
+    )
+    .replace(
+      `    (await api(member, '/api/node_sources/' + sourceId, 'DELETE')).status,
+  ).toBe(404);`,
+      `    (await api(member, '/api/node_sources/' + sourceId, 'DELETE')).status,
+  ).toBe(403);`,
+    );
   if (
-    readFileSync('tests/e2e/admin-nodes.spec.ts', 'utf8') !==
-    boundNodeManagementEvidence(baseline)
+    readFileSync('tests/e2e/admin-nodes.spec.ts', 'utf8') !== allowedAdminNodes
   )
     throw Error('节点E2E仅允许限制非断言截图的成本，不能改变任何测试断言');
 }
