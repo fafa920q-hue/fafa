@@ -6,14 +6,15 @@ import {
   boundNodeManagementEvidence,
   splitBrowserChecks,
 } from './browser-ci-contract';
-const base = 'b4dd0cea3ad6c12214258b6cdd6cbca788e7aaa0';
+const base = '7deadc88a31003ffa10ca9b1240a4288bb5b6f48';
 const paths = execFileSync('git', ['diff', '--name-only', base, 'HEAD'], {
   encoding: 'utf8',
 })
   .trim()
   .split('\n')
   .filter(Boolean);
-// 变基后比较基线为生产 b4dd0cea（已含 WLOC 与 Google 登录来源修复）。
+// 比較基線為生產基線 7deadc88（實際部署的生產提交）。
+// 舊基線 b4dd0cea 早於生產基線，會把生產自身的設計落地誤判為成員分支改動。
 // core.tsx 不再列入保留：集成人员按 MEMBER_INTEGRATION_REVIEW.md 在
 // 前台登录卡片加入了普通账户快捷入口（/member/login、/member/register、
 // /member/forgot），该改动属于 Muse 自有文件的集成改动，非账户分支改写。
