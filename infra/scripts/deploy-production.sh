@@ -24,7 +24,7 @@ compose=(docker compose --env-file .env.production -f infra/docker/compose.produ
 # --- Recovery model (stage H fix, 2026-11-13) ----------------------------------
 # Failure classes and the service state after each phase:
 #   * Before "compose stop api worker": services still serve the previous
-#     version. Any failure (build, config audit, backup, pre-deploy check)
+#     version. Any failure (pull, config audit, backup, pre-deploy check)
 #     leaves the old version running; the handler only reports it.
 #   * After the stop and before verification passes: the new version is not
 #     yet proven. A failure must trigger an automatic rollback to the
@@ -37,7 +37,9 @@ compose=(docker compose --env-file .env.production -f infra/docker/compose.produ
 # sha256:...). The deploy verifies the running containers match the new
 # digests, and the rollback uses the previous digests captured at the start
 # of THIS run (never a stored inspect JSON).
-# Isolation-harness override: FAFA_ROOT (default /opt/fafa-one). The SSM
+# Isolation-harness override: FAFA_ROOT (default /opt/fafa-one) and
+# DEPLOY_IMAGE_REGISTRIES (default ghcr.io; the isolation harness sets its
+# local registry, e.g. 127.0.0.1:5001). The SSM
 # deploy sets none of these, so production behaviour is unchanged.
 FAFA_ROOT="${FAFA_ROOT:-/opt/fafa-one}"
 previous_sha="$(cat .deployed-sha)"
@@ -72,7 +74,7 @@ verify_running_image() {
 }
 
 # usage: verify_new_images
-# The running api/worker/web/admin containers must be the newly built
+# The running api/worker/web/admin containers must be the newly pulled
 # images (by digest), not a stale or wrong image.
 verify_new_images() {
   local target digest
@@ -164,10 +166,43 @@ fi
 [[ "$(stat -c %u "$FAFA_RESEND_SECRET_FILE")" == 1000 ]]
 [[ "$(findmnt -n -o FSTYPE -T "$FAFA_RESEND_SECRET_FILE")" == tmpfs ]]
 compose+=(-f infra/docker/compose.mail-secret.yaml)
-# Only source changes require rebuilding; no installation, disk, swap or key regeneration.
-for target in runtime web admin; do
-  repository_git archive "$deployment_sha" | docker build -f infra/docker/Dockerfile --target "$target" -t "fafa-one-$target:$deployment_sha" -
-done
+# --- GHCR image source (stage H digest-pull rewrite, 2026-11-13) -------------
+# No image is built on this host. The release manifest
+# deployments/ghcr-images.json (created from the release
+# workflow artifacts) lists the exact image digests for runtime/web/admin.
+# Images are pulled by registry MANIFEST digest (immutable) and tagged locally
+# with the deployment SHA, so the existing IMAGE_TAG / record / verify /
+# rollback flow is unchanged. The manifest is validated and the pull list is
+# printed by infra/deploy/read_ghcr_manifest.py (allowed registries, image
+# names, sha256 digests); a missing or invalid manifest fails the deploy
+# BEFORE any service is stopped. The image CONFIG digest (docker image Id) is
+# a different hash from the manifest digest for the same image; it is what
+# record_image_digest captures and verify_new_images compares.
+ghcr_manifest="deployments/ghcr-images.json"
+[[ -f "$ghcr_manifest" && ! -L "$ghcr_manifest" ]] || { printf 'PRE_DEPLOY_FAIL: GHCR release manifest %s is missing (not a regular file)\n' "$ghcr_manifest" >&2; exit 1; }
+ghcr_pull_list="$(python3 infra/deploy/read_ghcr_manifest.py "$ghcr_manifest")" || exit 1
+ghcr_registry="$(printf '%s' "$ghcr_pull_list" | awk '$1=="registry" {print $2; exit}')"
+ghcr_image_tag_sha="$(printf '%s' "$ghcr_pull_list" | awk '$1=="image_tag_sha" {print $2; exit}')"
+[[ -n "$ghcr_registry" && -n "$ghcr_image_tag_sha" ]] || { printf 'PRE_DEPLOY_FAIL: GHCR manifest output is malformed\n' >&2; exit 1; }
+printf 'GHCR image source: registry=%s images built from %s (fixed manifest digests)\n' "$ghcr_registry" "$ghcr_image_tag_sha"
+# GHCR login: only for ghcr.io; a local registry (isolation harness) needs no
+# auth. The token file checks mirror the Resend mail secret (regular file, not
+# a symlink, mode 400, owned by uid 1000, on tmpfs). The token is never
+# printed or logged. The login is removed again after the pull.
+if [[ "$ghcr_registry" == "ghcr.io" ]]; then
+  ghcr_token_file="/run/fafa-one/secrets/ghcr_token"
+  [[ -f "$ghcr_token_file" && ! -L "$ghcr_token_file" ]] || { printf 'PRE_DEPLOY_FAIL: GHCR token file %s is missing or is a symlink\n' "$ghcr_token_file" >&2; exit 1; }
+  [[ "$(stat -c %a "$ghcr_token_file")" == 400 ]] || { printf 'PRE_DEPLOY_FAIL: GHCR token file %s mode must be 400\n' "$ghcr_token_file" >&2; exit 1; }
+  [[ "$(stat -c %u "$ghcr_token_file")" == 1000 ]] || { printf 'PRE_DEPLOY_FAIL: GHCR token file %s must be owned by uid 1000\n' "$ghcr_token_file" >&2; exit 1; }
+  [[ "$(findmnt -n -o FSTYPE -T "$ghcr_token_file")" == tmpfs ]] || { printf 'PRE_DEPLOY_FAIL: GHCR token file %s must be on tmpfs\n' "$ghcr_token_file" >&2; exit 1; }
+  docker login ghcr.io -u "${GHCR_USER:-fafa920q-hue}" --password-stdin < "$ghcr_token_file" || { printf 'PRE_DEPLOY_FAIL: GHCR login failed\n' >&2; exit 1; }
+fi
+while read -r _ghcr_pull target ref; do
+  [[ "${_ghcr_pull}" == pull ]] || continue
+  docker pull "$ref" || { printf 'PRE_DEPLOY_FAIL: image pull failed for %s (%s)\n' "$target" "$ref" >&2; exit 1; }
+  docker tag "$ref" "fafa-one-$target:$deployment_sha" || { printf 'PRE_DEPLOY_FAIL: image tag failed for %s\n' "$target" >&2; exit 1; }
+done <<< "$(printf '%s' "$ghcr_pull_list" | awk '$1=="pull"')"
+if [[ "$ghcr_registry" == "ghcr.io" ]]; then docker logout ghcr.io >/dev/null 2>&1 || true; fi
 env_owner="$(stat -c %u .env.production):$(stat -c %g .env.production)"
 runtime_owner="$(stat -c %u .):$(stat -c %g .)"
 if [[ -f .env.runtime ]]; then runtime_owner="$(stat -c %u .env.runtime):$(stat -c %g .env.runtime)"; fi
@@ -178,11 +213,11 @@ mkdir -p backups deployments
 # --- Pre-deploy dependency checks (stage H fix) -----------------------------
 # All of these run BEFORE any service is stopped, so a failure here leaves
 # the previous version serving.
-# Record the digests of the newly built images (fixed-image pinning).
+# Record the digests of the newly pulled images (fixed-image pinning).
 : > "$new_images_file"
 for target in runtime web admin; do
   record_image_digest "$target" "fafa-one-$target:$deployment_sha" "$new_images_file" || {
-    printf 'PRE_DEPLOY_FAIL: newly built image fafa-one-%s:%s is missing\n' "$target" "$deployment_sha" >&2
+    printf 'PRE_DEPLOY_FAIL: newly pulled image fafa-one-%s:%s is missing\n' "$target" "$deployment_sha" >&2
     exit 1
   }
 done
@@ -195,12 +230,12 @@ for target in runtime web admin; do
     exit 1
   }
 done
-# Disk gate: the build is the peak. Require the 6 GiB production safety
-# margin to still hold after the build; otherwise fail before stopping
+# Disk gate: the pull is the peak. Require the 6 GiB production safety
+# margin to still hold after the pull; otherwise fail before stopping
 # services. Threshold is tunable via deploy_min_free_kib.
 free_kib="$(df -k --output=avail / | tail -n 1 | tr -d ' ')"
 if [[ "$free_kib" -lt "$deploy_min_free_kib" ]]; then
-  printf 'PRE_DEPLOY_FAIL: only %s KiB free after the build; need at least %s KiB (6 GiB safety margin)\n' "$free_kib" "$deploy_min_free_kib" >&2
+  printf 'PRE_DEPLOY_FAIL: only %s KiB free after the pull; need at least %s KiB (6 GiB safety margin)\n' "$free_kib" "$deploy_min_free_kib" >&2
   exit 1
 fi
 # Backup policy check (moved here from after the deploy): if the operator
