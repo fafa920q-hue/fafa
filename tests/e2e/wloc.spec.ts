@@ -10,7 +10,8 @@ async function login(page: Page, name = '成员演示') {
   await tiles(page);
   await page.goto('/');
   await page.getByRole('button', { name, exact: true }).click();
-  await expect(page.getByRole('heading', { name: '欢迎回来' })).toBeVisible();
+    const heading = name === '成员演示' ? '我的工作台' : '欢迎回来';
+  await expect(page.getByRole('heading', { name: heading })).toBeVisible();
   await page.goto('/locations');
   await expect(
     page.getByRole('region', { name: '全球地图，拖动地图或标记选点' }),
