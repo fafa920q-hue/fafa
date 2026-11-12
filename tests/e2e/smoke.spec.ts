@@ -141,7 +141,7 @@ test('独立管理端全部页面', async ({ page }) => {
 // 2026-11-13 延期：邀请功能本版未实现（管理端无「邀请用户」入口），
 // 暂不覆盖；上线后实现邀请功能时恢复本测试。
 test.skip('独立管理端邀请真实写入', async ({ page }) => {
-    await page.goto('http://localhost:5174');
+  await page.goto('http://localhost:5174');
   await page.getByRole('button', { name: '管理员演示', exact: true }).click();
   await expect(page.getByRole('heading', { name: '管理概览' })).toBeVisible();
   await page.goto('http://localhost:5174/users');
@@ -153,7 +153,7 @@ test.skip('独立管理端邀请真实写入', async ({ page }) => {
 });
 test('API 断网错误与重试状态', async ({ page }) => {
   await page.goto('http://localhost:5174');
-    
+
   await login(page);
   await page.route('**/api/node_sources', (route) =>
     route.fulfill({
