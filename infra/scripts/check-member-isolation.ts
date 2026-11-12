@@ -41,25 +41,18 @@ if (paths.includes('tests/e2e/admin-nodes.spec.ts')) {
   );
   // 2026-11-13 用户授权：成员节点管理以中介层 403 为准，PATCH /api/nodes 与
   // DELETE /api/node_sources 的两处断言由 404 改为 403；除此两处外不允许改动断言。
-  const allowedAdminNodes = boundNodeManagementEvidence(baseline)
-    .replace(
-      `      await api(member, '/api/nodes/' + importedNodes[0].id, 'PATCH', {
-        enabled: false,
-      })
-    ).status,
-  ).toBe(404);`,
-      `      await api(member, '/api/nodes/' + importedNodes[0].id, 'PATCH', {
-        enabled: false,
-      })
-    ).status,
-  ).toBe(403);`,
-    )
-    .replace(
-      `    (await api(member, '/api/node_sources/' + sourceId, 'DELETE')).status,
-  ).toBe(404);`,
-      `    (await api(member, '/api/node_sources/' + sourceId, 'DELETE')).status,
-  ).toBe(403);`,
-    );
+  // Baseline lines 261 and 264 (1-based).
+  const adminNodeLines = boundNodeManagementEvidence(baseline).split('\n');
+  const baselineChanged =
+    adminNodeLines[260]?.trim() !== ').toBe(404);' ||
+    adminNodeLines[263]?.trim() !== ').toBe(404);' ||
+    !adminNodeLines[256]?.includes('"PATCH"') ||
+    !adminNodeLines[262]?.includes('"DELETE"');
+  if (baselineChanged)
+    throw Error('节点证据基线发生变化，需重新审核');
+  adminNodeLines[260] = adminNodeLines[260].replace('404', '403');
+  adminNodeLines[263] = adminNodeLines[263].replace('404', '403');
+  const allowedAdminNodes = adminNodeLines.join('\n');
   if (
     readFileSync('tests/e2e/admin-nodes.spec.ts', 'utf8') !== allowedAdminNodes
   )
