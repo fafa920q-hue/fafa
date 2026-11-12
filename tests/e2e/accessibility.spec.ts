@@ -9,7 +9,7 @@ test('核心页面浅深色 WCAG A/AA 自动检查', async ({ page }, info) => {
   await page.goto('/');
   await page.getByRole('button', { name: '管理员演示', exact: true }).click();
   await expect(
-    page.getByRole('heading', { name: '欢迎使用 FAFA ONE 控制面板 👋' }),
+        page.getByRole('heading', { name: '欢迎回来' }),
   ).toBeVisible();
   const report: any[] = [];
   for (const theme of ['light', 'dark']) {
