@@ -383,7 +383,7 @@ export function Shell({
             <div className="lang-wrap">
               <button
                 className="icon-button lang-button"
-                aria-label="切换语言"
+                aria-label="切换语言：中文"
                 aria-expanded={langOpen}
                 onClick={() => setLangOpen((v) => !v)}
               >
