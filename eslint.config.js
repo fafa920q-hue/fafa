@@ -21,5 +21,15 @@ export default ts.config(
       ],
     },
   },
-  { files: ['**/*.js'], languageOptions: { globals: { process: 'readonly' } } },
+  {
+    files: ['**/*.js', '**/*.mjs', '**/*.cjs'],
+    languageOptions: {
+      globals: {
+        process: 'readonly',
+        Buffer: 'readonly',
+        TextDecoder: 'readonly',
+        URL: 'readonly',
+      },
+    },
+  },
 );

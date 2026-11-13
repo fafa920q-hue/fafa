@@ -14,7 +14,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run tests/unit.test.ts tests/domain.test.ts tests/nodes.test.ts tests/backup.test.ts",
+    "test": "vitest run tests/unit.test.ts tests/domain.test.ts tests/nodes.test.ts tests/backup.test.ts tests/wloc.test.ts tests/wloc-device.test.ts",
     "test:integration": "tsx infra/scripts/integration.ts",
     "test:e2e": "playwright test",
     "build": "vite build --config apps/web/vite.config.ts && vite build --config apps/admin/vite.config.ts && tsc --noEmit",
@@ -22,9 +22,11 @@
     "verify:backup": "tsx infra/scripts/verify-backup.ts",
     "verify:tls": "tsx infra/scripts/verify-tls.ts",
     "owner:setup": "tsx infra/scripts/owner-setup.ts",
-    "nodes:validate": "tsx infra/scripts/validate-nodes.ts"
+    "nodes:validate": "tsx infra/scripts/validate-nodes.ts",
+    "test:member": "tsx infra/scripts/test-member-auth.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "1.6.0",
     "@fastify/cookie": "11.1.5",
     "@fastify/cors": "11.4.0",
     "@fastify/helmet": "13.2.0",
@@ -43,11 +45,15 @@
     "qrcode": "1.5.4",
     "react": "19.3.1",
     "react-dom": "19.3.1",
+    "react-markdown": "10.1.0",
     "react-router-dom": "7.18.5",
+    "rehype-highlight": "7.0.2",
     "ssh2": "1.17.0",
     "tsx": "4.23.15",
     "yaml": "2.9.1",
-    "zod": "4.6.7"
+    "zod": "4.6.7",
+    "leaflet": "1.9.4",
+    "gcoord": "1.0.7"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.14.0",
@@ -66,6 +72,7 @@
     "typescript": "5.9.3",
     "typescript-eslint": "8.72.1",
     "vite": "8.3.5",
-    "vitest": "5.1.0"
+    "vitest": "5.1.0",
+    "@types/leaflet": "1.9.20"
   }
 }

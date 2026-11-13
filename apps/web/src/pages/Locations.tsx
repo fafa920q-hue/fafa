@@ -1,109 +1,26 @@
-import { useState } from 'react';
-import { MapPin, Globe2, LocateOff, Plus } from 'lucide-react';
+import { Globe2 } from 'lucide-react';
 import {
   Card,
   PageTitle,
   useData,
   useApp,
-  FormDialog,
-  ConfirmDialog,
-  Empty,
-  Badge,
-  LocationPreview,
   type Row,
 } from '../../../../packages/ui/src/core';
+import { LocationCenter } from '../locations/LocationCenter';
 export function Locations() {
   const { request, toast, session } = useApp();
   const locations = useData<Row[]>('/api/location_presets');
   const sources = useData<Row[]>('/api/node_sources');
   const profile = useData<any>('/api/subscription/profile');
-  const [add, setAdd] = useState(false);
-  const [remove, setRemove] = useState<Row>();
-  const [q, setQ] = useState('');
   const writable = session.user.role !== 'Viewer';
   return (
     <>
       <PageTitle
         title="位置中心"
-        description="让出口策略和地点预设各归其位，能力边界清晰可见。"
-        action={
-          writable && (
-            <button className="primary" onClick={() => setAdd(true)}>
-              <Plus size={16} />
-              添加位置预设
-            </button>
-          )
-        }
+        description="搜索、选点、收藏与设备配置。WLOC为实验性网络定位模块；IP出口策略独立管理。"
       />
       <div className="stack">
-        <div className="capabilities">
-          <div className="capability">
-            <Globe2 color="var(--primary)" />
-            <h3>IP 出口地区</h3>
-            <p>
-              从实际获授权节点中选择地区，限制订阅导出节点范围，仅影响代理流量的出口
-              IP。
-            </p>
-            <Badge>支持 · 需要真实节点</Badge>
-          </div>
-          <div className="capability">
-            <MapPin color="var(--primary)" />
-            <h3>地图位置预设</h3>
-            <p>
-              保存经纬度配置。当前为本地坐标示意，未接入地图供应商，不会向地图平台发送位置。
-            </p>
-            <Badge>支持 · 坐标保存</Badge>
-          </div>
-          <div className="capability">
-            <LocateOff color="var(--primary)" />
-            <h3>系统 GPS 定位</h3>
-            <p>
-              网页和 Shadowrocket 代理规则不能修改 iPhone Core Location。iOS
-              26.3 真机兼容性仍待人工验证。
-            </p>
-            <Badge tone="warning">暂不支持 · 不会重启生效</Badge>
-          </div>
-        </div>
-        <Card
-          title="Apple WLOC · 网络定位实验模块"
-          description="第三方开源工具 · 需在 iPhone 的 Shadowrocket 中单独安装和启用"
-          icon={MapPin}
-        >
-          <Badge tone="warning">实验性 · iOS 26.3 未通过真机验收</Badge>
-          <p>
-            WLOC 通过代理客户端处理 Apple Wi-Fi/基站网络定位响应； 不修改 GPS
-            硬件，也不保证所有 App 会采用修改后的坐标。
-            网页仅提供使用说明和上游入口，不会远程控制你的 iPhone。
-          </p>
-          <p className="callout">
-            上游 2026 年 11 月报告部分 iOS 26 设备无法拦截 Apple 定位请求，
-            重启或更新系统后可能失效。请先了解 HTTPS 解密证书信任带来的风险，
-            仅在本人设备、知晓影响并主动同意时使用。不要把此模块与 VPN
-            节点订阅混淆。
-          </p>
-          <div className="toolbar">
-            <a
-              className="primary"
-              href="https://github.com/Yu9191/wloc"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              查看开源项目及安装说明
-            </a>
-            <a
-              href="https://raw.githubusercontent.com/Yu9191/wloc/refs/heads/main/modules/wloc.module"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Shadowrocket 模块来源
-            </a>
-          </div>
-          <p>
-            建议先阅读上游的安装、恢复定位及兼容性说明；实际修改需由用户在自己的
-            Shadowrocket 客户端执行。FAFA ONE 不会自动安装证书或开启 HTTPS
-            解密。
-          </p>
-        </Card>
+        <LocationCenter locations={locations} onRefresh={locations.refresh} />
         <Card
           title="IP 出口策略"
           description="修改后客户端需要更新订阅并自行连接节点"
@@ -112,10 +29,11 @@ export function Locations() {
           <div className="toolbar">
             <select
               aria-label="出口地区"
-              disabled={!writable}
+              disabled={!writable || !profile.data}
               value={profile.data?.country || ''}
               onChange={(e) =>
                 request('/api/subscription/profile', 'PUT', {
+                  ...profile.data,
                   country: e.target.value,
                 })
                   .then(() => {
@@ -132,107 +50,16 @@ export function Locations() {
                     ?.filter((s) => !s.demo && s.nodeCount > 0)
                     .map((s) => s.country) || [],
                 ),
-              ].map((c) => (
-                <option key={c}>{c}</option>
+              ].map((country) => (
+                <option key={country}>{country}</option>
               ))}
             </select>
           </div>
           <p className="callout">
-            这里保存的是订阅导出筛选规则，不会更改本机网络或
-            GPS。小火箭须由用户在客户端导入订阅并选择策略；未完成真机导入验收。
+            这里保存订阅导出筛选规则，不会更改本机网络或GPS。不会改变Google身份、Owner绑定或节点配置。
           </p>
         </Card>
-        <Card
-          title="我的地点预设"
-          description="按名称筛选已保存地点；在线地图 / 城市搜索供应商尚未接入"
-          icon={MapPin}
-        >
-          <div className="toolbar">
-            <input
-              aria-label="搜索位置预设"
-              placeholder="搜索已保存的位置…"
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-            />
-          </div>
-          <div className="resource-grid">
-            {locations.data
-              ?.filter((r) => r.name.includes(q))
-              .map((r) => (
-                <article key={r.id} className="resource-card">
-                  <div className="resource-top">
-                    <h3>{r.name}</h3>
-                    <Badge>{r.demo ? '演示预设' : '坐标配置'}</Badge>
-                  </div>
-                  <LocationPreview
-                    latitude={r.latitude}
-                    longitude={r.longitude}
-                  />
-                  <div className="resource-meta">
-                    <span>
-                      {r.country} · {r.latitude}, {r.longitude}
-                    </span>
-                    <span>仅保存于平台，不改变系统定位。</span>
-                  </div>
-                  {writable && (
-                    <button className="danger" onClick={() => setRemove(r)}>
-                      删除预设
-                    </button>
-                  )}
-                </article>
-              ))}
-          </div>
-          {locations.data?.length === 0 && (
-            <Empty
-              title="暂无位置预设"
-              description="添加经纬度，即可保存你的常用地点。"
-            />
-          )}
-        </Card>
       </div>
-      <FormDialog
-        open={add}
-        onClose={() => setAdd(false)}
-        title="添加位置预设"
-        fields={[
-          { name: 'name', label: '地点名称', required: true },
-          { name: 'country', label: '国家 / 地区' },
-          {
-            name: 'latitude',
-            label: '纬度（-90 至 90）',
-            type: 'number',
-            step: 'any',
-            min: -90,
-            max: 90,
-            required: true,
-          },
-          {
-            name: 'longitude',
-            label: '经度（-180 至 180）',
-            type: 'number',
-            step: 'any',
-            min: -180,
-            max: 180,
-            required: true,
-          },
-        ]}
-        notice="仅保存地图坐标配置，不会修改任何设备 GPS。"
-        onSubmit={async (d) => {
-          await request('/api/location_presets', 'POST', d);
-          locations.refresh();
-          toast('位置预设已保存');
-        }}
-      />
-      <ConfirmDialog
-        open={!!remove}
-        title="删除此预设？"
-        description="该位置将从你的预设列表中移除。"
-        onClose={() => setRemove(undefined)}
-        onConfirm={async () => {
-          await request('/api/location_presets/' + remove!.id, 'DELETE');
-          locations.refresh();
-        }}
-      />
     </>
   );
 }

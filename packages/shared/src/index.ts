@@ -7,6 +7,15 @@ export type User = {
   email: string;
   role: Role;
   disabled: boolean;
+  node_limit?: number;
+  subscription_enabled?: boolean;
+  traffic_limit_bytes?: string | number | null;
+  node_access_enabled?: boolean;
+  node_access_until?: Date | string | null;
+  server_connect_enabled?: boolean;
+  server_connect_until?: Date | string | null;
+  codex_tasks_enabled?: boolean;
+  codex_tasks_until?: Date | string | null;
 };
 export const isAdmin = (role: Role) => role === 'Owner' || role === 'Admin';
 export const writable = (role: Role) => role !== 'Viewer';
@@ -24,7 +33,12 @@ export const sourceSchema = z.object({
   authorized: z.literal(true),
   expiresAt: z.iso.datetime().optional(),
 });
+export const aiProviderSchema = z.enum(['OPENAI_API', 'ANTHROPIC_API']);
+export type AiProvider = z.infer<typeof aiProviderSchema>;
+export const anthropicApiEnabled = () =>
+  process.env.ANTHROPIC_API_ENABLED === 'true';
 export const aiSchema = z.object({
+  provider: aiProviderSchema.optional(),
   name: z.string().min(1).max(80),
   apiKey: z.string().min(10).max(1024),
 });
@@ -54,6 +68,7 @@ export const locationSchema = z.object({
   latitude: z.number().min(-90).max(90),
   longitude: z.number().min(-180).max(180),
   country: z.string().max(32).default(''),
+  coordinateSystem: z.literal('WGS84').optional(),
 });
 export class AppError extends Error {
   constructor(

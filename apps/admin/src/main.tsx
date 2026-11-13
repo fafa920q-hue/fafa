@@ -1,17 +1,32 @@
+import { PlatformAiAccounts } from './pages/PlatformAiAccounts';
+import { AiRuntimeTasks } from './pages/AiRuntimeTasks';
+import { AccessCenter } from './pages/AccessCenter';
+import { MemberAccessControls } from './pages/MemberDeliveryAdmin';
+import { NodesAdmin } from './pages/NodesAdmin';
+import { GrantsAdmin } from './pages/GrantsAdmin';
+import { AiModelsAdmin } from './pages/AiModelsAdmin';
+import { ApiKeysAdmin } from './pages/ApiKeysAdmin';
+import { QuotaAdmin } from './pages/QuotaAdmin';
+import { MonitoringAdmin } from './pages/MonitoringAdmin';
+import { AuditAdmin } from './pages/AuditAdmin';
+import { BackupAdmin } from './pages/BackupAdmin';
 import { useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import {
   LayoutDashboard,
   Users,
-  Globe2,
-  Server,
   Code2,
-  ListTodo,
   ShieldCheck,
   Settings,
-  Plus,
   RefreshCw,
+  Network,
+  KeyRound,
+  Cpu,
+  Gauge,
+  Activity,
+  ScrollText,
+  DatabaseBackup,
 } from 'lucide-react';
 import {
   Provider,
@@ -29,15 +44,19 @@ import {
 } from '../../../packages/ui/src/core';
 import { isAdmin } from '../../../packages/shared/src';
 import { SubscriptionWorkspace } from '../../../packages/ui/src/subscriptions';
+import { MemberRegistrationPolicy } from './pages/MemberRegistrationPolicy';
 const nav = [
-  { to: '/', label: '概览', icon: LayoutDashboard },
-  { to: '/users', label: '用户 / 邀请', icon: Users },
-  { to: '/sources', label: '节点源 / 分配', icon: Globe2 },
-  { to: '/servers', label: '服务器授权', icon: Server },
-  { to: '/ai', label: 'AI 连接状态', icon: Code2 },
-  { to: '/jobs', label: '任务队列', icon: ListTodo },
-  { to: '/audit', label: '安全审计', icon: ShieldCheck },
-  { to: '/settings', label: '系统设置 / 备份', icon: Settings },
+  { to: '/', label: '儀表板', icon: LayoutDashboard },
+  { to: '/nodes', label: '節點管理', icon: Network },
+  { to: '/users', label: '使用者管理', icon: Users },
+  { to: '/grants', label: '訂閱授權', icon: ShieldCheck },
+  { to: '/ai/models', label: 'AI 模型管理', icon: Cpu },
+  { to: '/ai/keys', label: 'API Key 管理', icon: KeyRound },
+  { to: '/ai/quota', label: '額度與計費管理', icon: Gauge },
+  { to: '/monitoring', label: '系統監控', icon: Activity },
+  { to: '/audit', label: '操作審計', icon: ScrollText },
+  { to: '/settings', label: '系統設定', icon: Settings },
+  { to: '/backup', label: '備份和版本管理', icon: DatabaseBackup },
 ];
 function Admin() {
   const { session } = useApp();
@@ -51,16 +70,51 @@ function Admin() {
       </div>
     );
   return (
-    <Shell nav={nav} bottom={[nav[0], nav[1], nav[3], nav[6], nav[7]]} admin>
+    <Shell
+      nav={
+        session.user.role === 'Owner'
+          ? [
+              ...nav,
+              { to: '/ai/service-accounts', label: 'AI 服务管理', icon: Code2 },
+            ]
+          : nav
+      }
+      bottom={[nav[0], nav[1], nav[2], nav[8], nav[9]]}
+      admin
+    >
       <Routes>
         <Route path="/" element={<Overview />} />
         <Route path="/users" element={<UserManagement />} />
+        <Route path="/nodes" element={<NodesAdmin />} />
+        <Route path="/grants" element={<GrantsAdmin />} />
+        <Route path="/ai/models" element={<AiModelsAdmin />} />
+        <Route path="/ai/keys" element={<ApiKeysAdmin />} />
+        <Route path="/ai/quota" element={<QuotaAdmin />} />
+        <Route path="/monitoring" element={<MonitoringAdmin />} />
+        <Route path="/backup" element={<BackupAdmin />} />
         <Route path="/sources" element={<SourcesAdmin />} />
         <Route path="/servers" element={<ResourceAdmin kind="servers" />} />
         <Route path="/ai" element={<ResourceAdmin kind="ai" />} />
-        <Route path="/jobs" element={<ResourceAdmin kind="jobs" />} />
-        <Route path="/audit" element={<ResourceAdmin kind="audit" />} />
+        <Route path="/ai/service-accounts" element={<PlatformAiAccounts />} />
+        <Route
+          path="/jobs"
+          element={
+            <>
+              <ResourceAdmin kind="jobs" />
+              <AiRuntimeTasks />
+            </>
+          }
+        />
+        <Route path="/audit" element={<AuditAdmin />} />
+        <Route
+          path="/audit/resources"
+          element={<ResourceAdmin kind="audit" />}
+        />
         <Route path="/settings" element={<SystemSettings />} />
+        <Route
+          path="/member-registration"
+          element={<MemberRegistrationPolicy />}
+        />
         <Route path="*" element={<Empty title="页面不存在" />} />
       </Routes>
     </Shell>
@@ -106,7 +160,7 @@ function Overview() {
         >
           <div className="list">
             {[
-              'Google OIDC + 邀请激活',
+              'Google OIDC + 邮箱验证',
               '角色与对象级服务端鉴权',
               '凭据 AES-256-GCM 信封加密',
               'SSH 固定指纹 + 授权目标',
@@ -138,22 +192,15 @@ function Overview() {
 function UserManagement() {
   const { request, toast } = useApp();
   const users = useData<Row[]>('/api/admin/users');
-  const invitations = useData<Row[]>('/api/admin/invitations');
-  const [invite, setInvite] = useState(false);
   const [action, setAction] = useState<{ user: Row; type: string }>();
   return (
     <>
       <PageTitle
-        title="用户与邀请"
-        description="仅受邀的已验证 Google 账号可以激活；禁用与角色变更会撤销会话。"
-        action={
-          <button className="primary" onClick={() => setInvite(true)}>
-            <Plus size={16} />
-            邀请用户
-          </button>
-        }
+        title="用户管理"
+        description="用户自行注册并验证邮箱；禁用与角色变更会撤销会话。"
       />
       <div className="stack">
+        <AccessCenter />
         <Card title="已注册用户" icon={Users}>
           <DataState
             error={users.error}
@@ -177,6 +224,10 @@ function UserManagement() {
                       {u.name}
                       <br />
                       <small>{u.email}</small>
+                      <small>
+                        注册：{new Date(u.created_at).toLocaleString('zh-CN')} ·{' '}
+                        {u.email_verified ? '邮箱已验证' : '邮箱未验证'}
+                      </small>
                     </td>
                     <td>{u.role}</td>
                     <td>
@@ -197,6 +248,7 @@ function UserManagement() {
                       </small>
                     </td>
                     <td>
+                      <MemberAccessControls user={u} onSaved={users.refresh} />
                       <div className="actions">
                         <button
                           disabled={u.role === 'Owner'}
@@ -239,84 +291,7 @@ function UserManagement() {
             </table>
           </div>
         </Card>
-        <Card
-          title="邀请记录"
-          description="邀请由 Google verified email 匹配，绑定后以 Google sub 为不变身份"
-        >
-          <div className="list">
-            {invitations.data?.map((i) => (
-              <div className="list-item" key={i.id}>
-                <div>
-                  <strong>{i.data.email}</strong>
-                  <small>
-                    {i.data.role} · 到期{' '}
-                    {new Date(i.data.expiresAt).toLocaleDateString('zh-CN')}
-                  </small>
-                </div>
-                <Badge>
-                  {i.revoked_at
-                    ? '已撤销'
-                    : i.data.usedAt
-                      ? '已使用'
-                      : '待激活'}
-                </Badge>
-                {!i.revoked_at && !i.data.usedAt && (
-                  <button
-                    onClick={() =>
-                      request('/api/admin/invitations/' + i.id, 'DELETE')
-                        .then(() => {
-                          invitations.refresh();
-                          toast('邀请已撤销');
-                        })
-                        .catch(() => {})
-                    }
-                  >
-                    撤销
-                  </button>
-                )}
-              </div>
-            ))}
-          </div>
-          {!invitations.data?.length && <Empty title="暂无邀请" />}
-        </Card>
       </div>
-      <FormDialog
-        open={invite}
-        onClose={() => setInvite(false)}
-        title="邀请 Google 用户"
-        fields={[
-          {
-            name: 'email',
-            label: 'Google 账号邮箱',
-            type: 'email',
-            required: true,
-          },
-          {
-            name: 'role',
-            label: '角色',
-            options: [
-              { label: '成员 Member', value: 'Member' },
-              { label: '只读 Viewer', value: 'Viewer' },
-              { label: '管理员 Admin（仅 Owner 可分配）', value: 'Admin' },
-            ],
-          },
-          {
-            name: 'days',
-            label: '有效天数',
-            type: 'number',
-            value: '7',
-            min: 1,
-            max: 30,
-            required: true,
-          },
-        ]}
-        notice="只登记邀请，不自动发送邮件。将面板地址自行提供给受邀用户。"
-        onSubmit={async (d) => {
-          await request('/api/admin/invitations', 'POST', d);
-          invitations.refresh();
-          toast('邀请已登记');
-        }}
-      />
       <FormDialog
         open={action?.type === 'quota'}
         onClose={() => setAction(undefined)}

@@ -1,0 +1,18 @@
+{
+  "image_tag_sha": "138e4f9e3f4680ee3b91437a113d4ed9b46c54f9",
+  "registry": "ghcr.io",
+  "images": {
+    "runtime": {
+      "image": "ghcr.io/fafa920q-hue/fafa-runtime",
+      "digest": "sha256:e5681f18fac3ec12d8a0796f68ee3258c25b258e3ac7ac39dcb84a46126b970b"
+    },
+    "web": {
+      "image": "ghcr.io/fafa920q-hue/fafa-web",
+      "digest": "sha256:ed402cf4f68c56451e19d7cfafb43162a3da9569011565be8d02e936817cf55c"
+    },
+    "admin": {
+      "image": "ghcr.io/fafa920q-hue/fafa-admin",
+      "digest": "sha256:d79cfcfe2ba867f715d0bf9450460c343012ec1ada3eb0bfabd422a37604d8bf"
+    }
+  }
+}

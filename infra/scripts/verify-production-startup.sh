@@ -12,9 +12,13 @@ if docker volume inspect "${project}_pg" >/dev/null 2>&1; then
   exit 1
 fi
 export IMAGE_TAG="$(git rev-parse HEAD)"
-compose=(docker compose -p "$project" --env-file .env.production -f infra/docker/compose.production.yaml)
+mail_secret_directory="$(mktemp -d /tmp/fafa-startup-mail-XXXXXXXX)"
+export FAFA_RESEND_SECRET_FILE="$mail_secret_directory/resend_api_key"
+compose=(docker compose -p "$project" --env-file .env.production -f infra/docker/compose.production.yaml -f infra/docker/compose.mail-secret.yaml)
 cleanup() {
   "${compose[@]}" down --volumes --remove-orphans >/dev/null 2>&1 || true
+  sudo rm -f -- "$FAFA_RESEND_SECRET_FILE"
+  rmdir -- "$mail_secret_directory"
 }
 trap cleanup EXIT
 node --input-type=module <<'JS'
@@ -35,7 +39,9 @@ const fields = {
 };
 writeFileSync('.env.production', Object.entries(fields).map(([k,v]) =>
   k + '=' + JSON.stringify(v)).join('\n') + '\n', { mode: 0o600, flag: 'wx' });
+writeFileSync(process.env.FAFA_RESEND_SECRET_FILE, randomBytes(24).toString('base64url'), { mode: 0o400, flag: 'wx' });
 JS
+sudo chown 1000:1000 "$FAFA_RESEND_SECRET_FILE"
 for target in runtime web admin; do
   git archive "$IMAGE_TAG" | docker build -f infra/docker/Dockerfile --target "$target" -t "fafa-one-$target:$IMAGE_TAG" -
 done
@@ -50,6 +56,13 @@ for(const name of ["api","worker"]) {
   const env=config.services[name].environment;
   if(env.POSTGRES_PASSWORD || env.DATABASE_URL) throw Error("Unexpected privileged runtime credential");
 }
+const apiEnv=config.services.api.environment;
+if(apiEnv.MAIL_PROVIDER!=="resend" || apiEnv.MAIL_API_KEY || apiEnv.MAIL_API_KEY_FILE!=="/run/secrets/resend_api_key" || apiEnv.MAIL_FROM!=="accounts@fafa888.uk")
+  throw Error("API file-secret configuration was not forwarded safely");
+if(!config.services.api.secrets?.some(s=>s.source==="resend_api_key")) throw Error("API mail secret mount missing");
+if(config.services.worker.secrets?.length) throw Error("Worker received a secret mount");
+for(const key of ["MAIL_PROVIDER","MAIL_API_KEY","MAIL_FROM","MAIL_API_KEY_FILE"])
+  if(config.services.worker.environment[key]!==undefined) throw Error("Mail environment leaked into worker");
 if(config.services.ops.logging.driver!=="none") throw Error("Ops logging enabled");
 console.log("First-deployment compose contract passed with no runtime file.");'
 owner="$(id -u):$(id -g)"
@@ -87,7 +100,7 @@ assert "Forbidden published" not in diagnostic
 PY
 "${compose[@]}" up -d --no-deps --wait --wait-timeout 180 api
 python3 infra/deploy/check_container_ports.py "${compose[@]}"
-"${compose[@]}" exec -T api node --input-type=module <<'JS'
+"${compose[@]}" exec -T api node --import tsx --input-type=module <<'JS'
 import assert from 'node:assert/strict';
 assert.equal(new URL(process.env.DATABASE_URL).username, 'fafa_app');
 assert.equal(process.env.POSTGRES_PASSWORD, undefined);
@@ -96,6 +109,21 @@ assert.equal((await fetch('http://127.0.0.1:4000/api/me')).status, 401);
 const config = await (await fetch('http://127.0.0.1:4000/auth/config')).json();
 assert.equal(config.mock, false); assert.equal(config.demo, false);
 assert.equal(config.google, true); assert.equal(config.ownerSetup, false);
+const member = await (await fetch('http://127.0.0.1:4000/auth/member/config')).json();
+assert.equal(member.registrationOpen, false);
+assert.equal(member.mailConfigured, true);
+const { sql } = await import('./packages/db/src/index.ts');
+for (const table of ['member_credentials','member_registrations','member_action_tokens','member_auth_buckets','member_google_links','member_mail_events','auto_grant_records']) {
+  for (const privilege of ['SELECT','INSERT','UPDATE']) {
+    const [grant] = await sql.unsafe('SELECT has_table_privilege(current_user,$1,$2) AS allowed', [table,privilege]);
+    assert.equal(grant.allowed, true);
+  }
+  for (const privilege of ['DELETE','TRUNCATE']) {
+    const [grant] = await sql.unsafe('SELECT has_table_privilege(current_user,$1,$2) AS allowed', [table,privilege]);
+    assert.equal(grant.allowed, false);
+  }
+}
+await sql.end();
 assert.equal((await fetch('http://127.0.0.1:4000/auth/dev', {
   method: 'POST', headers: { origin: 'https://fafa888.uk', 'content-type':'application/json' },
   body: JSON.stringify({ profile: 'owner' })
@@ -121,8 +149,8 @@ restored="$("${compose[@]}" exec -T postgres psql -U fafa -d fafa_restore_ci -X 
 "${compose[@]}" up -d --no-deps --wait --wait-timeout 120 postgres
 persisted="$("${compose[@]}" exec -T postgres psql -U fafa -d fafa -X -Atc "SELECT count(*) FROM users WHERE email='startup-fixture@example.invalid'")"
 [[ "$persisted" == 1 ]]
-migration_count="$("${compose[@]}" exec -T postgres psql -U fafa -d fafa -X -Atc "SELECT count(*) FROM migrations WHERE name IN ('001_initial.sql','002_limits.sql','003_owner_setup.sql','004_traffic_policy.sql')")"
-[[ "$migration_count" == 4 ]]
+migration_count="$("${compose[@]}" exec -T postgres psql -U fafa -d fafa -X -Atc "SELECT count(*) FROM migrations WHERE name IN ('001_initial.sql','002_limits.sql','003_owner_setup.sql','004_traffic_policy.sql','005_member_auth.sql','006_auto_grant_policy.sql','007_member_delivery.sql')")"
+[[ "$migration_count" == 7 ]]
 mkdir -p docs/evidence
 "${compose[@]}" ps --all --format json > docs/evidence/production-startup-containers.json
 node --input-type=module <<'JS'
@@ -133,7 +161,9 @@ writeFileSync('docs/evidence/production-startup.json', JSON.stringify({
   missingRuntimeFileAccepted: true, runtimeFileMode600: true,
   actualPortBindingsChecked: true, stoppedApiDistinguishedFromPortPublishing: true,
   privilegedDatabasePasswordExcluded: true, runtimeRole: 'fafa_app',
-  encryptedPreMigrationBackupVerified: true, migrationsApplied: ['001','002','003','004'],
+  encryptedPreMigrationBackupVerified: true, migrationsApplied: ['001','002','003','004','005','006','007'],
+  memberRuntimeGrantsVerified: true, mailEnvironmentApiOnlyVerified: true, mailSecretFileApiOnlyVerified: true,
+  mailConfiguredWhileRegistrationRemainsClosed: true, realMailDelivery: 'NOT_TESTED',
   restoreToSeparateDatabase: true, postgresRestartPersistence: true,
   demoLoginDisabled: true, apiReady: true, independentWebAndAdmin: true,
   publicHttps: 'NOT_TESTED', googleLogin: 'NOT_TESTED', ownerBinding: 'NOT_PERFORMED'

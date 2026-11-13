@@ -112,6 +112,10 @@ try {
         'ai_accounts',
         'ai_tasks',
         'ai_sessions',
+        'ai_platform_accounts',
+        'ai_platform_usage',
+        'ai_platform_models',
+        'ai_platform_chats',
         'server_connections',
         'server_access_grants',
         'ssh_sessions',
@@ -120,6 +124,18 @@ try {
       ];
       for (const table of tables)
         await tx`grant select,insert,update,delete on ${tx(table)} to ${tx(role)}`;
+      for (const table of [
+        'member_credentials',
+        'member_registrations',
+        'member_action_tokens',
+        'member_auth_buckets',
+        'member_google_links',
+        'member_mail_events',
+        'auto_grant_records',
+      ])
+        await tx.unsafe(
+          'GRANT SELECT,INSERT,UPDATE ON ' + table + ' TO ' + role,
+        );
       await ddl(tx, 'GRANT SELECT,INSERT ON audit_events TO fafa_app');
       await ddl(
         tx,

@@ -7,7 +7,7 @@ for (const [id, name, role] of [
   ['22222222-2222-4222-8222-222222222222', '演示成员', 'Member'],
   ['33333333-3333-4333-8333-333333333333', '演示访客', 'Viewer'],
 ]) {
-  await sql`insert into users(id,email,name,role) values(${id},${role.toLowerCase() + '@example.invalid'},${name},${role}) on conflict(id) do nothing`;
+  await sql`insert into users(id,email,name,role,node_access_enabled,server_connect_enabled,codex_tasks_enabled) values(${id},${role.toLowerCase() + '@example.invalid'},${name},${role},true,true,true) on conflict(id) do nothing`;
 }
 const owner = '11111111-1111-4111-8111-111111111111';
 if (!(await sql`select id from node_sources where owner_id=${owner}`).length) {

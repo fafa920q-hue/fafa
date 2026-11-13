@@ -11,6 +11,7 @@ docs/screenshots
 reference_images
 docs/**
 !docs/THIRD_PARTY_NOTICES.txt
+!docs/WLOC_THIRD_PARTY_NOTICES.txt
 reference_images
 test-results
 tests

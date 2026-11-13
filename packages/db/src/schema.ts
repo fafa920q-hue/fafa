@@ -12,20 +12,28 @@ export const users = pgTable('users', {
   name: text('name').notNull(),
   role: text('role').notNull(),
   disabled: boolean('disabled').notNull().default(false),
+  nodeAccessEnabled: boolean('node_access_enabled').notNull().default(false),
+  nodeAccessUntil: timestamp('node_access_until'),
+  serverConnectEnabled: boolean('server_connect_enabled')
+    .notNull()
+    .default(false),
+  serverConnectUntil: timestamp('server_connect_until'),
+  codexTasksEnabled: boolean('codex_tasks_enabled').notNull().default(false),
+  codexTasksUntil: timestamp('codex_tasks_until'),
   createdAt: timestamp('created_at').defaultNow(),
 });
-const resource = (name: string) =>
-  pgTable(name, {
-    id: uuid('id').primaryKey().defaultRandom(),
-    ownerId: uuid('owner_id')
-      .notNull()
-      .references(() => users.id),
-    data: jsonb('data').notNull(),
-    secret: jsonb('secret'),
-    createdAt: timestamp('created_at').defaultNow(),
-    updatedAt: timestamp('updated_at').defaultNow(),
-    revokedAt: timestamp('revoked_at'),
-  });
+const resourceFields = () => ({
+  id: uuid('id').primaryKey().defaultRandom(),
+  ownerId: uuid('owner_id')
+    .notNull()
+    .references(() => users.id),
+  data: jsonb('data').notNull(),
+  secret: jsonb('secret'),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+  revokedAt: timestamp('revoked_at'),
+});
+const resource = (name: string) => pgTable(name, resourceFields());
 export const invitations = resource('invitations');
 export const roles = resource('roles');
 export const permissions = resource('permissions');
@@ -39,7 +47,10 @@ export const subscription_tokens = resource('subscription_tokens');
 export const subscription_sync_runs = resource('subscription_sync_runs');
 export const node_health_checks = resource('node_health_checks');
 export const traffic_usage_samples = resource('traffic_usage_samples');
-export const ai_accounts = resource('ai_accounts');
+export const ai_accounts = pgTable('ai_accounts', {
+  ...resourceFields(),
+  anthropicSecret: jsonb('anthropic_secret'),
+});
 export const ai_sessions = resource('ai_sessions');
 export const ai_tasks = resource('ai_tasks');
 export const server_connections = resource('server_connections');

@@ -8,17 +8,20 @@
     'PingFang SC',
     'Microsoft YaHei',
     sans-serif;
-  color: #19234a;
-  background: #c3d6f9;
+  color: #172033;
+  background: #f6f7fb;
   font-synthesis: none;
-  --primary: #635bff;
+  --primary: #6d5ef9;
+  --brand: #6d5ef9;
+  --bg: #f6f7fb;
+  --card: #ffffff;
   --secondary: #4d91ff;
-  --text: #19234a;
-  --muted: #535e81;
-  --surface: rgba(246, 249, 255, 0.51);
-  --solid: #eef1ff;
-  --line: rgba(255, 255, 255, 0.75);
-  --input: rgba(255, 255, 255, 0.73);
+  --text: #172033;
+  --muted: #5a6478;
+  --surface: #ffffff;
+  --solid: #f6f7fb;
+  --line: #dde4ef;
+  --input: #ffffff;
   --shadow: 0 10px 28px #586ac510;
   --danger: #b92e4c;
   --success: #0b7250;
@@ -30,7 +33,6 @@
 }
 body {
   margin: 0;
-  min-width: 320px;
   background:
     radial-gradient(ellipse at 90% 4%, #c4aff6a8, transparent 45%),
     radial-gradient(ellipse at 10% 55%, #afe7ffc4, transparent 47%),
@@ -1813,7 +1815,7 @@ td .actions {
     justify-content: center;
     flex-direction: column;
     gap: 5px;
-    color: var(--primary);
+    color: var(--text);
     border: 1px solid transparent;
     border-radius: 14px;
     font-size: 10px;
@@ -1916,6 +1918,9 @@ td .actions {
   .top-actions .avatar {
     display: none;
   }
+  .mobile-brand .brand-pro {
+    display: none;
+  }
   .page {
     padding-left: 11px;
     padding-right: 11px;
@@ -1994,4 +1999,580 @@ td .actions {
     min-height: 44px;
     flex: 1 1 auto;
   }
+}
+
+/* ============ FAFA ONE 2.0 Pro 面板 ============ */
+.brand-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  line-height: 1.15;
+}
+.brand-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+.brand-pro {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #7c3aed, #a855f7);
+  color: #fff;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+.lang-wrap {
+  position: relative;
+}
+.lang-button {
+  gap: 0.35rem;
+}
+.lang-current {
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+.lang-backdrop {
+  position: fixed;
+  inset: 0;
+  border: 0;
+  background: transparent;
+  cursor: default;
+  z-index: 40;
+}
+.lang-pop {
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  right: 0;
+  z-index: 41;
+  min-width: 13rem;
+  padding: 0.4rem;
+  border: 1px solid var(--line);
+  border-radius: 0.9rem;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(12px);
+}
+.lang-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  min-height: 44px;
+  padding: 0.5rem 0.65rem;
+  border: 0;
+  border-radius: 0.65rem;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.lang-item:hover:not(:disabled) {
+  background: rgba(124, 58, 237, 0.14);
+}
+.lang-item:disabled {
+  color: var(--muted);
+  cursor: not-allowed;
+}
+.lang-item small {
+  margin-inline-start: auto;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+.lang-indent {
+  margin-inline-start: 1.5rem;
+}
+/* 欢迎横幅：紫色山月背景（纯装饰，不含数据） */
+.pro-banner {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+  min-height: 11rem;
+  padding: 1.5rem 1.6rem;
+  border-radius: 1.25rem;
+  background: linear-gradient(
+    115deg,
+    #241547 0%,
+    #4c1d95 48%,
+    #6d28d9 78%,
+    #8b5cf6 100%
+  );
+  color: #f5f3ff;
+  box-shadow: 0 14px 36px rgba(76, 29, 149, 0.35);
+}
+.pro-banner-art {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+.pro-banner-body {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.pro-banner-eyebrow {
+  font-size: 0.78rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #ddd6fe;
+}
+.pro-banner-title {
+  margin: 0;
+  font-size: clamp(1.4rem, 3.4vw, 2rem);
+  line-height: 1.2;
+  font-weight: 800;
+}
+.pro-banner-sub {
+  margin: 0;
+  color: #e9d5ff;
+  font-size: 0.95rem;
+}
+.pro-banner-actions {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+.pro-banner-actions .primary-action {
+  background: rgba(255, 255, 255, 0.96);
+  color: #4c1d95;
+}
+/* 五张统计卡 */
+.pro-stats {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0.9rem;
+  margin-block: 1rem;
+}
+.pro-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 1rem 1.05rem;
+  border: 1px solid var(--line);
+  border-radius: 1.1rem;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(10px);
+  min-width: 0;
+}
+.pro-stat-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 0.75rem;
+  background: linear-gradient(135deg, #7c3aed, #a855f7);
+  color: #fff;
+}
+.pro-stat-label {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+.pro-stat-value {
+  font-size: 1.45rem;
+  font-weight: 800;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+}
+.pro-stat-hint {
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+/* 仪表盘两栏布局 */
+.pro-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 21rem;
+  gap: 1rem;
+  align-items: start;
+}
+.pro-side-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-width: 0;
+}
+.pro-card {
+  min-width: 0;
+}
+.pro-card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-block-end: 0.85rem;
+}
+.pro-card-head h2 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+.pro-card-head a {
+  color: var(--primary);
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+.pro-kv {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.45rem 0.9rem;
+  align-items: baseline;
+  margin: 0;
+}
+.pro-kv dt {
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+.pro-kv dd {
+  margin: 0;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+.pro-card-note {
+  margin: 0.75rem 0 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+.pro-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-block-start: 0.9rem;
+}
+.pro-card-actions .primary-action,
+.pro-card-actions .button {
+  min-height: 44px;
+}
+/* 节点列表：标签页、筛选与表格 */
+.pro-tabs {
+  display: flex;
+  gap: 0.25rem;
+  flex-wrap: wrap;
+  margin-block-end: 0.85rem;
+}
+.pro-tab {
+  min-height: 40px;
+  padding: 0.45rem 0.85rem;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0.6rem 0.6rem 0 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.pro-tab[aria-selected='true'] {
+  color: var(--primary);
+  border-bottom-color: var(--primary);
+}
+.pro-tab:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+.pro-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-block-end: 0.85rem;
+}
+.pro-filter select,
+.pro-filter input {
+  min-height: 44px;
+  padding: 0.45rem 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: 0.7rem;
+  background: var(--input);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.95rem;
+}
+.pro-filter input {
+  flex: 1 1 12rem;
+}
+.pro-table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.pro-table {
+  width: 100%;
+  min-width: 42rem;
+  border-collapse: collapse;
+  font-size: 0.92rem;
+}
+.pro-table th,
+.pro-table td {
+  padding: 0.6rem 0.65rem;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+.pro-table th {
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+.pro-table td {
+  overflow-wrap: anywhere;
+}
+.pro-table .numeric {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.pro-node-name {
+  font-weight: 700;
+}
+.pro-node-region {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+.pro-status {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+.pro-status.ok {
+  background: rgba(11, 114, 80, 0.14);
+  color: var(--success);
+}
+.pro-status.sub {
+  background: rgba(124, 58, 237, 0.14);
+  color: var(--primary);
+}
+.pro-status.off {
+  background: rgba(83, 94, 129, 0.14);
+  color: var(--muted);
+}
+.pro-table-more {
+  margin: 0.75rem 0 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+/* 快捷操作与系统动态 */
+.pro-quick {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.6rem;
+}
+.pro-quick-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-height: 44px;
+  padding: 0.55rem 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 0.8rem;
+  background: var(--surface);
+  color: var(--text);
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 0.92rem;
+}
+.pro-quick-link:hover,
+.pro-quick-link:focus-visible {
+  border-color: var(--primary);
+  background: rgba(124, 58, 237, 0.1);
+}
+.pro-activity {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.pro-activity li {
+  display: grid;
+  grid-template-columns: 0.55rem 1fr auto;
+  gap: 0.65rem;
+  align-items: start;
+}
+.pro-activity-dot {
+  width: 0.55rem;
+  height: 0.55rem;
+  margin-block-start: 0.4rem;
+  border-radius: 50%;
+  background: var(--primary);
+}
+.pro-activity-action {
+  overflow-wrap: anywhere;
+  font-size: 0.92rem;
+}
+.pro-activity-time {
+  color: var(--muted);
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+/* 2.0 响应式 */
+@media (max-width: 1500px) {
+  .pro-stats {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+@media (max-width: 1120px) {
+  .pro-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .pro-side-stack {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+  }
+}
+@media (max-width: 760px) {
+  .pro-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .pro-side-stack {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .pro-banner {
+    flex-direction: column;
+    align-items: flex-start;
+    min-height: 0;
+    padding: 1.2rem 1.1rem;
+  }
+  .lang-current {
+    display: none;
+  }
+}
+@media (max-width: 420px) {
+  .pro-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.6rem;
+  }
+  .pro-stat-value {
+    font-size: 1.2rem;
+  }
+}
+
+.pro-bottom {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-block-start: 1rem;
+}
+@media (max-width: 760px) {
+  .pro-bottom {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* FAFA ONE 3.0 design system - Stage D */
+:root,
+[data-theme='light'] {
+  --bg: #f6f7fb;
+  --card: #ffffff;
+  --text: #172033;
+  --muted: #5a6478;
+  --line: #dde4ef;
+  --brand: #6d5ef9;
+  --primary: #6d5ef9;
+}
+[data-theme='dark'] {
+  --bg: #12141f;
+  --card: #1b1e2e;
+  --text: #e8eaf2;
+  --muted: #9aa3b8;
+  --line: #2e3348;
+  --surface: #1b1e2e;
+  --solid: #232736;
+  --input: #232736;
+  --brand: #8b7ffa;
+  --primary: #8b7ffa;
+}
+body {
+  background: var(--bg);
+  color: var(--text);
+}
+.app-shell {
+  background: var(--bg);
+}
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+}
+@media (max-width: 768px) {
+  .topbar-inner,
+  .app-shell {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+  .page-grid {
+    grid-template-columns: 1fr;
+  }
+  .cluster {
+    flex-wrap: wrap;
+  }
+  .topbar nav {
+    overflow-x: auto;
+  }
+}
+@media (max-width: 390px) {
+  .shell-grid {
+    gap: 10px;
+  }
+  .brand span {
+    font-size: 15px;
+  }
+  /* 頂部導覽列在 390px 寬時仍寬出約 15px：沿用 350px 以下隱藏 avatar 的做法， */
+  /* 在 390px 以下同樣隱藏 avatar，使導覽列收斂進視口寬度。 */
+  .top-actions .avatar {
+    display: none;
+  }
+}
+@media (max-width: 390px) {
+  /* WebKit measures the brand text wider at 375px, and .brand cannot */
+  /* shrink (min-width: auto + white-space: nowrap), so hide the */
+  /* decorative badge below 390px (as at 350px), narrow the topbar, */
+  /* and let the brand text shrink with an ellipsis instead of */
+  /* overflowing the viewport. */
+  .mobile-brand .brand-pro {
+    display: none;
+  }
+  .topbar {
+    padding: 14px 12px;
+  }
+  .mobile-brand {
+    min-width: 0;
+  }
+  .mobile-brand .brand-icon {
+    flex-shrink: 0;
+  }
+  .brand-text {
+    min-width: 0;
+    overflow: hidden;
+  }
+  .brand-name {
+    min-width: 0;
+  }
+  .brand strong {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+/* The audit log table is a direct child of its card (unlike the user table,
+   which sits inside .table-wrap), so its nowrap cells widen the whole page
+   at 390px on iPhone. Let such a card scroll its table internally instead. */
+.card:has(> table) {
+  overflow-x: auto;
 }

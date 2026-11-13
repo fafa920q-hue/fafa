@@ -12,11 +12,13 @@ import { NavLink, Link, useNavigate } from 'react-router-dom';
 import {
   Search,
   Bell,
+  Check,
   Sun,
   Moon,
   Menu,
   LogOut,
   ChevronRight,
+  Globe,
   ShieldCheck,
   X,
   Plus,
@@ -71,7 +73,13 @@ export async function api<T = any>(
     clearTimeout(timeout);
   }
 }
-export function Provider({ children }: { children: ReactNode }) {
+export function Provider({
+  children,
+  loginPage,
+}: {
+  children: ReactNode;
+  loginPage?: ReactNode | ((onLogin: (session: Session) => void) => ReactNode);
+}) {
   const [session, setSession] = useState<Session | null>();
   const [error, setError] = useState('');
   const [toast, setToast] = useState('');
@@ -93,7 +101,15 @@ export function Provider({ children }: { children: ReactNode }) {
         <div className="skeleton" />
       </div>
     );
-  if (!session) return <Login onLogin={setSession} />;
+  if (!session)
+    return (
+      <Login
+        onLogin={setSession}
+        publicPage={
+          typeof loginPage === 'function' ? loginPage(setSession) : loginPage
+        }
+      />
+    );
   const request = async <T,>(path: string, method = 'GET', body?: unknown) => {
     try {
       return await api<T>(path, method, body, session.csrf);
@@ -130,7 +146,13 @@ export function Provider({ children }: { children: ReactNode }) {
     </Context.Provider>
   );
 }
-function Login({ onLogin }: { onLogin: (s: Session) => void }) {
+function Login({
+  onLogin,
+  publicPage,
+}: {
+  onLogin: (s: Session) => void;
+  publicPage?: ReactNode;
+}) {
   const [config, setConfig] = useState<any>();
   const [ownerCredential, setOwnerCredential] = useState('');
   const [error, setError] = useState('');
@@ -140,6 +162,8 @@ function Login({ onLogin }: { onLogin: (s: Session) => void }) {
       .then(setConfig)
       .catch(() => setError('无法连接 API，请确认服务已启动'));
   }, []);
+  if (config && !config.mock && !config.ownerSetup && publicPage)
+    return <>{publicPage}</>;
   return (
     <main className="login">
       <div className="glass login-card">
@@ -151,7 +175,7 @@ function Login({ onLogin }: { onLogin: (s: Session) => void }) {
           从容掌控。
         </h1>
         <p>
-          节点订阅、Codex 工作台与服务器，
+          节点订阅、GPT 对话与我的额度，
           <br />
           在你的安全空间内井然有序。
         </p>
@@ -165,6 +189,15 @@ function Login({ onLogin }: { onLogin: (s: Session) => void }) {
         >
           G · 使用 Google 登录
         </a>
+        {app === 'web' && (
+          <p className="muted">
+            <a href="/member/login">用户名 / 邮箱登录</a>
+            {' · '}
+            <a href="/member/register">注册新账户</a>
+            {' · '}
+            <a href="/member/forgot">忘记密码</a>
+          </p>
+        )}
         {!config?.google && (
           <p className="muted">Google 登录未配置 · 仅受邀账号可激活</p>
         )}
@@ -237,8 +270,11 @@ export function Brand() {
   return (
     <Link className="brand" to="/">
       <span className="brand-icon">F</span>
-      <span>
-        <strong>FAFA ONE</strong>
+      <span className="brand-text">
+        <span className="brand-name">
+          <strong>FAFA ONE</strong>
+          <span className="brand-pro">2.0 Pro</span>
+        </span>
         <small>统一控制面板</small>
       </span>
     </Link>
@@ -258,6 +294,7 @@ export function Shell({
 }) {
   const { session, request, toast, reload } = useApp();
   const [collapsed, setCollapsed] = useState(false);
+  const [langOpen, setLangOpen] = useState(false);
   const [dark, setDark] = useState(
     () => localStorage.getItem('fafa_theme') === 'dark',
   );
@@ -343,6 +380,41 @@ export function Shell({
             >
               {dark ? <Sun size={21} /> : <Moon size={21} />}
             </button>
+            <div className="lang-wrap">
+              <button
+                className="icon-button lang-button"
+                aria-label="切换语言：中文"
+                aria-expanded={langOpen}
+                onClick={() => setLangOpen((v) => !v)}
+              >
+                <Globe size={20} />
+                <span className="lang-current">中文</span>
+              </button>
+              {langOpen && (
+                <>
+                  <button
+                    className="lang-backdrop"
+                    aria-label="关闭语言菜单"
+                    onClick={() => setLangOpen(false)}
+                  />
+                  <div className="lang-pop" role="menu">
+                    <button
+                      className="lang-item"
+                      role="menuitem"
+                      onClick={() => setLangOpen(false)}
+                    >
+                      <Check size={16} />
+                      <span>中文</span>
+                      <small>当前语言</small>
+                    </button>
+                    <button className="lang-item" role="menuitem" disabled>
+                      <span className="lang-indent">English</span>
+                      <small>即将推出</small>
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
             <Link
               className="avatar"
               to={admin ? '/' : '/account'}

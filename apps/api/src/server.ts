@@ -1,3 +1,14 @@
+import { platformAccountsEnabled } from '../../../packages/auth/src/platform-gpt';
+import type { ISql } from 'postgres';
+import { capabilityAllowed } from '../../../packages/auth/src/auto-grant';
+import {
+  activeGrant,
+  resolveAccess,
+  sourceAllowed,
+  withinNodeGrantScope,
+} from '../../../packages/auth/src/business-access';
+import { registerAccessCenter } from './access-center';
+import { assertServiceOpen } from '../../../packages/auth/src/service-policy';
 import type { TokenPayload } from 'google-auth-library';
 import Fastify, { type FastifyRequest } from 'fastify';
 import cookie from '@fastify/cookie';
@@ -14,11 +25,22 @@ import {
   writable,
   sourceSchema,
   aiSchema,
+  aiProviderSchema,
+  anthropicApiEnabled,
   serverSchema,
   locationSchema,
   type User,
 } from '../../../packages/shared/src';
 import { token, hash, seal, unseal } from '../../../packages/shared/src/crypto';
+import { toNotification } from '../../../packages/shared/src/notifications';
+import {
+  nodeInSubscriptionContent,
+  nodeStateFlagsOf,
+} from '../../../packages/shared/src/admin-nodes';
+import {
+  SUBSCRIPTION_DOWNLOAD_FORMATS,
+  normalizeSubscriptionFormat,
+} from '../../../packages/shared/src/subscription-format';
 import {
   authenticate,
   createSession,
@@ -37,16 +59,22 @@ import {
   validateUrl,
   resolvePublic,
 } from '../../../packages/subscription/src/network';
+import { registerLocationTools } from './location-tools';
 import { registerNodes } from './nodes';
+import { registerWorkspace } from './workspace';
 import { registerSsh } from './ssh';
 import { registerAdmin } from './admin';
 import { registerAi } from './ai';
+import { registerPlatformAi } from './platform-ai';
+import { registerPlatformChat } from './platform-chat';
 import {
   beginOwnerCredential,
   completeOwnerCredential,
   ownerSetupAvailable,
 } from '../../../packages/auth/src/owner';
 import { publicOrigin } from '../../../packages/auth/src/urls';
+import { completeMemberGoogleLink } from '../../../packages/auth/src/member';
+import { registerMemberAuth } from './member-auth';
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -65,31 +93,66 @@ function publicRow(row: any) {
     id: row.id,
     ownerId: row.owner_id,
     ...row.data,
-    credentialConfigured: !!row.secret,
+    credentialConfigured: !!(row.secret ?? row.anthropic_secret),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
 }
+async function authorizedNodeRows(
+  user: Awaited<ReturnType<typeof resolveAccess>>,
+  db: ISql,
+) {
+  const owner = user.id;
+  const rows =
+    await db`select n.*,s.data as source_data,s.owner_id as source_owner,u.role as source_role,g.data as grant_data from nodes n join node_sources s on s.id=n.source_id join users u on u.id=s.owner_id left join node_group_grants g on g.source_id=s.id and g.user_id=${owner} and g.revoked_at is null where n.revoked_at is null and s.revoked_at is null and not u.disabled and u.deleted_at is null and (s.owner_id=${owner} or g.id is not null or (u.role in ('Owner','Admin') and s.id=any(${user._access.subscriptionSources as string[]}::uuid[])))`;
+  return rows.filter(
+    (row) =>
+      sourceAllowed(
+        user,
+        row.source_id,
+        row.data.group || row.source_data.group || '',
+      ) &&
+      withinNodeGrantScope(
+        row.grant_data,
+        row.id,
+        row.data.group || row.source_data.group || '',
+      ) &&
+      ((user._access.base.node && row.source_owner === owner) ||
+        ((row.source_data.kind === 'OWNED_NODE' ||
+          (row.source_data.authorized === true &&
+            row.source_data.redistributionAuthorized === true &&
+            row.source_data.authorizationReference?.trim())) &&
+          ((user._access.base.node &&
+            row.grant_data &&
+            activeGrant(row.grant_data)) ||
+            (['Owner', 'Admin'].includes(row.source_role) &&
+              user._access.subscriptionSources.includes(row.source_id))))) &&
+      row.source_data.enabled &&
+      !row.source_data.demo &&
+      row.data.enabled !== false &&
+      (!row.source_data.expiresAt ||
+        new Date(row.source_data.expiresAt) > new Date()),
+  );
+}
 export async function visibleNodes(owner: string) {
-  const [user] =
-    await sql`select node_limit,subscription_enabled from users where id=${owner} and not disabled and deleted_at is null`;
-  if (!user?.subscription_enabled) return [];
+  const [rawUser] =
+    await sql`select * from users where id=${owner} and not disabled and deleted_at is null`;
+  const user = rawUser ? await resolveAccess(rawUser) : null;
+  if (!user?.subscription_enabled || !capabilityAllowed(user, 'node'))
+    return [];
   const [profile] =
     await sql`select data from subscription_profiles where owner_id=${owner} and revoked_at is null order by updated_at desc limit 1`;
   const filter = profile?.data || {};
-  const rows =
-    await sql`select n.*,s.data as source_data from nodes n join node_sources s on s.id=n.source_id join users u on u.id=s.owner_id where n.revoked_at is null and s.revoked_at is null and not u.disabled and u.deleted_at is null and (s.owner_id=${owner} or ((s.data->>'kind'='OWNED_NODE' or (s.data->>'authorized'='true' and s.data->>'redistributionAuthorized'='true' and length(trim(coalesce(s.data->>'authorizationReference','')))>0)) and exists(select 1 from node_group_grants g where g.source_id=s.id and g.user_id=${owner} and g.revoked_at is null)))`;
-  const nodes = rows
+  const nodes = (await authorizedNodeRows(user, sql))
     .filter(
       (row) =>
-        row.source_data.enabled &&
-        !row.source_data.demo &&
-        row.data.enabled !== false &&
-        (!row.source_data.expiresAt ||
-          new Date(row.source_data.expiresAt) > new Date()) &&
+        nodeInSubscriptionContent(nodeStateFlagsOf(row.source_data)) &&
         (!filter.country ||
           (row.data.country || row.source_data.country) === filter.country) &&
         (!filter.protocol || row.data.protocol === filter.protocol) &&
+        (!Array.isArray(filter.nodeIds) ||
+          !filter.nodeIds.length ||
+          filter.nodeIds.includes(row.id)) &&
         (!filter.group ||
           (row.data.group || row.source_data.group || row.source_data.kind) ===
             filter.group),
@@ -108,6 +171,18 @@ export async function visibleNodes(owner: string) {
 }
 function sharedCookieDomain() {
   return process.env.COOKIE_DOMAIN ? { domain: process.env.COOKIE_DOMAIN } : {};
+}
+function visiblePersonalAccount(
+  table: string,
+  role: Parameters<typeof isAdmin>[0],
+  provider: unknown,
+) {
+  return (
+    table !== 'ai_accounts' ||
+    !platformAccountsEnabled() ||
+    isAdmin(role) ||
+    provider === 'ANTHROPIC_API'
+  );
 }
 export async function buildApp() {
   const app = Fastify({
@@ -131,6 +206,9 @@ export async function buildApp() {
     },
   });
   await app.register(rateLimit, {
+    ...(process.env.NODE_ENV === 'development' && process.env.API_PREVIEW_SOCKET
+      ? { keyGenerator: (req: FastifyRequest) => req.ip ?? 'private-preview' }
+      : {}),
     max: process.env.NODE_ENV === 'development' ? 3000 : 120,
     timeWindow: '1 minute',
   });
@@ -181,15 +259,51 @@ export async function buildApp() {
     )
       return;
     if (!path.startsWith('/api/')) return;
-    const actor = await authenticate(req.cookies.fafa_session);
-    if (!actor) throw new AppError(401, 'UNAUTHENTICATED', '请先登录');
+    const identity = await authenticate(req.cookies.fafa_session);
+    if (!identity) throw new AppError(401, 'UNAUTHENTICATED', '请先登录');
+    const actor = await resolveAccess(identity);
     req.actor = actor;
+    if (
+      platformAccountsEnabled() &&
+      !isAdmin(actor.role) &&
+      /^\/api\/ai_accounts(\/|$)/.test(path)
+    )
+      throw new AppError(403, 'AI_PLATFORM_ONLY', '请使用平台 AI 服务');
+    const capability = /^\/api\/(servers|server_connections)(\/|$)/.test(path)
+      ? 'server'
+      : /^\/api\/(ai|ai_accounts)(\/|$)/.test(path)
+        ? 'codex'
+        : /^\/api\/(subscription|node_sources|nodes|node-import|shared-sources)(\/|$)/.test(
+              path,
+            )
+          ? 'node'
+          : undefined;
+    if (
+      capability ||
+      /^\/api\/(location-tools|location_presets)(\/|$)/.test(path)
+    )
+      await assertServiceOpen(actor);
+    if (capability && !capabilityAllowed(actor, capability))
+      throw new AppError(
+        403,
+        'CAPABILITY_REQUIRED',
+        '此功能尚未授权或试用已到期，请联系管理员',
+      );
     if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
       if (
         !origins.includes(req.headers.origin || '') ||
         req.headers['x-csrf-token'] !== actor.csrf
       )
         throw new AppError(403, 'CSRF', '安全验证失败，请刷新页面');
+      if (
+        /^\/api\/(node-import|node_sources|nodes)(\/|$)/.test(path) &&
+        !isAdmin(actor.role)
+      )
+        throw new AppError(
+          403,
+          'ADMIN_NODE_MANAGEMENT',
+          '节点由管理员统一添加和管理',
+        );
       if (
         (req.url.startsWith('/api/node-import') ||
           req.url.startsWith('/api/node_sources') ||
@@ -232,15 +346,20 @@ export async function buildApp() {
     await sql`select 1`;
     return { status: 'ready' };
   });
-  const setSession = async (reply: any, user: User) => {
-    const s = await createSession(user);
+  const setSession = async (
+    reply: any,
+    user: User,
+    expectedPasswordHash?: string,
+    remember = true,
+  ) => {
+    const s = await createSession(user, expectedPasswordHash);
     reply.setCookie('fafa_session', s.raw, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
       ...sharedCookieDomain(),
       path: '/',
-      maxAge: 604800,
+      ...(remember ? { maxAge: 604800 } : {}),
     });
     return { user, csrf: s.csrf, demo: process.env.DEMO_MODE === 'true' };
   };
@@ -271,18 +390,22 @@ export async function buildApp() {
       return setSession(reply, u as User);
     },
   );
-  const startGoogle = async (
-    reply: any,
-    credential?: string,
-    app: 'web' | 'admin' = 'web',
-  ) => {
+  // Google 登录来源与绑定一并保留：普通登录按 app 回前台/后台，
+  // Member 绑定按 memberLink 回 /member/account，Owner 初始化按
+  // ownerCredential 走原流程；三者不得互相冒充（整合 PR #4 + PR #2）。
+  type GoogleStartOptions = {
+    app?: 'web' | 'admin';
+    ownerCredential?: string;
+    memberLink?: string;
+  };
+  const startGoogle = async (reply: any, options: GoogleStartOptions = {}) => {
     if (!process.env.GOOGLE_CLIENT_ID)
       throw new AppError(503, 'GOOGLE_UNCONFIGURED', 'Google 登录尚未配置');
     const state = token(),
       nonce = token(),
       verifier = token();
-    const ownerCredential = credential
-      ? await beginOwnerCredential(credential, state)
+    const ownerCredential = options.ownerCredential
+      ? await beginOwnerCredential(options.ownerCredential, state)
       : undefined;
     const flow = {
       state,
@@ -290,7 +413,8 @@ export async function buildApp() {
       verifier,
       at: Date.now(),
       ownerCredential,
-      app,
+      app: options.app ?? 'web',
+      memberLink: options.memberLink,
     };
     reply.setCookie(
       'fafa_oidc',
@@ -319,7 +443,7 @@ export async function buildApp() {
     const { app } = z
       .object({ app: z.enum(['web', 'admin']).optional() })
       .parse(req.query);
-    return reply.redirect(await startGoogle(reply, undefined, app ?? 'web'));
+    return reply.redirect(await startGoogle(reply, { app: app ?? 'web' }));
   });
   app.post(
     '/auth/owner/start',
@@ -334,7 +458,12 @@ export async function buildApp() {
           app: z.enum(['web', 'admin']).optional(),
         })
         .parse(req.body);
-      return { url: await startGoogle(reply, credential, app ?? 'web') };
+      return {
+        url: await startGoogle(reply, {
+          ownerCredential: credential,
+          app: app ?? 'web',
+        }),
+      };
     },
   );
   app.get('/auth/google/callback', async (req, reply) => {
@@ -381,10 +510,17 @@ export async function buildApp() {
       p.nonce !== flow.nonce
     )
       throw new AppError(403, 'OIDC_NONCE', '登录验证失败');
-    const user = flow.ownerCredential
-      ? await completeOwnerCredential(flow.ownerCredential, flow.state, p)
-      : await activateGoogle(p);
+    const user = flow.memberLink
+      ? await completeMemberGoogleLink(
+          flow.memberLink,
+          hash(req.cookies.fafa_session || ''),
+          p,
+        )
+      : flow.ownerCredential
+        ? await completeOwnerCredential(flow.ownerCredential, flow.state, p)
+        : await activateGoogle(p);
     await setSession(reply, user);
+    if (flow.memberLink) return reply.redirect(origins[0] + '/member/account');
     return reply.redirect(flow.app === 'admin' ? origins[1] : origins[0]);
   });
   app.get('/api/me', async (req) => ({
@@ -398,6 +534,19 @@ export async function buildApp() {
     csrf: req.actor.csrf,
     demo: process.env.DEMO_MODE === 'true',
   }));
+  // Stage D: user notifications = owner-scoped audit trail, no demo data.
+  app.get('/api/notifications', async (req) => {
+    const rows = await sql<
+      {
+        id: string;
+        action: string;
+        target_id: string | null;
+        correlation_id: string | null;
+        created_at: string;
+      }[]
+    >`select id, action, target_id, correlation_id, created_at from audit_events where owner_id = ${req.actor.id} order by created_at desc limit 50`;
+    return rows.map((row) => toNotification(row));
+  });
   app.post('/api/logout', async (req, reply) => {
     await sql`update sessions set revoked_at=now() where id=${req.actor.session_id}`;
     reply.clearCookie('fafa_session', { path: '/', ...sharedCookieDomain() });
@@ -433,7 +582,11 @@ export async function buildApp() {
     app.get(`/api/${table}`, async (req) =>
       (
         await sql`select * from ${sql(table)} where owner_id=${req.actor.id} and revoked_at is null order by created_at desc`
-      ).map(publicRow),
+      )
+        .filter((row) =>
+          visiblePersonalAccount(table, req.actor.role, row.data.provider),
+        )
+        .map(publicRow),
     );
     app.get(`/api/${table}/:id`, async (req) => {
       const r = await own(table, z.uuid().parse(params(req).id), req.actor.id);
@@ -441,6 +594,8 @@ export async function buildApp() {
         await audit(req.actor.id, 'access.denied', params(req).id, req.id);
         throw notFound();
       }
+      if (!visiblePersonalAccount(table, req.actor.role, r.data.provider))
+        throw notFound();
       return publicRow(r);
     });
     const save = async (req: FastifyRequest) => {
@@ -485,14 +640,35 @@ export async function buildApp() {
         data.syncRevision = token();
       }
       if (table === 'ai_accounts') {
+        const provider = aiProviderSchema.parse(
+          existing
+            ? (existing.data.provider ?? 'OPENAI_API')
+            : (data.provider ?? 'OPENAI_API'),
+        );
+        if (!visiblePersonalAccount(table, req.actor.role, provider))
+          throw new AppError(403, 'AI_PLATFORM_ONLY', '请使用平台 AI 服务');
+        if (data.provider && data.provider !== provider)
+          throw new AppError(
+            400,
+            'AI_PROVIDER_MISMATCH',
+            '现有账户不能更换提供商',
+          );
+        if (provider === 'ANTHROPIC_API' && !anthropicApiEnabled())
+          throw new AppError(503, 'CLAUDE_API_DISABLED', 'Claude API 暂未开放');
         secret = seal(data.apiKey);
         data.status = 'UNVERIFIED';
-        data.provider = 'OPENAI_API';
+        data.provider = provider;
+        data.selected = existing?.data.selected === true;
       }
       if (table === 'server_connections') {
         secret = seal(data.credential);
         data.status = 'UNKNOWN';
       }
+      const anthropicSecret =
+        table === 'ai_accounts' && data.provider === 'ANTHROPIC_API'
+          ? secret
+          : null;
+      if (anthropicSecret) secret = null;
       const content = data.content;
       let parsed: Node[] | null;
       try {
@@ -521,6 +697,10 @@ export async function buildApp() {
         } else {
           [row] =
             await tx`insert into ${tx(table)}(owner_id,data,secret) values(${req.actor.id},${tx.json(data)},${secret ? tx.json(secret) : null}) returning *`;
+        }
+        if (anthropicSecret) {
+          [row] =
+            await tx`update ai_accounts set anthropic_secret=${tx.json(anthropicSecret)} where id=${row.id} and owner_id=${req.actor.id} returning *`;
         }
         if (table === 'node_sources') {
           await tx`update background_jobs set data=data || '{"status":"CANCELLED"}'::jsonb,updated_at=now() where source_id=${row.id} and data->>'status' in ('QUEUED','RUNNING')`;
@@ -552,8 +732,12 @@ export async function buildApp() {
       const id = z.uuid().parse(params(req).id);
       await sql.begin(async (tx) => {
         const [row] =
-          await tx`select id from ${tx(table)} where id=${id} and owner_id=${req.actor.id} and revoked_at is null for update`;
-        if (!row) throw notFound();
+          await tx`select id,data from ${tx(table)} where id=${id} and owner_id=${req.actor.id} and revoked_at is null for update`;
+        if (
+          !row ||
+          !visiblePersonalAccount(table, req.actor.role, row.data.provider)
+        )
+          throw notFound();
         await tx`update ${tx(table)} set revoked_at=now() where id=${id} and owner_id=${req.actor.id}`;
         if (table === 'node_sources')
           await tx`update background_jobs set data=data || '{"status":"CANCELLED"}'::jsonb,updated_at=now() where source_id=${id} and data->>'status' in ('QUEUED','RUNNING')`;
@@ -650,6 +834,7 @@ export async function buildApp() {
           .enum(['', 'ss', 'vmess', 'vless', 'trojan', 'hysteria2'])
           .default(''),
         group: z.string().max(80).default(''),
+        nodeIds: z.array(z.uuid()).max(5000).optional(),
       })
       .parse(req.body);
     await sql.begin(async (tx) => {
@@ -661,7 +846,7 @@ export async function buildApp() {
   });
   app.get('/api/shared-sources', async (req) =>
     (
-      await sql`select s.* from node_sources s join node_group_grants g on g.source_id=s.id join users u on u.id=s.owner_id where g.user_id=${req.actor.id} and g.revoked_at is null and s.revoked_at is null and not u.disabled and u.deleted_at is null and (s.data->>'kind'='OWNED_NODE' or (s.data->>'authorized'='true' and s.data->>'redistributionAuthorized'='true' and length(trim(coalesce(s.data->>'authorizationReference','')))>0))`
+      await sql`select s.* from node_sources s join node_group_grants g on g.source_id=s.id join users u on u.id=s.owner_id where g.user_id=${req.actor.id} and g.revoked_at is null and (not (g.data ? 'expiresAt') or (g.data->>'expiresAt')::timestamptz>now()) and s.revoked_at is null and not u.disabled and u.deleted_at is null and (s.data->>'kind'='OWNED_NODE' or (s.data->>'authorized'='true' and s.data->>'redistributionAuthorized'='true' and length(trim(coalesce(s.data->>'authorizationReference','')))>0))`
     ).map((r) => ({ ...publicRow(r), shared: true })),
   );
   app.get(
@@ -672,6 +857,31 @@ export async function buildApp() {
   app.post('/api/subscription/rotate', async (req) => {
     const raw = token();
     await sql.begin(async (tx) => {
+      const [identity] =
+        await tx`SELECT * FROM users WHERE id=${req.actor.id} FOR UPDATE`;
+      const user = identity ? await resolveAccess(identity, tx) : null;
+      if (
+        !user ||
+        !user.subscription_enabled ||
+        !capabilityAllowed(user, 'node')
+      )
+        throw new AppError(
+          403,
+          'CAPABILITY_REQUIRED',
+          '订阅权限尚未开放或已到期',
+        );
+      await assertServiceOpen(user, tx);
+      if (
+        Number(user.node_limit) < 1 ||
+        !(await authorizedNodeRows(user, tx)).filter((row) =>
+          nodeInSubscriptionContent(nodeStateFlagsOf(row.source_data)),
+        ).length
+      )
+        throw new AppError(
+          403,
+          'NO_SUBSCRIPTION_NODES',
+          '尚无已授权的可订阅节点',
+        );
       await tx`update subscription_tokens set revoked_at=now() where owner_id=${req.actor.id} and revoked_at is null`;
       await tx`insert into subscription_tokens(owner_id,token_hash,data) values(${req.actor.id},${hash(raw)},${tx.json({ enabled: true })})`;
     });
@@ -697,15 +907,32 @@ export async function buildApp() {
       async (req, reply) => {
         const raw = params(req).token;
         const [t] =
-          await sql`select t.* from subscription_tokens t join users u on u.id=t.owner_id where t.token_hash=${hash(raw)} and t.revoked_at is null and not u.disabled and u.deleted_at is null and u.subscription_enabled and t.data->>'enabled'='true'`;
+          await sql`select t.*,u.role,u.node_access_enabled,u.node_access_until from subscription_tokens t join users u on u.id=t.owner_id where t.token_hash=${hash(raw)} and t.revoked_at is null and not u.disabled and u.deleted_at is null and u.subscription_enabled and t.data->>'enabled'='true'`;
         if (!t) throw notFound();
-        const { format } = z
+        const [rawUser] =
+          await sql`SELECT * FROM users WHERE id=${t.owner_id} AND NOT disabled AND deleted_at IS NULL`;
+        const user = rawUser ? await resolveAccess(rawUser) : null;
+        if (
+          !user ||
+          !user.subscription_enabled ||
+          !capabilityAllowed(user, 'node') ||
+          !activeGrant({ expiresAt: t.data.expiresAt })
+        )
+          throw new AppError(
+            403,
+            'CAPABILITY_REQUIRED',
+            '订阅授权已撤销或到期',
+          );
+        await assertServiceOpen(user);
+        const { format: rawFormat } = z
           .object({
-            format: z
-              .enum(['mihomo', 'sing-box', 'uri', 'base64'])
-              .default('mihomo'),
+            format: z.enum(SUBSCRIPTION_DOWNLOAD_FORMATS).default('mihomo'),
           })
           .parse(req.query);
+        // `clash` 是 `mihomo`（Mihomo/Clash YAML）的別名；`shadowrocket` 與
+        // `v2rayn` 對映到既有的 `uri` 與 `base64` 匯出格式（見
+        // packages/shared/src/subscription-format.ts）。
+        const format = normalizeSubscriptionFormat(rawFormat);
         const nodes = await visibleNodes(t.owner_id);
         reply.type(
           format === 'sing-box'
@@ -736,9 +963,19 @@ export async function buildApp() {
     await audit(req.actor.id, 'data.deletion_requested');
     return { message: '删除请求已登记，请联系管理员核验并处理' };
   });
+  await registerMemberAuth(app, {
+    origins,
+    setSession,
+    startGoogleLink: (reply, id) => startGoogle(reply, { memberLink: id }),
+  });
+  await registerLocationTools(app);
   await registerNodes(app);
+  await registerWorkspace(app);
   await registerAdmin(app);
+  await registerAccessCenter(app);
   await registerAi(app, origins);
+  await registerPlatformAi(app);
+  await registerPlatformChat(app);
   await registerSsh(app, origins);
   return app;
 }
