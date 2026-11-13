@@ -269,7 +269,7 @@ function CredentialForm({
           )}
         </p>
       )}
-      {mode === 'login' && <GoogleSignIn />}
+      {(mode === 'login' || mode === 'verify') && <GoogleSignIn />}
       <AuthLegal />
     </form>
   );
