@@ -33,7 +33,6 @@
 }
 body {
   margin: 0;
-  min-width: 320px;
   background:
     radial-gradient(ellipse at 90% 4%, #c4aff6a8, transparent 45%),
     radial-gradient(ellipse at 10% 55%, #afe7ffc4, transparent 47%),
@@ -1816,7 +1815,7 @@ td .actions {
     justify-content: center;
     flex-direction: column;
     gap: 5px;
-    color: var(--primary);
+    color: var(--text);
     border: 1px solid transparent;
     border-radius: 14px;
     font-size: 10px;
@@ -1917,6 +1916,9 @@ td .actions {
     gap: 4px;
   }
   .top-actions .avatar {
+    display: none;
+  }
+  .mobile-brand .brand-pro {
     display: none;
   }
   .page {
