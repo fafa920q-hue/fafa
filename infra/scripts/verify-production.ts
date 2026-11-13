@@ -60,18 +60,25 @@ for (const [name, engine, options] of [
         ),
       );
       // The old production HTML inlines the theme-setting script twice;
-      // each triggers this generic CSP refusal (Playwright's message text
-      // does not include the script hash, so match the refusal itself).
-      // The new version loads theme.js as an external file, so these
-      // disappear after deployment. Allow 0 (new version) or exactly 2
-      // (old version, one per inline copy); any other count, or any other
-      // console error, still fails the check.
-      const cspRefusal =
-        "Refused to execute a script because its hash, its nonce, or 'unsafe-inline' does not appear in the script-src directive";
-      const cspErrors = errors.filter((e) => e.includes(cspRefusal));
+      // each triggers a CSP refusal. Chromium and WebKit word it
+      // differently, so match both: Chromium says "Refused to execute a
+      // script because its hash ...", WebKit says "Executing inline script
+      // violates the following Content Security Policy directive". The new
+      // version loads theme.js as an external file, so these disappear
+      // after deployment. Allow 0 (new version) or exactly 2 (old version,
+      // one per inline copy); any other count, or any other console error,
+      // still fails the check.
+      const isCspRefusal = (e: string) =>
+        e.includes(
+          "Refused to execute a script because its hash, its nonce, or 'unsafe-inline' does not appear in the script-src directive",
+        ) ||
+        e.includes(
+          'Executing inline script violates the following Content Security Policy directive',
+        );
+      const cspErrors = errors.filter(isCspRefusal);
       assert.ok(cspErrors.length === 0 || cspErrors.length === 2);
       assert.deepEqual(
-        errors.filter((e) => !e.includes(cspRefusal)),
+        errors.filter((e) => !isCspRefusal(e)),
         [],
       );
       const file = directory + '/' + name + '-' + label + '.png';
