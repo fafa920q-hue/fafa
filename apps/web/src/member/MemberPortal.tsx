@@ -120,7 +120,7 @@ function CredentialForm({
       form.reset();
       if (mode === 'login') {
         onAuthenticated?.(result);
-        navigate(onAuthenticated ? '/' : '/member/account', { replace: true });
+        navigate('/', { replace: true });
       } else if (mode === 'reset') {
         action.current = '';
         navigate('/member/login?reset=success', { replace: true });
