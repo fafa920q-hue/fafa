@@ -12,7 +12,15 @@ flock -n 9
 [[ -f .env.production && ! -L .env.production ]]
 if [[ "$deployment_action" == deploy ]]; then chmod 600 .env.production; fi
 [[ "$(stat -c %a .env.production)" == 600 ]]
-[[ "$(repository_git rev-parse HEAD)" == "$deployment_sha" ]]
+# The deployment SHA must be an ancestor of HEAD. HEAD may be the
+# deployment commit itself, or a later manifest-update commit whose
+# deployments/ghcr-images.json points at this SHA (the manifest match is
+# verified below). This keeps the working tree honest without forcing the
+# manifest update into the deployment commit.
+if ! repository_git merge-base --is-ancestor "$deployment_sha" HEAD; then
+  printf 'PRE_DEPLOY_FAIL: deployment SHA %s is not an ancestor of HEAD %s\n' "$deployment_sha" "$(repository_git rev-parse HEAD)" >&2
+  exit 1
+fi
 [[ -z "$(repository_git status --porcelain --untracked-files=no)" ]]
 if [[ "$(repository_git rev-parse --is-shallow-repository)" == true ]]; then repository_git fetch --unshallow origin; fi
 if [[ -e .deployed-sha ]]; then
@@ -184,6 +192,10 @@ ghcr_pull_list="$(python3 infra/deploy/read_ghcr_manifest.py "$ghcr_manifest")" 
 ghcr_registry="$(printf '%s' "$ghcr_pull_list" | awk '$1=="registry" {print $2; exit}')"
 ghcr_image_tag_sha="$(printf '%s' "$ghcr_pull_list" | awk '$1=="image_tag_sha" {print $2; exit}')"
 [[ -n "$ghcr_registry" && -n "$ghcr_image_tag_sha" ]] || { printf 'PRE_DEPLOY_FAIL: GHCR manifest output is malformed\n' >&2; exit 1; }
+# The manifest must list images built from exactly the deployment SHA.
+# Without this, a stale manifest would deploy the wrong images while
+# recording .deployed-sha as the deployment SHA.
+[[ "$ghcr_image_tag_sha" == "$deployment_sha" ]] || { printf 'PRE_DEPLOY_FAIL: GHCR manifest image_tag_sha %s does not match deployment SHA %s\n' "$ghcr_image_tag_sha" "$deployment_sha" >&2; exit 1; }
 printf 'GHCR image source: registry=%s images built from %s (fixed manifest digests)\n' "$ghcr_registry" "$ghcr_image_tag_sha"
 # GHCR login: only for ghcr.io; a local registry (isolation harness) needs no
 # auth. The token file checks mirror the Resend mail secret (regular file, not
