@@ -1,0 +1,45 @@
+{
+  "schemaVersion": "2.2",
+  "description": "FAFA ONE approved commit deployment only; no arbitrary command parameter",
+  "parameters": {
+    "CommitSHA": {
+      "type": "String",
+      "allowedPattern": "^[0-9a-f]{40}$"
+    },
+    "Action": {
+      "type": "String",
+      "allowedValues": ["check", "deploy"],
+      "default": "check"
+    }
+  },
+  "mainSteps": [
+    {
+      "action": "aws:runShellScript",
+      "name": "deployApprovedCommit",
+      "inputs": {
+        "timeoutSeconds": "2400",
+        "runCommand": [
+          "set -eu",
+          "cd /opt/fafa-one",
+          "repository_uid=\"$(stat -c %u .git)\"",
+          "if [ \"$(id -u)\" != \"$repository_uid\" ]; then test \"$(id -u)\" = 0; repository_user=\"$(getent passwd \"$repository_uid\" | cut -d: -f1)\"; test -n \"$repository_user\"; command -v runuser >/dev/null; git() { runuser -u \"$repository_user\" -- git \"$@\"; }; fi",
+          "test -f .env.production",
+          "test ! -L .env.production",
+          "if [ \"{{ Action }}\" = \"deploy\" ]; then chmod 600 .env.production; fi",
+          "test \"$(stat -c %a .env.production)\" = 600",
+          "if [ \"{{ Action }}\" = \"check\" ]; then git rev-parse HEAD; docker ps --all --filter label=com.docker.compose.project=fafa-one --format json; exit 0; fi",
+          "test -z \"$(git status --porcelain --untracked-files=no)\"",
+          "remote=\"$(git remote get-url origin)\"",
+          "case \"$remote\" in git@github.com:fafa920q-hue/fafa|git@github.com:fafa920q-hue/fafa.git|https://github.com/fafa920q-hue/fafa|https://github.com/fafa920q-hue/fafa.git) ;; *) echo \"Unapproved repository origin\" >&2; exit 1;; esac",
+          "git fetch origin feat/fafa-one-control-panel",
+          "git merge-base --is-ancestor \"{{ CommitSHA }}\" origin/feat/fafa-one-control-panel",
+          "git checkout --detach \"{{ CommitSHA }}\"",
+          "umask 077",
+          "mkdir -p /opt/fafa-one/deployments",
+          "deployment_log=\"$(mktemp \"/opt/fafa-one/deployments/{{ CommitSHA }}-XXXXXX.log\")\"",
+          "if bash infra/scripts/deploy-production.sh \"{{ CommitSHA }}\" deploy > \"$deployment_log\" 2>&1; then tail -n 1 \"$deployment_log\"; else echo \"Deployment failed; protected server log retained, no raw output copied to SSM.\"; exit 1; fi"
+        ]
+      }
+    }
+  ]
+}

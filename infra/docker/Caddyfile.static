@@ -1,0 +1,21 @@
+{
+ admin off
+ auto_https off
+}
+:8080 {
+ header {
+  Content-Security-Policy "default-src 'self'; connect-src 'self' https://fafa888.uk wss://fafa888.uk; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; font-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+  X-Content-Type-Options nosniff
+  Referrer-Policy no-referrer
+  X-Robots-Tag "noindex, nofollow"
+ }
+ @api path /api /api/* /auth /auth/* /subscription /subscription/* /health /ready
+ handle @api {
+  reverse_proxy api:4000
+ }
+ handle {
+  root * /srv
+  try_files {path} /index.html
+  file_server
+ }
+}

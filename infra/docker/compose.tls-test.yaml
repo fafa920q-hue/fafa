@@ -1,0 +1,11 @@
+# Isolated CI only; never use this override in production.
+services:
+  api:
+    environment:
+      WEB_ORIGIN: https://fafa888.uk
+      ADMIN_ORIGIN: https://a.fafa888.uk
+      API_PUBLIC_URL: https://fafa888.uk
+      GOOGLE_REDIRECT_URI: https://fafa888.uk/auth/google/callback
+      GOOGLE_CLIENT_ID: fixture.apps.googleusercontent.com
+      GOOGLE_CLIENT_SECRET: fixture-not-a-real-secret
+      COOKIE_DOMAIN: ''

@@ -1,0 +1,28 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": "ssm:SendCommand",
+      "Resource": [
+        "arn:aws:ssm:__REGION__:__ACCOUNT_ID__:document/FAFAOne-Deploy",
+        "arn:aws:ec2:__REGION__:__ACCOUNT_ID__:instance/__INSTANCE_ID__"
+      ]
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "ssm:GetCommandInvocation",
+        "ssm:DescribeInstanceInformation",
+        "ec2:DescribeInstances",
+        "ec2:DescribeSecurityGroups"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestedRegion": "__REGION__"
+        }
+      }
+    }
+  ]
+}

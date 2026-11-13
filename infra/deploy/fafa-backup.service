@@ -1,0 +1,11 @@
+[Unit]
+Description=FAFA ONE encrypted PostgreSQL backup
+Requires=docker.service
+After=docker.service
+[Service]
+Type=oneshot
+UMask=0077
+ExecStart=/usr/bin/bash /opt/fafa-one/infra/scripts/backup-production.sh
+Nice=10
+IOSchedulingClass=idle
+NoNewPrivileges=true

@@ -1,0 +1,9 @@
+[Unit]
+Description=Daily FAFA ONE encrypted backup
+[Timer]
+OnCalendar=daily
+Persistent=true
+RandomizedDelaySec=30m
+Unit=fafa-backup.service
+[Install]
+WantedBy=timers.target
