@@ -34,26 +34,35 @@ import {
   readAiQuota,
 } from '../../../packages/auth/src/service-policy';
 
-const accountSchema = z.object({
+// 服务账户编号：OpenAI Admin API（List 与 Create 服务账户）返回的 id 均
+// 以 user- 开头（例如 user-TEST123），文档示例 svc_acct_abc
+// 只是占位写法，真实接口并不返回 svc_acct_。两种前缀都接受；仍拒绝
+// 其他前缀。凭据与标识字段先去首尾空白再做格式校验：从 OpenAI 控制台
+// 粘贴时常带换行/空格，未 trim 会直接报 400。trim 后仍拒绝 sk-admin-、
+// 过短、错误前缀等非法格式。导出以便单元测试直接引用。
+export const accountSchema = z.object({
   priority: z.number().int().min(1).max(1000).default(100),
   allowedUsers: audience.default(null),
   name: z.string().trim().min(1).max(100),
   note: z.string().max(500),
   projectId: z
     .string()
+    .trim()
     .regex(/^proj_[a-zA-Z0-9_-]+$/)
     .max(100),
   serviceAccountId: z
     .string()
-    .regex(/^svc_acct_[a-zA-Z0-9_-]+$/)
+    .trim()
+    .regex(/^(?:svc_acct_|user-)[A-Za-z0-9_-]+$/)
     .max(100),
   limits,
   models: modelList,
   enabled: z.boolean(),
   concurrency: z.number().int().min(1).max(20),
 });
-const apiKey = z
+export const apiKey = z
   .string()
+  .trim()
   .regex(/^sk-(?!admin-)[A-Za-z0-9_-]{16,}$/)
   .max(512);
 function owner(actor: any) {

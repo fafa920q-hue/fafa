@@ -14,7 +14,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run tests/unit.test.ts tests/domain.test.ts tests/nodes.test.ts tests/backup.test.ts tests/wloc.test.ts tests/wloc-device.test.ts",
+    "test": "vitest run tests/unit.test.ts tests/domain.test.ts tests/nodes.test.ts tests/backup.test.ts tests/wloc.test.ts tests/wloc-device.test.ts tests/platform-ai-validation.test.ts",
     "test:integration": "tsx infra/scripts/integration.ts",
     "test:e2e": "playwright test",
     "build": "vite build --config apps/web/vite.config.ts && vite build --config apps/admin/vite.config.ts && tsc --noEmit",

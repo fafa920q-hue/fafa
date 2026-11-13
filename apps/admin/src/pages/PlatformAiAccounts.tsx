@@ -34,6 +34,9 @@ const keyField: Field = {
   label: '新项目服务账户 API Key',
   type: 'password',
   required: true,
+  // 格式要求与后端 accountSchema 的 apiKey 校验一致；粘贴时首尾空白
+  // 会被自动去掉，管理员密钥（sk-admin- 开头）不可用。
+  help: '以 sk- 开头、至少 16 位字符的服务账户密钥（不是 sk-admin- 管理员密钥）。从 OpenAI 控制台粘贴时首尾空格/换行会被自动去掉。',
 };
 const attest: Field = {
   name: 'confirmServiceAccount',
@@ -282,6 +285,9 @@ function Accounts({
                   name: 'serviceAccountId',
                   label: 'OpenAI Service Account ID',
                   required: true,
+                  // OpenAI Admin API 返回的服务账户编号以 user- 开头
+                  // （文档示例 svc_acct_ 只是占位写法），两种前缀都接受。
+                  help: '以 svc_acct_ 或 user- 开头的服务账户编号（不是显示名称或邮箱）。粘贴时首尾空格/换行会被自动去掉。',
                 },
                 keyField,
                 attest,
@@ -318,8 +324,18 @@ function Accounts({
           ...pickModels(available, editing?.models ?? available.slice(0, 1)),
         ]}
         onSubmit={async (d) => {
+          // 凭据字段先 trim 再提交，与后端 accountSchema 的 trim 一致。
           const payload = {
             ...d,
+            projectId:
+              typeof d.projectId === 'string'
+                ? d.projectId.trim()
+                : d.projectId,
+            serviceAccountId:
+              typeof d.serviceAccountId === 'string'
+                ? d.serviceAccountId.trim()
+                : d.serviceAccountId,
+            apiKey: typeof d.apiKey === 'string' ? d.apiKey.trim() : d.apiKey,
             note: d.note ?? '',
             priority: d.priority,
             allowedUsers: audienceIds(d.audience),
@@ -352,7 +368,11 @@ function Accounts({
           await request(
             base + '/accounts/' + rotate!.id + '/credential',
             'POST',
-            { action: 'rotate', ...d },
+            {
+              action: 'rotate',
+              ...d,
+              apiKey: typeof d.apiKey === 'string' ? d.apiKey.trim() : d.apiKey,
+            },
           );
           info.refresh();
         }}
