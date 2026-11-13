@@ -2570,3 +2570,9 @@ body {
     white-space: nowrap;
   }
 }
+/* The audit log table is a direct child of its card (unlike the user table,
+   which sits inside .table-wrap), so its nowrap cells widen the whole page
+   at 390px on iPhone. Let such a card scroll its table internally instead. */
+.card:has(> table) {
+  overflow-x: auto;
+}
