@@ -246,5 +246,5 @@ export function CodeRegistration() {
       <GoogleSignIn />
       <AuthLegal />
   </form>  
-  );
+   );
 }
