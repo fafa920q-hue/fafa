@@ -40,7 +40,13 @@ for (const [name, engine, options] of [
       // admin login card renders "G · 使用 Google 登录". Matching the shared
       // substring covers both without weakening the check (a Google sign-in
       // link must still be present and visible).
-      await page.getByRole('link', { name: '使用 Google 登录' }).waitFor();
+      // The web login page transiently renders a second, disabled Google
+      // link in the left card while /auth/config loads, then removes it;
+      // pin to the last match so the wait targets the stable link instead
+      // of the transient one.
+      await page
+        .getByRole('link', { name: '使用 Google 登录' })
+        .last.waitFor();
       assert.equal(
         await page
           .getByRole('button', { name: '管理员演示', exact: true })
