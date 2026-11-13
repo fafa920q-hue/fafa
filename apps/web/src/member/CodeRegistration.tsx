@@ -240,9 +240,11 @@ export function CodeRegistration() {
       </div>
       <p className="auth-help">
         已有账户？<Link to="/member/login">立即登录</Link>
+        {' · '}
+        <Link to="/member/forgot">忘记密码</Link>
       </p>
       <GoogleSignIn />
       <AuthLegal />
-    </form>
+    </form>  
   );
 }
