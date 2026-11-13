@@ -9,18 +9,18 @@
     'Microsoft YaHei',
     sans-serif;
   color: #172033;
-  background: #F6F7FB;
+  background: #f6f7fb;
   font-synthesis: none;
-  --primary: #6D5EF9;
-  --brand: #6D5EF9;
-  --bg: #F6F7FB;
+  --primary: #6d5ef9;
+  --brand: #6d5ef9;
+  --bg: #f6f7fb;
   --card: #ffffff;
   --secondary: #4d91ff;
   --text: #172033;
   --muted: #5a6478;
   --surface: #ffffff;
-  --solid: #F6F7FB;
-  --line: #DDE4EF;
+  --solid: #f6f7fb;
+  --line: #dde4ef;
   --input: #ffffff;
   --shadow: 0 10px 28px #586ac510;
   --danger: #b92e4c;
@@ -2478,13 +2478,13 @@ td .actions {
 /* FAFA ONE 3.0 design system - Stage D */
 :root,
 [data-theme='light'] {
-  --bg: #F6F7FB;
+  --bg: #f6f7fb;
   --card: #ffffff;
   --text: #172033;
   --muted: #5a6478;
-  --line: #DDE4EF;
-  --brand: #6D5EF9;
-  --primary: #6D5EF9;
+  --line: #dde4ef;
+  --brand: #6d5ef9;
+  --primary: #6d5ef9;
 }
 [data-theme='dark'] {
   --bg: #12141f;
