@@ -1,18 +1,18 @@
 {
-  "image_tag_sha": "d8f4e472eacc24204fd35c9baf54007ca0088ad0",
+  "image_tag_sha": "8325e042291202698cda0c0b45c9320919a2625c",
   "registry": "ghcr.io",
   "images": {
     "runtime": {
       "image": "ghcr.io/fafa920q-hue/fafa-runtime",
-      "digest": "sha256:688485b889ecf22b9d6c1c6b540762fc0b8dbba3db89fc1ccccccbe5673f398c"
+      "digest": "sha256:00d7bc4c75711c4ec2f190964d0b5c9ac9be01b21270e9b381a74a4d561a7275"
     },
     "web": {
       "image": "ghcr.io/fafa920q-hue/fafa-web",
-      "digest": "sha256:1c21c245d6bf22ada9822a95ccb2c629e3bdcc42b01a40bf52488f1d38f68145"
+      "digest": "sha256:81e0b717c967ca9c9095b108e3155bfa97443780ed6528341e6f3cbef30bb183"
     },
     "admin": {
       "image": "ghcr.io/fafa920q-hue/fafa-admin",
-      "digest": "sha256:61cda3bd4fc4de926f80d6ff403b3d8392c30b3e6d132bd1b7d85d5e41bd0d3a"
+      "digest": "sha256:a7bd9e276b2c773343ad8ffbf05fbba36a7254918b10935da8a52f6f3d1fa781"
     }
   }
 }
