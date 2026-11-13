@@ -33,8 +33,8 @@ describe('stage-d notifications', () => {
   });
   it('design system keeps the FAFA ONE 3.0 tokens', () => {
     const css = readFileSync('packages/ui/src/style.css', 'utf8');
-    for (const token of ['#6D5EF9', '#F6F7FB', '#172033', '#DDE4EF'])
-      expect(css).toContain(token);
+    for (const token of ['#6d5ef9', '#f6f7fb', '#172033', '#dde4ef'])
+      expect(css.toLowerCase()).toContain(token);
     expect(css).toContain("[data-theme='dark']");
   });
 });
