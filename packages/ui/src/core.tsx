@@ -63,7 +63,14 @@ export async function api<T = any>(
       body: body ? JSON.stringify(body) : undefined,
     });
     const data = await response.json();
-    if (!response.ok) throw new Error(data.message || '请求失败，请稍后重试');
+    if (!response.ok) {
+      // 后端 400 会附字段级 issues（见 server.ts 错误处理），挂到 Error 上，
+      // 表单可逐条展示具体是哪个字段不符合要求，而不是只有一句笼统提示。
+      const error = new Error(data.message || '请求失败，请稍后重试');
+      if (Array.isArray((data as any).issues))
+        (error as any).issues = (data as any).issues;
+      throw error;
+    }
     return data;
   } catch (error) {
     if (controller.signal.aborted)
@@ -678,8 +685,12 @@ export function FormDialog({
   const [busy, setBusy] = useState(false);
   const submitting = useRef(false);
   const [error, setError] = useState('');
+  const [issues, setIssues] = useState<{ path: string; message: string }[]>([]);
   useEffect(() => {
-    if (open) setError('');
+    if (open) {
+      setError('');
+      setIssues([]);
+    }
   }, [open]);
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -695,11 +706,13 @@ export function FormDialog({
     });
     setBusy(true);
     setError('');
+    setIssues([]);
     try {
       await onSubmit(data);
       onClose();
     } catch (e) {
       setError((e as Error).message);
+      if (Array.isArray((e as any).issues)) setIssues((e as any).issues);
     } finally {
       submitting.current = false;
       setBusy(false);
@@ -781,6 +794,15 @@ export function FormDialog({
           {error && (
             <p role="alert" className="form-error">
               {error}
+              {issues.length > 0 && (
+                <span>
+                  {issues.map((issue) => (
+                    <span key={issue.path} style={{ display: 'block' }}>
+                      {issue.path}：{issue.message}
+                    </span>
+                  ))}
+                </span>
+              )}
             </p>
           )}
           <div className="dialog-footer">

@@ -243,6 +243,18 @@ export async function buildApp() {
               ? '请求过于频繁，请稍后重试'
               : '请求未能完成，请检查配置后重试',
       correlationId: _req.id,
+      // 400 仍保留原 message 与 code（不影响已有客户端），同时附上字段级
+      // issues（path/code/message），前端可逐条展示具体是哪个字段不符合
+      // 要求，而不是只有一句笼统提示。
+      ...(err instanceof z.ZodError
+        ? {
+            issues: err.issues.map((issue) => ({
+              path: issue.path.join('.'),
+              code: issue.code,
+              message: issue.message,
+            })),
+          }
+        : {}),
     });
   });
   app.addHook('onRequest', async (req, reply) => {

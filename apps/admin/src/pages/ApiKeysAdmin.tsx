@@ -59,6 +59,21 @@ export function ApiKeysAdmin() {
   const [notice, setNotice] = useState('');
   const accounts = query.data?.accounts || [];
 
+  // 与后端 accountSchema / apiKey 校验一致：OpenAI Admin API 返回的服务
+  // 账户编号以 user- 开头（文档示例 svc_acct_ 只是占位写法），两种前缀
+  // 都接受。把后端 400 附带的字段级 issues 拼进提示，指出具体是哪个
+  // 字段不符合要求，而不是只有一句笼统的“输入内容不符合要求”。
+  const formatError = (e: any, fallback: string) => {
+    const issues = Array.isArray(e?.issues) ? e.issues : [];
+    const message = e?.message || fallback;
+    if (issues.length === 0) return message;
+    return (
+      message +
+      '：' +
+      issues.map((i: any) => `${i.path}：${i.message}`).join('；')
+    );
+  };
+
   async function toggleEnabled(account: AiAccount, enabled: boolean) {
     setBusy(true);
     setError('');
@@ -78,20 +93,59 @@ export function ApiKeysAdmin() {
       );
       query.refresh();
     } catch (e: any) {
-      setError(e?.message || '更新失敗');
+      setError(formatError(e, '更新失敗'));
     } finally {
       setBusy(false);
     }
   }
 
   async function createAccount() {
+    // 提交前先 trim 再按后端规则逐项校验，报错直接指出是哪个字段，
+    // 不必等后端 400 再猜。注意 limits 的键名须是 daily/monthly（后
+    // 端 limits schema 的字段名），之前误写成 dailyMicros/monthlyMicros
+    // 会被 Zod 去掉未知键，导致 limits 缺 daily/monthly 而 400。
+    const projectId = form.projectId.trim();
+    const serviceAccountId = form.serviceAccountId.trim();
+    const apiKey = form.apiKey.trim();
+    const models = form.models
+      .split(',')
+      .map((m) => m.trim())
+      .filter((m) => m !== '');
+    const dailyMicros = Number(form.dailyMicros) || 0;
+    const monthlyMicros = Number(form.monthlyMicros) || 0;
     if (
-      form.projectId === '' ||
-      form.serviceAccountId === '' ||
+      projectId === '' ||
+      serviceAccountId === '' ||
       form.name === '' ||
-      form.apiKey === ''
+      apiKey === ''
     ) {
       setError('請填寫專案編號、服務帳號編號、名稱與 API Key。');
+      return;
+    }
+    if (!/^proj_[A-Za-z0-9_-]+$/.test(projectId)) {
+      setError('專案編號格式不正確：須以 proj_ 開頭。');
+      return;
+    }
+    if (!/^(?:svc_acct_|user-)[A-Za-z0-9_-]+$/.test(serviceAccountId)) {
+      setError('服務帳號編號格式不正確：須以 svc_acct_ 或 user- 開頭。');
+      return;
+    }
+    if (!/^sk-(?!admin-)[A-Za-z0-9_-]{16,}$/.test(apiKey)) {
+      setError(
+        'API Key 格式不正確：須以 sk- 開頭、至少 16 位，且不能是 sk-admin- 管理員金鑰。',
+      );
+      return;
+    }
+    if (models.length === 0) {
+      setError('模型：至少填寫一個模型。');
+      return;
+    }
+    if (dailyMicros < 1 || monthlyMicros < 1) {
+      setError('每日上限與每月上限須大於 0（微單位）。');
+      return;
+    }
+    if (dailyMicros > monthlyMicros) {
+      setError('每日上限不能大於每月上限。');
       return;
     }
     if (form.confirm === false) {
@@ -102,18 +156,15 @@ export function ApiKeysAdmin() {
     setError('');
     try {
       await request('/api/admin/ai-platform/accounts', 'POST', {
-        projectId: form.projectId,
-        serviceAccountId: form.serviceAccountId,
+        projectId,
+        serviceAccountId,
         name: form.name,
         note: form.note,
-        apiKey: form.apiKey,
-        models: form.models
-          .split(',')
-          .map((m) => m.trim())
-          .filter((m) => m !== ''),
+        apiKey,
+        models,
         limits: {
-          dailyMicros: Number(form.dailyMicros) || 0,
-          monthlyMicros: Number(form.monthlyMicros) || 0,
+          daily: dailyMicros,
+          monthly: monthlyMicros,
         },
         enabled: true,
         concurrency: 1,
@@ -136,7 +187,7 @@ export function ApiKeysAdmin() {
       setNotice('服務帳號已建立，金鑰已加密儲存。');
       query.refresh();
     } catch (e: any) {
-      setError(e?.message || '建立帳號失敗');
+      setError(formatError(e, '建立帳號失敗'));
     } finally {
       setBusy(false);
     }
@@ -144,8 +195,15 @@ export function ApiKeysAdmin() {
 
   async function rotateCredential() {
     if (rotating === null) return;
-    if (rotating.apiKey === '') {
+    const apiKey = rotating.apiKey.trim();
+    if (apiKey === '') {
       setError('請輸入新的 API Key。');
+      return;
+    }
+    if (!/^sk-(?!admin-)[A-Za-z0-9_-]{16,}$/.test(apiKey)) {
+      setError(
+        'API Key 格式不正確：須以 sk- 開頭、至少 16 位，且不能是 sk-admin- 管理員金鑰。',
+      );
       return;
     }
     if (rotating.confirm === false) {
@@ -162,7 +220,7 @@ export function ApiKeysAdmin() {
         'POST',
         {
           action: 'rotate',
-          apiKey: rotating.apiKey,
+          apiKey,
           confirmServiceAccount: true,
         },
       );
@@ -171,7 +229,7 @@ export function ApiKeysAdmin() {
       setNotice('憑證已輪換。舊金鑰即刻失效。');
       query.refresh();
     } catch (e: any) {
-      setError(e?.message || '輪換失敗');
+      setError(formatError(e, '輪換失敗'));
     } finally {
       setBusy(false);
     }
@@ -311,13 +369,15 @@ export function ApiKeysAdmin() {
             onChange={(e) => setForm({ ...form, projectId: e.target.value })}
             placeholder="proj_xxx"
           />
-          <label style={{ marginTop: 12 }}>服務帳號編號（svc_acct_…）</label>
+          <label style={{ marginTop: 12 }}>
+            服務帳號編號（svc_acct_… 或 user-…）
+          </label>
           <input
             value={form.serviceAccountId}
             onChange={(e) =>
               setForm({ ...form, serviceAccountId: e.target.value })
             }
-            placeholder="svc_acct_xxx"
+            placeholder="svc_acct_xxx 或 user-xxx"
           />
           <label style={{ marginTop: 12 }}>名稱</label>
           <input
