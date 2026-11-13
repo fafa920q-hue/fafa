@@ -35,6 +35,6 @@ describe('stage-d notifications', () => {
     const css = readFileSync('packages/ui/src/style.css', 'utf8');
     for (const token of ['#6D5EF9', '#F6F7FB', '#172033', '#DDE4EF'])
       expect(css).toContain(token);
-    expect(css).toContain('[data-theme=dark]');
+    expect(css).toContain("[data-theme='dark']");
   });
 });
