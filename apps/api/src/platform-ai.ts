@@ -70,6 +70,21 @@ function owner(actor: any) {
 }
 const accountColumns = sql`id, project_id, service_account_id, name, note, models, enabled, health,
   daily_micros, monthly_micros, concurrency, checked_at, last_error, priority, allowed_users, (secret is not null) as has_key`;
+// 管理列表回傳的帳號列：把資料庫的 daily_micros/monthly_micros 另外
+// 對映成前端用的 limits {daily, monthly}。2026-11-14 回歸：之前 GET
+// /api/admin/ai-platform 直接回傳原始列、沒有 limits，導致前端
+// toggleEnabled 以 limits: {} 呼叫 PATCH，Zod 報
+// limits.daily/monthly expected number, received undefined，啟用永遠
+// 失敗。匯出以便單元測試直接驗證對映。
+export function mapAdminAccount(row: any) {
+  return {
+    ...row,
+    limits: {
+      daily: Number(row.daily_micros),
+      monthly: Number(row.monthly_micros),
+    },
+  };
+}
 async function choices(
   db: any,
   policy: z.infer<typeof policySchema>,
@@ -338,7 +353,7 @@ export async function registerPlatformAi(app: FastifyInstance) {
       usage: await budget(sql, {}, policy.timeZone),
       accounts: await Promise.all(
         rows.map(async (row) => ({
-          ...row,
+          ...mapAdminAccount(row),
           usage: await budget(sql, { account: row.id }, policy.timeZone),
         })),
       ),
