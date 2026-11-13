@@ -35,7 +35,12 @@ for (const [name, engine, options] of [
           errors.push(message.text());
       });
       await page.goto(url, { waitUntil: 'networkidle' });
-      await page.getByRole('link', { name: 'G · 使用 Google 登录' }).waitFor();
+      // The Google sign-in link text differs by surface: the member portal
+      // renders "使用 Google 登录" (the "G" mark is aria-hidden), while the
+      // admin login card renders "G · 使用 Google 登录". Matching the shared
+      // substring covers both without weakening the check (a Google sign-in
+      // link must still be present and visible).
+      await page.getByRole('link', { name: '使用 Google 登录' }).waitFor();
       assert.equal(
         await page
           .getByRole('button', { name: '管理员演示', exact: true })
