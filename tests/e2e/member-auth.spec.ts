@@ -50,6 +50,10 @@ test('普通账户实际密码登录、会话查看、退出及管理员隔离',
   await page.getByLabel('密码', { exact: true }).fill(password);
   await page.getByRole('button', { name: '登录', exact: true }).click();
   await expect(
+    page.getByRole('heading', { name: '我的工作台', exact: true }),
+  ).toBeVisible();
+  await page.goto('/member/account');
+  await expect(
     page.getByRole('heading', { name: '账户安全', exact: true }),
   ).toBeVisible();
   await expect(page.getByText('邮箱已验证', { exact: false })).toBeVisible();
