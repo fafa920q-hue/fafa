@@ -120,7 +120,7 @@ function CredentialForm({
       form.reset();
       if (mode === 'login') {
         onAuthenticated?.(result);
-        navigate('/', { replace: true });
+        navigate(onAuthenticated ? '/' : '/member/account', { replace: true });
       } else if (mode === 'reset') {
         action.current = '';
         navigate('/member/login?reset=success', { replace: true });
@@ -227,7 +227,7 @@ function CredentialForm({
             <input type="checkbox" name="remember" />
             <span>记住登录状态</span>
           </label>
-          <Link to="/member/forgot">忘记密码？</Link>
+          <Link to="/member/forgot">忘记密码</Link>
         </div>
       )}
       {['register', 'reset'].includes(mode) && (
