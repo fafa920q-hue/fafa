@@ -91,7 +91,7 @@ test('邮箱服务缺失时不声称发送成功，激活链接不保留在地�
     page.getByRole('button', { name: '发送重置邮件', exact: true }),
   ).toBeDisabled();
   await page.goto('/member/verify#token=synthetic-not-a-real-action');
-  await expect(page.getByLabel('注册时设置的密码')).toBeVisible();
+  await expect(page.getByLabel('注册时设置的密码', { exact: true })).toBeVisible();
   expect(new URL(page.url()).hash).toBe('');
   await expect(
     page.getByRole('link', { name: '使用 Google 登录', exact: true }),
