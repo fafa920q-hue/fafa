@@ -2538,3 +2538,35 @@ body {
     display: none;
   }
 }
+@media (max-width: 390px) {
+  /* WebKit measures the brand text wider at 375px, and .brand cannot */
+  /* shrink (min-width: auto + white-space: nowrap), so hide the */
+  /* decorative badge below 390px (as at 350px), narrow the topbar, */
+  /* and let the brand text shrink with an ellipsis instead of */
+  /* overflowing the viewport. */
+  .mobile-brand .brand-pro {
+    display: none;
+  }
+  .topbar {
+    padding: 14px 12px;
+  }
+  .mobile-brand {
+    min-width: 0;
+  }
+  .mobile-brand .brand-icon {
+    flex-shrink: 0;
+  }
+  .brand-text {
+    min-width: 0;
+    overflow: hidden;
+  }
+  .brand-name {
+    min-width: 0;
+  }
+  .brand strong {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
