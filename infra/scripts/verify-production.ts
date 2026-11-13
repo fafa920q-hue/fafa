@@ -59,15 +59,19 @@ for (const [name, engine, options] of [
           () => document.documentElement.scrollWidth <= window.innerWidth,
         ),
       );
-      // The old production HTML inlines a theme-setting script whose hash
-      // violates script-src 'self'. The new version loads theme.js as an
-      // external file, so this error disappears after deployment. Allowlist
-      // only this known hash; any other console error still fails the check.
-      const knownCsp = errors.filter((e) =>
-        e.includes('sha256-ZqcffI16LmJhAd8T360JYtesh40ezcUwM6rAZK0e9dY='),
-      );
+      // The old production HTML inlines the theme-setting script twice;
+      // each triggers this generic CSP refusal (Playwright's message text
+      // does not include the script hash, so match the refusal itself).
+      // The new version loads theme.js as an external file, so these
+      // disappear after deployment. Allow 0 (new version) or exactly 2
+      // (old version, one per inline copy); any other count, or any other
+      // console error, still fails the check.
+      const cspRefusal =
+        "Refused to execute a script because its hash, its nonce, or 'unsafe-inline' does not appear in the script-src directive";
+      const cspErrors = errors.filter((e) => e.includes(cspRefusal));
+      assert.ok(cspErrors.length === 0 || cspErrors.length === 2);
       assert.deepEqual(
-        errors.filter((e) => !knownCsp.includes(e)),
+        errors.filter((e) => !e.includes(cspRefusal)),
         [],
       );
       const file = directory + '/' + name + '-' + label + '.png';
