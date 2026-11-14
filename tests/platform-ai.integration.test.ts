@@ -16,6 +16,7 @@ let accountId: string;
 let taskId: string;
 let submittedBy = 1;
 let configuredPolicy: any;
+let dbName = '';
 const send = (
   who: number,
   url: string,
@@ -46,6 +47,14 @@ beforeAll(async () => {
     !url.pathname.endsWith('_test')
   )
     throw Error('Dedicated platform test database required');
+  // 2026-11-14 回归：生产上 GET /api/ai/platform 的 500 只在
+  // Hash Anti Join 计划下出现（暂停子查询的 ::timestamptz 当作
+  // settings 全表过滤条件求值）；默认计划走 settings_key_key
+  // 索引、本地复现不了。关掉 nestloop 让本库固定走该计划，旧代
+  // 码在本文件会稳定 500，修好后稳定 200。本库是本文件专用的
+  // 测试库，afterAll 会恢复设置。
+  dbName = url.pathname.slice(1);
+  await sql`alter database ${sql(dbName)} set enable_nestloop = off`;
   vi.stubEnv('PLATFORM_AI_ENABLED', 'true');
   vi.stubEnv('DEMO_MODE', 'false');
   vi.stubGlobal('fetch', noNetwork());
@@ -62,6 +71,7 @@ afterAll(async () => {
   vi.unstubAllGlobals();
   if (app) await sql`update users set deleted_at=now() where id in ${sql(ids)}`;
   await app?.close();
+  if (dbName) await sql`alter database ${sql(dbName)} reset enable_nestloop`;
   await sql.end();
 });
 
@@ -136,6 +146,31 @@ it('checks configured models through the Worker and makes available service visi
   expect(service.json()).toMatchObject({ mode: true, models: [model] });
   expect(service.body).not.toContain(accountId);
   vi.stubGlobal('fetch', noNetwork());
+});
+
+it('ignores non-timestamp settings rows and honours pause timestamps', async () => {
+  // 2026-11-14 回归：生产 settings 表里 auto_grant_enabled /
+  // maintenance 等行是 JSON 布尔值 false；旧 choices() 把
+  // (value #>> '{}')::timestamptz 放在 NOT EXISTS 子查询里，
+  // Hash Anti Join 计划下对全表求值直接 500（本文件 beforeAll
+  // 已固定走该计划）。修好后：布尔行不影响列表，未来暂停隐藏
+  // 模型、过去暂停恢复模型。
+  await sql`insert into settings(key,value) values ('auto_grant_enabled',to_jsonb(false)),('maintenance',to_jsonb(false))
+    on conflict(key) do update set value=excluded.value`;
+  const service = await send(1, '/api/ai/platform');
+  expect(service.statusCode, service.body).toBe(200);
+  expect(service.json()).toMatchObject({ mode: true, models: [model] });
+  await sql`insert into settings(key,value) values ('platform_ai_pause:proj_fixture',to_jsonb(now()+interval '1 hour'))
+    on conflict(key) do update set value=excluded.value`;
+  expect((await send(1, '/api/ai/platform')).json()).toMatchObject({
+    models: [],
+  });
+  await sql`insert into settings(key,value) values ('platform_ai_pause:proj_fixture',to_jsonb(now()-interval '1 hour'))
+    on conflict(key) do update set value=excluded.value`;
+  expect((await send(1, '/api/ai/platform')).json()).toMatchObject({
+    models: [model],
+  });
+  await sql`delete from settings where key='platform_ai_pause:proj_fixture'`;
 });
 
 it('does not accept account IDs from members and atomically reserves the shared budget', async () => {

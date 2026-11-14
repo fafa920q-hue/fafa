@@ -73,6 +73,35 @@ export async function configuration(db: any, userId?: string) {
     quota: override ? userQuota.parse(override.value) : policy.defaultUser,
   };
 }
+// 项目暂停判定：platform_ai_pause:<project_id> 的值是 Worker 写入的
+// to_jsonb(now() + interval)，即 JSON 字符串形式的时间戳。
+// 2026-11-14 回归：旧实现在 choices() 的 SQL 里用
+// `(value #>> '{}')::timestamptz > now()` 做 NOT EXISTS 子查询，
+// Postgres 在 Hash Anti Join 等计划下会把这个 cast 当作 settings
+// 全表的 Seq Scan 过滤条件先求值，表里 auto_grant_enabled、
+// maintenance 等 JSON 布尔值 false 一转 timestamptz 就抛
+// invalid input syntax，GET /api/ai/platform 直接 500。
+// AND 子句的先后顺序不能保证求值顺序，所以不能只调换条件。
+// 改为按精确 key 取回原始文本、在 JS 里解析：只有命中该项目的那一
+// 行会被解析，其他行的值永远不会进入时间戳转换。
+export function isPausedValue(
+  raw: unknown,
+  nowMs: number = Date.now(),
+): boolean {
+  if (typeof raw !== 'string') return false;
+  const ms = Date.parse(raw);
+  return Number.isFinite(ms) && ms > nowMs;
+}
+
+export async function projectPaused(
+  db: any,
+  projectId: string,
+): Promise<boolean> {
+  const [row] =
+    await db`select value #>> '{}' as until from settings where key=${'platform_ai_pause:' + projectId}`;
+  return isPausedValue(row?.until);
+}
+
 export function allowed(actor: any) {
   return (
     actor &&

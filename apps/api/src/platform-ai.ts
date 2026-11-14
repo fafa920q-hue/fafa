@@ -14,6 +14,7 @@ import {
   allowed,
   budget,
   fits,
+  projectPaused,
 } from '../../../packages/auth/src/platform-ai';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
@@ -90,16 +91,27 @@ async function choices(
   policy: z.infer<typeof policySchema>,
   userId: string,
 ) {
-  return db`select a.id, a.project_id, a.models, a.daily_micros, a.monthly_micros, a.revision, a.concurrency,
+  const rows =
+    await db`select a.id, a.project_id, a.models, a.daily_micros, a.monthly_micros, a.revision, a.concurrency,
       (select count(*)::int from ai_tasks t where t.platform_account_id=a.id and t.data->>'status' in ('QUEUED','PREPARING','RUNNING')) as active
     from ai_platform_accounts a
     where enabled and health='READY' and secret is not null
       and (allowed_users is null or ${userId}::uuid=any(allowed_users))
-      and not exists (select 1 from settings where key='platform_ai_pause:' || a.project_id
-        and (value #>> '{}')::timestamptz > now())
       and (${policy.routing} <> 'ACCOUNT' or id::text=${policy.target})
       and (${policy.routing} <> 'PROJECT' or project_id=${policy.target})
     order by case when ${policy.routing}='HEALTH' then checked_at end desc nulls last, priority, active, id`;
+  // 暂停检查不能留在 SQL 里（见 projectPaused 的注释）：按项目去重后
+  // 逐个精确查询，暂停的项目整组排除，与旧 NOT EXISTS 语义一致。
+  // 本查询无 LIMIT，查完再过滤与在 SQL 里过滤等价。
+  const paused = new Set<string>();
+  for (const row of rows) {
+    if (
+      !paused.has(row.project_id) &&
+      (await projectPaused(db, row.project_id))
+    )
+      paused.add(row.project_id);
+  }
+  return rows.filter((row: any) => !paused.has(row.project_id));
 }
 export async function submitPlatformTask(
   actor: any,
