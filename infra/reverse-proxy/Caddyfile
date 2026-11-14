@@ -1,0 +1,29 @@
+(security_headers) {
+ header {
+  Strict-Transport-Security "max-age=31536000"
+  Referrer-Policy no-referrer
+  X-Content-Type-Options nosniff
+ }
+}
+{$PANEL_DOMAIN} {
+ import security_headers
+ # Preserve /api: Fastify routes already contain this prefix.
+ @backend path /api /api/* /auth /auth/* /subscription /subscription/* /health /ready
+ handle @backend {
+  reverse_proxy api:4000
+ }
+ handle {
+  reverse_proxy web:8080
+ }
+}
+{$ADMIN_DOMAIN} {
+ import security_headers
+ # All backend traffic uses the primary origin; never serve the SPA here.
+ @backend path /api /api/* /auth /auth/* /subscription /subscription/* /health /ready
+ handle @backend {
+  respond "Use the primary origin" 404
+ }
+ handle {
+  reverse_proxy admin:8080
+ }
+}

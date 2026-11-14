@@ -1,0 +1,12 @@
+{
+  "verifiedAt": "2026-11-06T02:06:26.335Z",
+  "scope": "独立一次性测试数据库；没有访问生产",
+  "encryptedBackup": true,
+  "encryption": "age",
+  "sha256": "f88a64a349d7d3357f9ed52f2d4b1cda0612abdff7191f640107a4e6c070a092",
+  "tablesCompared": 27,
+  "credentialsDecrypted": true,
+  "auditAppendOnly": true,
+  "nonEmptyRestoreBlocked": true,
+  "explicitConfirmationRequired": true
+}

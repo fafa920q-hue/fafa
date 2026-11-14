@@ -1,0 +1,8 @@
+# EC2 owns process supervision; API/Worker start after tmpfs mail staging.
+services:
+  api:
+    restart: on-failure
+    environment:
+      MEMBER_SELF_SERVICE: 'true'
+  worker:
+    restart: on-failure

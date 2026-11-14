@@ -1,0 +1,81 @@
+name: fafa-one-dev
+x-runtime: &runtime
+  image: fafa-one-dev-runtime:local
+  build:
+    context: ../..
+    dockerfile: infra/docker/Dockerfile
+    target: runtime
+    secrets: [proxy_ca]
+  env_file: ../../.env
+  environment:
+    DATABASE_URL: postgres://fafa:fafa_dev_only@postgres:5432/fafa
+    WEB_ORIGIN: http://localhost:5173
+    ADMIN_ORIGIN: http://localhost:5174
+    API_PUBLIC_URL: http://localhost:5173
+  security_opt: ['no-new-privileges:true']
+  cap_drop: [ALL]
+  read_only: true
+  tmpfs: ['/tmp']
+services:
+  postgres:
+    image: postgres:17.7-alpine
+    environment:
+      {
+        POSTGRES_DB: fafa,
+        POSTGRES_USER: fafa,
+        POSTGRES_PASSWORD: fafa_dev_only,
+      }
+    volumes: ['pg:/var/lib/postgresql/data']
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U fafa']
+      interval: 3s
+      timeout: 3s
+      retries: 30
+  migrate:
+    <<: *runtime
+    command: ['node', '--import', 'tsx', 'packages/db/src/migrate.ts']
+    healthcheck: { disable: true }
+    depends_on: { postgres: { condition: service_healthy } }
+  seed:
+    <<: *runtime
+    command: ['node', '--import', 'tsx', 'packages/db/src/seed.ts']
+    healthcheck: { disable: true }
+    depends_on: { migrate: { condition: service_completed_successfully } }
+  api:
+    <<: *runtime
+    depends_on: { seed: { condition: service_completed_successfully } }
+  worker:
+    <<: *runtime
+    command: ['node', '--import', 'tsx', 'apps/worker/src/index.ts']
+    healthcheck:
+      test: ['CMD', 'node', '--import', 'tsx', 'infra/scripts/worker-health.ts']
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    depends_on: { seed: { condition: service_completed_successfully } }
+  web:
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.static
+      target: web
+      additional_contexts:
+        runtime: service:api
+    ports: ['127.0.0.1:5173:8080']
+    tmpfs: ['/config', '/data']
+    security_opt: ['no-new-privileges:true']
+    depends_on: [api]
+  admin:
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.static
+      target: admin
+      additional_contexts:
+        runtime: service:api
+    ports: ['127.0.0.1:5174:8080']
+    tmpfs: ['/config', '/data']
+    security_opt: ['no-new-privileges:true']
+    depends_on: [api]
+volumes: { pg: {} }
+secrets:
+  proxy_ca:
+    file: ${FAFA_BUILD_CA:-./extra-ca.pem}
