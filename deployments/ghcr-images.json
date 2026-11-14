@@ -4,15 +4,15 @@
   "images": {
     "runtime": {
       "image": "ghcr.io/fafa920q-hue/fafa-runtime",
-      "digest": "sha256:5c01f066a2e589cdb888e06c24735a88dad284801d404621ffd03865ba491f1e"
+      "digest": "sha256:314930a11b24cc2b4afb5ac5e3f6c1dd43968d1b032b8e7ac22f2ccdfd34f351"
     },
     "web": {
       "image": "ghcr.io/fafa920q-hue/fafa-web",
-      "digest": "sha256:7ffdac8653e8d0e82d69d0b871f2982ccc88d704acb9f3aabcac2cc97ec8883a"
+      "digest": "sha256:7278257dde0f99b2ecd82fb4ec1d2bb0d1a19a890485f1c8c91746c85943c6f8"
     },
     "admin": {
       "image": "ghcr.io/fafa920q-hue/fafa-admin",
-      "digest": "sha256:2bb4593aa4cf096b99e59373f7c5dc0dde23a1bb379017be871cfe379c4e8f3d"
+      "digest": "sha256:10174fff2f08ff0854f7f80e95af9aeaa4c882519001acf82b87c183f1a7014f"
     }
   }
 }
