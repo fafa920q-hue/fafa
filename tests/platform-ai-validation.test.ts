@@ -10,7 +10,12 @@
 // 月预算、非 UUID 指定用户、未勾选确认）仍拒绝；400 响应附字段级 issues。
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
-import { accountSchema, apiKey } from '../apps/api/src/platform-ai';
+import {
+  accountSchema,
+  apiKey,
+  mapAdminAccount,
+} from '../apps/api/src/platform-ai';
+import { audience } from '../packages/auth/src/platform-models';
 
 const validKey = 'sk-test-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx';
 const createSchema = accountSchema.extend({
@@ -198,6 +203,109 @@ describe('新增服务账户整体校验', () => {
   it('拒绝未勾选服务账户确认', () => {
     expect(
       createSchema.safeParse({ ...base, confirmServiceAccount: false }).success,
+    ).toBe(false);
+  });
+});
+
+// 回归覆盖 2026-11-14 启用失败：GET /api/admin/ai-platform 曾直接回
+// 传数据库原始列（daily_micros/monthly_micros），没有 limits 对象，
+// 前端 toggleEnabled 于是送出 limits: {}，PATCH 的 Zod 报
+// limits.daily/monthly expected number, received undefined，点「启用」
+// 永远失败。修复后 GET 对映出 limits {daily, monthly}。
+describe('管理列表 GET 对映（limits）', () => {
+  const row = {
+    id: '00000000-0000-0000-0000-000000000001',
+    project_id: 'proj_TEST123',
+    service_account_id: 'user-TEST123',
+    name: 'FAFA ONE AI',
+    note: '',
+    models: ['gpt-5.4-mini'],
+    enabled: false,
+    health: 'READY',
+    daily_micros: '500000',
+    monthly_micros: 3000000,
+    concurrency: 1,
+    priority: 100,
+    allowed_users: null,
+  };
+
+  it('回传 limits {daily, monthly} 且为数字', () => {
+    const mapped = mapAdminAccount(row);
+    expect(mapped.limits).toEqual({ daily: 500000, monthly: 3000000 });
+  });
+
+  it('保留其他栏位不变', () => {
+    const mapped = mapAdminAccount(row);
+    expect(mapped.id).toBe(row.id);
+    expect(mapped.name).toBe('FAFA ONE AI');
+    expect(mapped.enabled).toBe(false);
+    expect(mapped.health).toBe('READY');
+    expect(mapped.daily_micros).toBe('500000');
+  });
+});
+
+// PATCH /api/admin/ai-platform/accounts/:id 的 schema（与路由一致：
+// accountSchema 去掉 projectId/serviceAccountId，allowedUsers 与
+// priority 为选填；不收 apiKey）。启用与编辑都走这条路。
+const patchSchema = accountSchema
+  .omit({ projectId: true, serviceAccountId: true })
+  .extend({
+    allowedUsers: audience.optional(),
+    priority: z.number().int().min(1).max(1000).optional(),
+  });
+const patchBase = {
+  priority: 100,
+  allowedUsers: null,
+  name: 'FAFA ONE AI',
+  note: '平台 GPT 对话及 AI 中转',
+  limits: { daily: 500000, monthly: 3000000 },
+  models: ['gpt-5.4-mini', 'gpt-6.1-sol'],
+  enabled: true,
+  concurrency: 1,
+};
+
+describe('PATCH 更新账号（启用／编辑）', () => {
+  it('接受启用时的提交：limits {daily, monthly}、无 apiKey', () => {
+    expect(patchSchema.safeParse(patchBase).success).toBe(true);
+  });
+
+  it('接受编辑时的提交：改名称、模型与上限', () => {
+    expect(
+      patchSchema.safeParse({
+        ...patchBase,
+        name: 'FAFA ONE AI 2',
+        models: ['gpt-5.4-mini'],
+        limits: { daily: 1000000, monthly: 5000000 },
+        enabled: false,
+      }).success,
+    ).toBe(true);
+  });
+
+  it('拒绝 limits: {}，issues 指明 limits.daily 与 limits.monthly', () => {
+    const result = patchSchema.safeParse({ ...patchBase, limits: {} });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const paths = result.error.issues.map((i) => i.path.join('.'));
+      expect(paths).toContain('limits.daily');
+      expect(paths).toContain('limits.monthly');
+    }
+  });
+
+  it('拒绝 limits 误写成 {dailyMicros, monthlyMicros}', () => {
+    expect(
+      patchSchema.safeParse({
+        ...patchBase,
+        limits: { dailyMicros: 500000, monthlyMicros: 3000000 },
+      }).success,
+    ).toBe(false);
+  });
+
+  it('拒绝每日上限大于每月上限的编辑', () => {
+    expect(
+      patchSchema.safeParse({
+        ...patchBase,
+        limits: { daily: 5000000, monthly: 3000000 },
+      }).success,
     ).toBe(false);
   });
 });

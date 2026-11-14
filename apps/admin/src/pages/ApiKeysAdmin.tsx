@@ -18,6 +18,8 @@ interface AiAccount {
   note?: string;
   models?: string[];
   limits?: any;
+  daily_micros?: number | string;
+  monthly_micros?: number | string;
   enabled?: boolean;
   concurrency?: number;
   priority?: number;
@@ -38,11 +40,42 @@ interface Rotating {
   result: string;
 }
 
+// 從帳號資料取上限：優先用後端回傳的 limits {daily, monthly}，
+// 沒有時退回資料庫原始欄位 daily_micros/monthly_micros。2026-11-14
+// 回歸：舊版 GET 不回 limits，toggleEnabled 送出 limits: {}，PATCH
+// 的 Zod 報 limits.daily/monthly expected number 而啟用永遠失敗。
+// 兩個來源都沒有有效數字時回傳 0，呼叫方不得把 0 或空物件送出。
+function accountLimits(account: AiAccount) {
+  const daily = Number(account.limits?.daily);
+  const monthly = Number(account.limits?.monthly);
+  if (
+    Number.isFinite(daily) &&
+    daily > 0 &&
+    Number.isFinite(monthly) &&
+    monthly > 0
+  )
+    return { daily, monthly };
+  return {
+    daily: Number(account.daily_micros) || 0,
+    monthly: Number(account.monthly_micros) || 0,
+  };
+}
+
 export function ApiKeysAdmin() {
   const { request } = useApp();
   const query = useData<AiPlatform>('/api/admin/ai-platform');
   const [creating, setCreating] = useState(false);
   const [rotating, setRotating] = useState<Rotating | null>(null);
+  const [editing, setEditing] = useState<AiAccount | null>(null);
+  const [editForm, setEditForm] = useState({
+    name: '',
+    note: '',
+    models: '',
+    dailyMicros: '',
+    monthlyMicros: '',
+    concurrency: '1',
+    priority: '100',
+  });
   const [form, setForm] = useState({
     projectId: '',
     serviceAccountId: '',
@@ -75,6 +108,13 @@ export function ApiKeysAdmin() {
   };
 
   async function toggleEnabled(account: AiAccount, enabled: boolean) {
+    const limits = accountLimits(account);
+    if (limits.daily < 1 || limits.monthly < 1) {
+      // 絕不送出 limits: {}（後端 Zod 會報 limits.daily/monthly 缺失）。
+      // 上限缺失代表該帳號資料不完整，請先用「編輯」補上限再啟用。
+      setError('此帳號尚未設定每日／每月上限，請先點「編輯」設定上限再啟用。');
+      return;
+    }
     setBusy(true);
     setError('');
     try {
@@ -82,7 +122,7 @@ export function ApiKeysAdmin() {
         name: account.name,
         note: account.note || '',
         models: account.models || [],
-        limits: account.limits || {},
+        limits,
         enabled,
         concurrency: account.concurrency || 1,
         priority: account.priority ?? 100,
@@ -91,6 +131,74 @@ export function ApiKeysAdmin() {
       setNotice(
         enabled ? '帳號已啟用。' : '帳號已停用：此帳號的上游金鑰不再可用。',
       );
+      query.refresh();
+    } catch (e: any) {
+      setError(formatError(e, '更新失敗'));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // 編輯既有帳號：預填名稱、備註、模型、上限、併發與優先級，不改
+  // projectId/serviceAccountId，也不用重填 API Key（PATCH 端點本來就
+  // 不收 apiKey）。2026-11-14 前列表只有「輪換憑證／啟用」，上限填錯
+  // 或缺失時無法修正。
+  function openEdit(account: AiAccount) {
+    const limits = accountLimits(account);
+    setEditing(account);
+    setEditForm({
+      name: account.name,
+      note: account.note || '',
+      models: (account.models || []).join(', '),
+      dailyMicros: limits.daily > 0 ? String(limits.daily) : '',
+      monthlyMicros: limits.monthly > 0 ? String(limits.monthly) : '',
+      concurrency: String(account.concurrency || 1),
+      priority: String(account.priority ?? 100),
+    });
+    setError('');
+  }
+
+  async function saveEdit() {
+    if (editing === null) return;
+    const models = editForm.models
+      .split(',')
+      .map((m) => m.trim())
+      .filter((m) => m !== '');
+    const dailyMicros = Number(editForm.dailyMicros) || 0;
+    const monthlyMicros = Number(editForm.monthlyMicros) || 0;
+    const concurrency = Number(editForm.concurrency) || 1;
+    const priority = Number(editForm.priority) || 100;
+    if (editForm.name.trim() === '') {
+      setError('請填寫名稱。');
+      return;
+    }
+    if (models.length === 0) {
+      setError('模型：至少填寫一個模型。');
+      return;
+    }
+    if (dailyMicros < 1 || monthlyMicros < 1) {
+      setError('每日上限與每月上限須大於 0（微單位）。');
+      return;
+    }
+    if (dailyMicros > monthlyMicros) {
+      setError('每日上限不能大於每月上限。');
+      return;
+    }
+    setBusy(true);
+    setError('');
+    try {
+      await request('/api/admin/ai-platform/accounts/' + editing.id, 'PATCH', {
+        name: editForm.name.trim(),
+        note: editForm.note,
+        models,
+        limits: { daily: dailyMicros, monthly: monthlyMicros },
+        enabled: editing.enabled ?? false,
+        concurrency,
+        priority,
+        allowedUsers: editing.allowedUsers ?? null,
+      });
+      setEditing(null);
+      setNotice('服務帳號已更新。');
       query.refresh();
     } catch (e: any) {
       setError(formatError(e, '更新失敗'));
@@ -320,6 +428,9 @@ export function ApiKeysAdmin() {
                   </td>
                   <td>
                     <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
+                      <button onClick={() => openEdit(account)} disabled={busy}>
+                        編輯
+                      </button>
                       <button
                         onClick={() =>
                           setRotating({
@@ -449,6 +560,100 @@ export function ApiKeysAdmin() {
             </button>
           </div>
         </div>
+      </Dialog>
+      <Dialog
+        open={editing !== null}
+        title={editing === null ? '' : '編輯服務帳號：' + editing.name}
+        onClose={() => setEditing(null)}
+      >
+        {editing !== null ? (
+          <div>
+            <p className="muted">
+              專案編號與服務帳號編號不可修改；API Key
+              亦不需重填，僅更新以下欄位。
+            </p>
+            <label>名稱</label>
+            <input
+              value={editForm.name}
+              onChange={(e) =>
+                setEditForm({ ...editForm, name: e.target.value })
+              }
+            />
+            <label style={{ marginTop: 12 }}>備註</label>
+            <input
+              value={editForm.note}
+              onChange={(e) =>
+                setEditForm({ ...editForm, note: e.target.value })
+              }
+            />
+            <label style={{ marginTop: 12 }}>模型（以逗號分隔）</label>
+            <input
+              value={editForm.models}
+              onChange={(e) =>
+                setEditForm({ ...editForm, models: e.target.value })
+              }
+            />
+            <div className="row" style={{ gap: 12, marginTop: 12 }}>
+              <div>
+                <label>每日上限（微單位）</label>
+                <input
+                  type="number"
+                  value={editForm.dailyMicros}
+                  onChange={(e) =>
+                    setEditForm({ ...editForm, dailyMicros: e.target.value })
+                  }
+                />
+              </div>
+              <div>
+                <label>每月上限（微單位）</label>
+                <input
+                  type="number"
+                  value={editForm.monthlyMicros}
+                  onChange={(e) =>
+                    setEditForm({ ...editForm, monthlyMicros: e.target.value })
+                  }
+                />
+              </div>
+            </div>
+            <div className="row" style={{ gap: 12, marginTop: 12 }}>
+              <div>
+                <label>併發數</label>
+                <input
+                  type="number"
+                  value={editForm.concurrency}
+                  onChange={(e) =>
+                    setEditForm({ ...editForm, concurrency: e.target.value })
+                  }
+                />
+              </div>
+              <div>
+                <label>優先級</label>
+                <input
+                  type="number"
+                  value={editForm.priority}
+                  onChange={(e) =>
+                    setEditForm({ ...editForm, priority: e.target.value })
+                  }
+                />
+              </div>
+            </div>
+            <div
+              className="row"
+              style={{ gap: 8, justifyContent: 'flex-end', marginTop: 16 }}
+            >
+              <button
+                className="ghost"
+                onClick={() => setEditing(null)}
+                disabled={busy}
+              >
+                取消
+              </button>
+              <button onClick={saveEdit} disabled={busy}>
+                {busy ? '處理中…' : '儲存修改'}
+              </button>
+            </div>
+          </div>
+        ) : null}
       </Dialog>
       <Dialog
         open={rotating !== null}
