@@ -17,6 +17,7 @@ import {
   configuration,
   budget,
   fits,
+  projectPaused,
 } from '../../../packages/auth/src/platform-ai';
 
 function clientFor(account: any, timeout: number) {
@@ -87,9 +88,10 @@ export async function platformTaskAccount(task: any, user: any, db: any = sql) {
     and a.revision=l.account_revision and l.task_id=${task.id} and l.user_id=${task.owner_id}
     and l.model=${task.data.model} and l.model=any(a.models)
     and l.reserved_micros <= ${Math.min(quota.task, Number(model.task_micros))}
-    and (a.allowed_users is null or l.user_id=any(a.allowed_users))
-    and not exists (select 1 from settings where key='platform_ai_pause:' || a.project_id
-      and (value #>> '{}')::timestamptz > now())`;
+    and (a.allowed_users is null or l.user_id=any(a.allowed_users))`;
+  // 暂停检查不能留在 SQL 里（见 projectPaused 的注释）：只有取到
+  // 账号行后才对该项目做一次精确 key 查询。
+  if (!row || (await projectPaused(db, row.project_id))) return;
   return row;
 }
 

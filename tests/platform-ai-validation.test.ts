@@ -16,6 +16,7 @@ import {
   mapAdminAccount,
 } from '../apps/api/src/platform-ai';
 import { audience } from '../packages/auth/src/platform-models';
+import { isPausedValue, projectPaused } from '../packages/auth/src/platform-ai';
 
 const validKey = 'sk-test-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx';
 const createSchema = accountSchema.extend({
@@ -307,5 +308,87 @@ describe('PATCH 更新账号（启用／编辑）', () => {
         limits: { daily: 5000000, monthly: 3000000 },
       }).success,
     ).toBe(false);
+  });
+});
+
+// 项目暂停判定（2026-11-14 回归：GET /api/ai/platform 500）。
+// 旧实现把 `(value #>> '{}')::timestamptz > now()` 放在 choices() 的
+// NOT EXISTS 子查询里；Postgres 在 Hash Anti Join 等计划下会把这个
+// cast 当作 settings 全表的过滤条件先求值，表里 auto_grant_enabled、
+// maintenance 等 JSON 布尔值 false 一转就抛 invalid input syntax，
+// 用户一点啟用就 500。修法：按精确 key 取回原始文本、在 JS 里解析，
+// 其他行的值永远不会进入时间戳转换。
+describe('项目暂停判定 isPausedValue', () => {
+  const now = Date.parse('2026-11-14T12:00:00.000Z');
+
+  it('未来的暂停时间戳表示已暂停', () => {
+    expect(isPausedValue('2026-11-14T13:00:00.000Z', now)).toBe(true);
+  });
+
+  it('接受 Worker 实际写入的带时区小数秒格式', () => {
+    expect(isPausedValue('2026-11-14T15:31:12.591656+00:00', now)).toBe(true);
+  });
+
+  it('过去的暂停时间戳表示未暂停', () => {
+    expect(isPausedValue('2026-11-14T11:00:00.000Z', now)).toBe(false);
+  });
+
+  it('等于当前时间表示未暂停（须严格大于 now）', () => {
+    expect(isPausedValue('2026-11-14T12:00:00.000Z', now)).toBe(false);
+  });
+
+  it('JSON 布尔值 false 转出的文本不暂停也不抛错', () => {
+    expect(isPausedValue('false', now)).toBe(false);
+  });
+
+  it('JSON 对象文本不暂停也不抛错', () => {
+    expect(isPausedValue('{"enabled":true}', now)).toBe(false);
+  });
+
+  it('非字符串值（缺失行、数字、null）一律不暂停', () => {
+    expect(isPausedValue(undefined, now)).toBe(false);
+    expect(isPausedValue(null, now)).toBe(false);
+    expect(isPausedValue(20, now)).toBe(false);
+  });
+
+  it('无法解析的字符串不暂停也不抛错', () => {
+    expect(isPausedValue('not-a-date', now)).toBe(false);
+  });
+});
+
+describe('项目暂停判定 projectPaused（精确 key 查询）', () => {
+  // 以内存替身模拟 postgres.js 的模板标签调用：只返回调用方指定
+  // 的行，并记录插值的 key，验证查询确实按精确 key 取行、没有
+  // 在 SQL 里对 settings 全表做时间戳转换。
+  const run = async (rows: any[]) => {
+    let capturedKey: unknown;
+    const db = async (strings: TemplateStringsArray, ...values: any[]) => {
+      expect(String(strings.join(''))).toContain('from settings where key=');
+      capturedKey = values[0];
+      return rows;
+    };
+    const result = await projectPaused(db, 'proj_TEST123');
+    return { result, capturedKey };
+  };
+
+  it('无暂停行时不暂停', async () => {
+    const { result, capturedKey } = await run([]);
+    expect(result).toBe(false);
+    expect(capturedKey).toBe('platform_ai_pause:proj_TEST123');
+  });
+
+  it('暂停行是未来时间戳时暂停', async () => {
+    const { result } = await run([{ until: '2036-11-14T12:00:00.000Z' }]);
+    expect(result).toBe(true);
+  });
+
+  it('暂停行是过去时间戳时不暂停', async () => {
+    const { result } = await run([{ until: '2026-11-14T11:00:00.000Z' }]);
+    expect(result).toBe(false);
+  });
+
+  it('暂停行的值是 JSON 布尔值文本时不暂停也不抛错', async () => {
+    const { result } = await run([{ until: 'false' }]);
+    expect(result).toBe(false);
   });
 });
